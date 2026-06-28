@@ -1,0 +1,111 @@
+{
+  "theme": "LIGHT",
+  "archetype": "1 - Organic & Earthy",
+  "design_philosophy": "A dashboard that feels like a trusted financial advisor. We use a warm, off-white canvas with subtle, organic textures that evoke trust and stability. Data is presented in clean, minimal cards with 1px borders and soft earthy accents (moss green for positive flows, terracotta for tax burdens). The interface uses 'Control Room' grid strategies for density and 'Optical Clarity' for headers, ensuring complex tax scenarios are easily digestible.",
+  "typography": {
+    "headings": {
+      "family": "Outfit",
+      "weights": ["400", "500", "700"],
+      "usage": "Use tight tracking (tracking-tight) for large headers (text-3xl to text-4xl). Do not exceed text-5xl."
+    },
+    "body": {
+      "family": "IBM Plex Sans",
+      "weights": ["400", "500", "600"],
+      "usage": "Use text-sm or text-base for standard data tables and body copy. Use leading-relaxed for paragraphs."
+    },
+    "labels": {
+      "family": "IBM Plex Sans",
+      "style": "uppercase, tracking-[0.2em], text-xs, font-semibold"
+    },
+    "font_installation": "Add Outfit and IBM Plex Sans from Google Fonts."
+  },
+  "color_palette": {
+    "background": {
+      "primary": "#F9F8F6", 
+      "secondary": "#F3F1EC",
+      "tertiary": "#EBE8E0"
+    },
+    "surface": {
+      "card": "#FFFFFF",
+      "glass": "bg-white/70 backdrop-blur-xl border border-white/40"
+    },
+    "text": {
+      "primary": "#1A1A1A",
+      "secondary": "#5C5C5C",
+      "tertiary": "#8A8A8A",
+      "inverse": "#FFFFFF"
+    },
+    "accent": {
+      "primary": "#4A6741", 
+      "primary_hover": "#3B5234",
+      "secondary": "#C87941", 
+      "tertiary": "#7A9B76"
+    },
+    "semantic": {
+      "success": "#4A6741",
+      "warning": "#C87941",
+      "error": "#B84A4A",
+      "info": "#4B7A94"
+    },
+    "chart_colors": ["#4A6741", "#7A9B76", "#C87941", "#E6B89C", "#4B7A94"]
+  },
+  "layout_and_spacing": {
+    "grid_strategy": "MODE B: THE 'CONTROL ROOM' GRID. Base Grid: grid-cols-1 md:grid-cols-3 lg:grid-cols-4. Gap: gap-6. Summary metrics take col-span-1. Main charts take col-span-2 or col-span-3. Forms/Inputs take col-span-1 row-span-2.",
+    "spacing_scale": "Use generous padding: p-6 or p-8 inside cards. Sections separated by py-12.",
+    "borders_and_radius": "Subtle roundness. rounded-xl for main cards, rounded-lg for inner elements. 1px solid border (border-border/40) for structure. Avoid heavy shadows; rely on borders for definition."
+  },
+  "components": {
+    "strategy": "Use pure HTML/Tailwind for overarching layout. Use Shadcn components for interactive elements (Input, Select, Slider, Tabs, Table).",
+    "cards": "Flat background (bg-white), 1px subtle border (border-[#EBE8E0]), no shadow by default. On hover: slight lift (-translate-y-1) and shadow-lg.",
+    "buttons": "Primary buttons use bg-[#4A6741] text-white hover:bg-[#3B5234]. Rounded-full or rounded-lg for approachability.",
+    "inputs": "Use Shadcn inputs. focus:ring-2 focus:ring-[#7A9B76]. Background #F9F8F6.",
+    "charts": "Use Recharts (Shadcn chart component). Hide grid lines or make them extremely subtle (stroke-opacity-10). Data lines should be smooth (type='monotone')."
+  },
+  "motion_and_interaction": {
+    "hover_states": "All interactive elements MUST have hover states. Lighter hue of active state or subtle transform.",
+    "transitions": "Use specific properties: transition-all duration-200 ease-in-out.",
+    "data_loading": "Use skeleton loaders with subtle pulsing (animate-pulse bg-[#EBE8E0])."
+  },
+  "icons_and_assets": {
+    "icon_library": "lucide-react (default choice for clean, minimal dashboards).",
+    "images": [
+      {
+        "category": "background_texture",
+        "url": "https://images.unsplash.com/photo-1671716784499-a3d26826d844?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MTJ8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMG9yZ2FuaWMlMjBsaWdodCUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzgyNjE2MTA1fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract organic light background for subtle hero/header texture if needed",
+        "usage": "Use with very low opacity (e.g., opacity-10) behind the main dashboard area or AI insights panel."
+      },
+      {
+        "category": "logo_placeholder",
+        "url": "https://images.pexels.com/photos/11251720/pexels-photo-11251720.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "A historic bank building facade, can be used as a placeholder image for financial institution context.",
+        "usage": "Use as a decorative element in the sidebar or an intro page if needed."
+      }
+    ]
+  },
+  "testing_attributes": {
+    "rule": "All interactive and key informational elements MUST include a 'data-testid' attribute.",
+    "examples": [
+      "data-testid='roth-conversion-slider'",
+      "data-testid='filing-status-select'",
+      "data-testid='calculate-button'",
+      "data-testid='tax-burden-total'",
+      "data-testid='ai-insights-panel'"
+    ]
+  },
+  "specific_page_instructions": {
+    "dashboard": "1. Header: Glassmorphism nav bar with logo and basic nav. 2. Top Row: Key summary metrics (Net Worth, Total Taxes, Effective Rate) in flat cards. 3. Middle Section (Optimizer): Split view. Left: Inputs (Income, Accounts, Slider for Conversion Target). Right: Single-year Results Breakdown Table & AI Insights Panel. 4. Bottom Section: Multi-year Projection Chart (Stacked Area or Bar Chart showing balances and taxes over time).",
+    "ai_insights_panel": "Design this panel to feel 'smart' and distinct. Use the tertiary background color (#EBE8E0) or a very subtle glassmorphism effect. Include an icon (e.g., Sparkles) to denote AI. Text should be legible and conversational."
+  },
+  "instructions_to_main_agent": [
+    "NOTE: You have .js files not .tsx file, so write components in plain Javascript (.jsx) not Typescript (.tsx).",
+    "Install Google Fonts 'Outfit' and 'IBM Plex Sans'. Set up Tailwind font families.",
+    "Initialize Shadcn UI and add components: card, button, input, select, slider, table, tabs, chart (recharts).",
+    "Implement the layout using CSS Grid ('Control Room' strategy). Avoid standard Bootstrap columns.",
+    "Ensure the tax engine strictly separates ordinary income from preferential-rate income. Stack LTCG/dividends on top of ordinary income for correct marginal bracket calculation.",
+    "Include State Income Tax, NIIT (3.8%), and Medicare calculations as per requirements.",
+    "Implement the 'fill-the-bracket' target slider to help users optimize conversions.",
+    "Use 'lucide-react' for icons.",
+    "Apply 'data-testid' to all form elements, buttons, and critical data outputs."
+  ]
+}
