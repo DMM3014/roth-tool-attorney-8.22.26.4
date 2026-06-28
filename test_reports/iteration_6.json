@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend-only Phase 14 V9 reconciliation testing complete. All 9 required functional checks PASS. Headline metrics match V9 Scenario 1 within target tolerance (Lifetime Taxes $7,765,488 ≈ $7.77M; Ending Net Worth $81,426,835 ≈ $81.4M; Total Converted to Roth $3,890,427 ≈ $3.89M). Date-input editing, projection re-run, sweep, optimizer load, and scenario save/load with date preservation all verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_checklist": {
+    "app_loads_and_header_v9_longevity_engine": "PASS (raw text 'v9 Longevity Engine'; CSS class 'label-cap' uppercases it visually to 'V9 LONGEVITY ENGINE' as confirmed by screenshot)",
+    "multi_year_headline_cards_match_v9": "PASS — LT Tax $7,765,488 (target ~$7.77M, diff 0.06%); Ending NW $81,426,835 (target ~$81.4M, diff 0.03%); Total Converted $3,890,427 (target ~$3.89M, diff 0.01%)",
+    "networth_chart_renders": "PASS — SVG present in [data-testid=networth-chart]",
+    "plan_inputs_use_html_date_inputs": "PASS — inc-start-0/inc-stop-0/exp-start-0/exp-stop-0 testids present and are <input type=date>",
+    "default_client_wages_dates": "PASS — start=2026-01-01, stop=2027-05-12, description='Client Wages'",
+    "editing_inc_start_reruns_projection": "PASS — LT tax changed from $7,765,488 to $7,608,999 after inc-start-0 → 2026-03-15",
+    "editing_exp_amt_updates_projection": "PASS — LT tax changed to $4,465,384 after exp-amt-0 → 999999",
+    "single_year_optimizer_loads_and_recommends_conversion": "PASS — Optimizer tab renders Tax Snapshot + 'Recommended Conversion: $82,750' (auto-computed from slider; no errors). No standalone 'Find Optimal' button on optimizer (single-year recommendation is reactive to the bracket slider).",
+    "multi_year_find_optimal_bracket_sweep": "PASS — sweep returned 'Fill 32% bracket' as optimal with 8 ranked rows; no errors",
+    "scenarios_life_expectancies_91_96": "PASS — hh-client-le=91, hh-spouse-le=96 (hh-client-dob=1965, hh-spouse-dob=1966)",
+    "scenario_save_and_reload_preserves_date_fields": "PASS — saved 'TEST_DatePreserve', mutated dates to 2030-*, clicked Load → inc-start-0 restored to 2026-04-22, exp-start-0 to 2026-02-11, inc-stop-0 to 2027-05-12 (all exact). Cleanup delete also succeeded.",
+    "stop_at_rmd_age_75_label": "PASS — exact string 'Stop at RMD age (75)' present in projection-controls (client_dob_year=1965 → SECURE 2.0 age 75)"
+  },
+  "test_report_links": [".screenshots/final.png"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Header source string is lowercase 'v9 Longevity Engine' in Planner.jsx line 39; the user-facing requirement of 'V9' is satisfied only because CSS class 'label-cap' applies text-transform:uppercase. If that CSS is ever changed the brand wording would silently regress. Consider hard-coding the string as 'V9 Longevity Engine' to remove the dependency.",
+    "Optimizer tab does not expose a discrete 'Find Optimal' button — recommendation is reactive to the bracket slider. This is functionally correct but the review-request bullet implies a button; document the UX so it isn't mistaken for a missing control.",
+    "Projection re-run is debounced 350ms via useEffect on every scenario change which causes /api/project to fire twice in quick succession (with and without Roth). Consider batching the two calls or memoizing payload to reduce backend load when users type rapidly.",
+    "PlanInputs uses JSON.parse(JSON.stringify(p)) for deep-clone on every keystroke — fine at current scale but will become a perf concern as scenario grows; structuredClone is a faster modern alternative."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not tested per request)", "frontend": "100% (11/11 checks pass)"},
+  "test_credentials": "n/a — open calculator, no auth",
+  "seed_data_creation": "Created and deleted ephemeral scenario 'TEST_DatePreserve' during save/load verification; nothing persisted.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend already validated by prior iterations (44 pytest + phase14 reconciliation). This frontend pass confirmed V9 reconciliation, date-input wiring (inc-start/stop, exp-start/stop), and scenario save/load preserving start_date/stop_date round-trip. AI Insights was intentionally skipped (Emergent LLM budget exceeded — unrelated). If retesting, focus on the optimizer slider→recommendation reactivity and the sweep best-bracket determinism.",
+  "rca of the issue": "n/a — no defects found"
+}

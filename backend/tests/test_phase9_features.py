@@ -95,7 +95,7 @@ class TestProjectionLegacy:
         assert leg["post_death_rows"][-1]["inherited_traditional"] < 1.0  # fully depleted by yr10
         # the 10-year-forward value grows beyond the at-death value
         assert leg["after_tax_estate_to_heirs"] > leg["after_tax_estate_at_death"]
-        assert leg["heir_ordinary_rate"] == 0.30
+        assert abs(leg["heir_ordinary_rate"] - 0.3165) < 1e-6
         assert leg["step_up_at_death"] is True
 
 

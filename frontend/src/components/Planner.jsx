@@ -36,7 +36,7 @@ export const Planner = () => {
               <p className="text-xs text-muted-foreground mt-0.5">Spreadsheet-grade tax engine · ordinary vs. LTCG/dividend separation</p>
             </div>
           </div>
-          <span className="hidden md:inline label-cap text-[#7A9B76]">v8 Longevity Engine</span>
+          <span className="hidden md:inline label-cap text-[#7A9B76]">v9 Longevity Engine</span>
         </div>
       </header>
 

@@ -44,8 +44,18 @@ UNIFORM_LIFETIME = {
 }
 
 
+def rmd_start_age(birth_year: int) -> int:
+    """SECURE 2.0 required-beginning-distribution age by birth year (hard-coded)."""
+    if birth_year <= 1950:
+        return 72
+    if birth_year <= 1959:
+        return 73
+    return 75  # born 1960 or later
+
+
 def rmd_divisor(age: int) -> float:
-    if age < 73:
+    """Uniform Lifetime Table divisor (0 below the first table age)."""
+    if age < 72:
         return 0.0
     return UNIFORM_LIFETIME.get(min(age, 120), 2.0)
 

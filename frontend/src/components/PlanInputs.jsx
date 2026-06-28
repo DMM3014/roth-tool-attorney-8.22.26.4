@@ -26,6 +26,15 @@ const Sel = ({ value, onChange, options, testid }) => (
   </Select>
 );
 
+// Date input — boundary years prorate by exact day-count in the engine
+const DateInput = ({ value, onChange, testid }) => (
+  <Input type="date" value={value ?? ""} data-testid={testid}
+    onChange={(e) => onChange(e.target.value || null)}
+    className="h-8 bg-[#F9F8F6] text-xs px-2 w-[140px]" />
+);
+
+const yearOf = (d) => (d ? parseInt(String(d).slice(0, 4), 10) : null);
+
 const OWNERS = ["Client", "Spouse", "Joint"];
 const FREQS = ["Annual", "Monthly"];
 const TAX_CHARS = ["Ordinary", "SS", "Annuity", "QDiv/LTCG"];
@@ -35,6 +44,15 @@ export const PlanInputs = ({ scenario, setScenario }) => {
     setScenario((p) => {
       const next = JSON.parse(JSON.stringify(p));
       next[key][idx][field] = value;
+      return next;
+    });
+  };
+  // set a date field and keep the matching *_year in sync (engine uses the date for proration)
+  const mutDate = (key, idx, dateField, yearField, value) => {
+    setScenario((p) => {
+      const next = JSON.parse(JSON.stringify(p));
+      next[key][idx][dateField] = value;
+      next[key][idx][yearField] = yearOf(value);
       return next;
     });
   };
@@ -52,6 +70,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
           </div>
           <Button size="sm" onClick={() => addRow("income_streams", {
             id: `INC${Date.now()}`, owner: "Joint", type: "Other", description: "New income",
+            start_date: `${scenario.projection.start_year}-01-01`, stop_date: null,
             start_year: scenario.projection.start_year, stop_year: null, amount: 0, frequency: "Annual",
             cola: 0.03, tax_character: "Ordinary", taxable_pct: 1, survivor_pct: 1, use: true,
           })} className="bg-[#4A6741] hover:bg-[#3B5234] text-white" data-testid="add-income-button">
@@ -64,7 +83,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
               <tr className="border-b border-[#EBE8E0]">
                 <th className="px-2 py-1">Description</th><th className="px-2">Owner</th><th className="px-2">Tax Character</th>
                 <th className="px-2">Amount</th><th className="px-2">Freq</th><th className="px-2">COLA</th>
-                <th className="px-2">Start</th><th className="px-2">Stop</th><th className="px-2">Surv%</th><th className="px-2">Use</th><th></th>
+                <th className="px-2">Start Date</th><th className="px-2">Stop Date</th><th className="px-2">Surv%</th><th className="px-2">Use</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -76,8 +95,8 @@ export const PlanInputs = ({ scenario, setScenario }) => {
                   <Cell w="w-24"><Txt type="number" value={s.amount} onChange={(v) => mut("income_streams", i, "amount", v)} testid={`inc-amt-${i}`} /></Cell>
                   <Cell><Sel value={s.frequency} onChange={(v) => mut("income_streams", i, "frequency", v)} options={FREQS} testid={`inc-freq-${i}`} /></Cell>
                   <Cell w="w-16"><Txt type="number" step={0.01} value={s.cola} onChange={(v) => mut("income_streams", i, "cola", v)} testid={`inc-cola-${i}`} /></Cell>
-                  <Cell w="w-20"><Txt type="number" value={s.start_year} onChange={(v) => mut("income_streams", i, "start_year", v)} testid={`inc-start-${i}`} /></Cell>
-                  <Cell w="w-20"><Txt type="number" value={s.stop_year} onChange={(v) => mut("income_streams", i, "stop_year", v)} testid={`inc-stop-${i}`} /></Cell>
+                  <Cell w="w-36"><DateInput value={s.start_date} onChange={(v) => mutDate("income_streams", i, "start_date", "start_year", v)} testid={`inc-start-${i}`} /></Cell>
+                  <Cell w="w-36"><DateInput value={s.stop_date} onChange={(v) => mutDate("income_streams", i, "stop_date", "stop_year", v)} testid={`inc-stop-${i}`} /></Cell>
                   <Cell w="w-16"><Txt type="number" step={0.1} value={s.survivor_pct} onChange={(v) => mut("income_streams", i, "survivor_pct", v)} testid={`inc-surv-${i}`} /></Cell>
                   <Cell><Switch checked={s.use} onCheckedChange={(v) => mut("income_streams", i, "use", v)} data-testid={`inc-use-${i}`} /></Cell>
                   <Cell><button onClick={() => delRow("income_streams", i)} data-testid={`inc-del-${i}`}><Trash2 className="h-4 w-4 text-[#B84A4A]" /></button></Cell>
@@ -97,6 +116,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
           </div>
           <Button size="sm" onClick={() => addRow("expenses", {
             id: `EXP${Date.now()}`, owner: "Joint", category: "New expense",
+            start_date: `${scenario.projection.start_year}-01-01`, stop_date: null,
             start_year: scenario.projection.start_year, stop_year: null, amount: 0,
             frequency: "Annual", inflation: 0.03, use: true,
           })} className="bg-[#4A6741] hover:bg-[#3B5234] text-white" data-testid="add-expense-button">
@@ -108,7 +128,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
             <thead className="text-muted-foreground text-left">
               <tr className="border-b border-[#EBE8E0]">
                 <th className="px-2 py-1">Category</th><th className="px-2">Owner</th><th className="px-2">Amount</th>
-                <th className="px-2">Freq</th><th className="px-2">Inflation</th><th className="px-2">Start</th><th className="px-2">Stop</th><th className="px-2">Use</th><th></th>
+                <th className="px-2">Freq</th><th className="px-2">Inflation</th><th className="px-2">Start Date</th><th className="px-2">Stop Date</th><th className="px-2">Use</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -119,8 +139,8 @@ export const PlanInputs = ({ scenario, setScenario }) => {
                   <Cell w="w-24"><Txt type="number" value={e.amount} onChange={(v) => mut("expenses", i, "amount", v)} testid={`exp-amt-${i}`} /></Cell>
                   <Cell><Sel value={e.frequency} onChange={(v) => mut("expenses", i, "frequency", v)} options={FREQS} testid={`exp-freq-${i}`} /></Cell>
                   <Cell w="w-16"><Txt type="number" step={0.01} value={e.inflation} onChange={(v) => mut("expenses", i, "inflation", v)} testid={`exp-infl-${i}`} /></Cell>
-                  <Cell w="w-20"><Txt type="number" value={e.start_year} onChange={(v) => mut("expenses", i, "start_year", v)} testid={`exp-start-${i}`} /></Cell>
-                  <Cell w="w-20"><Txt type="number" value={e.stop_year} onChange={(v) => mut("expenses", i, "stop_year", v)} testid={`exp-stop-${i}`} /></Cell>
+                  <Cell w="w-36"><DateInput value={e.start_date} onChange={(v) => mutDate("expenses", i, "start_date", "start_year", v)} testid={`exp-start-${i}`} /></Cell>
+                  <Cell w="w-36"><DateInput value={e.stop_date} onChange={(v) => mutDate("expenses", i, "stop_date", "stop_year", v)} testid={`exp-stop-${i}`} /></Cell>
                   <Cell><Switch checked={e.use} onCheckedChange={(v) => mut("expenses", i, "use", v)} data-testid={`exp-use-${i}`} /></Cell>
                   <Cell><button onClick={() => delRow("expenses", i)} data-testid={`exp-del-${i}`}><Trash2 className="h-4 w-4 text-[#B84A4A]" /></button></Cell>
                 </tr>

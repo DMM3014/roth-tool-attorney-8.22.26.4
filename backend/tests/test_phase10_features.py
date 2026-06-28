@@ -33,8 +33,8 @@ class TestHeirRate:
         r = client.post(f"{BASE_URL}/api/projection", json={"config": defaults}, timeout=60)
         assert r.status_code == 200
         leg = r.json()["legacy"]
-        # 0.24 + 0.06 = 0.30
-        assert abs(leg["heir_ordinary_rate"] - 0.30) < 1e-6, leg
+        # V9 default blended heir ordinary rate = 0.3165 (+ 0.0 state)
+        assert abs(leg["heir_ordinary_rate"] - 0.3165) < 1e-6, leg
         # inherited_ira_tax should == end_trad * 0.30 approximately
         # We can't easily extract end_trad, but we can check it's positive
         assert leg["inherited_ira_tax"] >= 0

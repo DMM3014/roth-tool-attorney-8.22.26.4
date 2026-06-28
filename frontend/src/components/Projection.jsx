@@ -32,6 +32,10 @@ export const Projection = ({ scenario, setScenario }) => {
   const [sweep, setSweep] = useState(null);
   const [sweeping, setSweeping] = useState(false);
   const r = scenario.roth;
+  const rmdAge = (() => {
+    const by = scenario.household?.client_dob_year ?? 1965;
+    return by <= 1950 ? 72 : by <= 1959 ? 73 : 75; // SECURE 2.0
+  })();
   const targetIdx = BRACKETS.indexOf(r.target_bracket) >= 0 ? BRACKETS.indexOf(r.target_bracket) : 3;
 
   const update = (path, value) => {
@@ -181,7 +185,7 @@ export const Projection = ({ scenario, setScenario }) => {
           </div>
 
           <div className="flex items-center justify-between">
-            <Label className="text-sm">Stop at RMD age (73)</Label>
+            <Label className="text-sm">Stop at RMD age ({rmdAge})</Label>
             <Switch checked={r.stop_at_rmd_age} onCheckedChange={(v) => update("roth.stop_at_rmd_age", v)} data-testid="stop-rmd-switch" />
           </div>
 

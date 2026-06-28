@@ -7,9 +7,41 @@ the spreadsheet's CashFlow/Accounts/RMD/Income/Tax circular relationship
 from __future__ import annotations
 from datetime import date
 
-from tax_engine import compute_year_tax, optimize_conversion, rmd_divisor, bracket_ceiling, irmaa_threshold_cap
+from tax_engine import (compute_year_tax, optimize_conversion, rmd_divisor,
+                        rmd_start_age, bracket_ceiling, irmaa_threshold_cap)
 
 IRMAA_LOOKBACK_YEARS = 2  # IRMAA surcharge is based on MAGI from 2 years prior (hard-coded SSA rule)
+
+
+def _parse_date(v):
+    """Parse an ISO date string (or datetime) into a date, else None."""
+    if not v:
+        return None
+    if isinstance(v, date):
+        return v
+    s = str(v).strip()[:10]
+    try:
+        y, m, d = s.split("-")
+        return date(int(y), int(m), int(d))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _days_in_year(year: int) -> int:
+    return 366 if (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) else 365
+
+
+def _active_fraction(start_d, stop_d, year: int) -> float:
+    """Fraction of `year` that the [start_d, stop_d] window is active (inclusive
+    both ends, matching the source spreadsheet's day-count proration)."""
+    jan1 = date(year, 1, 1)
+    dec31 = date(year, 12, 31)
+    lo = max(start_d, jan1) if start_d else jan1
+    hi = min(stop_d, dec31) if stop_d else dec31
+    if hi < lo:
+        return 0.0
+    days = (hi - lo).days + 1  # inclusive
+    return days / _days_in_year(year)
 
 
 def _age(dob_year: int, year: int) -> int:
@@ -21,28 +53,43 @@ def _alive(dob_year: int, death_age: int, year: int) -> bool:
 
 
 def _stream_amount(s: dict, year: int, both_alive: bool, survivor_owner: str | None) -> tuple[float, str]:
-    """Annual amount for an income stream in `year`, returns (amount, tax_character)."""
+    """Annual amount for an income stream in `year`, returns (amount, tax_character).
+
+    If start_date/stop_date are provided, the boundary years are prorated by the
+    active day-count fraction (mirrors the spreadsheet); otherwise start_year/stop_year
+    define full-year activity. COLA compounds from the stream's start year.
+    """
+    char = s.get("tax_character", "Ordinary")
     if not s.get("use", True):
-        return 0.0, s.get("tax_character", "Ordinary")
-    start = s.get("start_year", 2026)
-    stop = s.get("stop_year")
-    if year < start:
-        return 0.0, s.get("tax_character", "Ordinary")
-    if stop and year > stop:
-        return 0.0, s.get("tax_character", "Ordinary")
+        return 0.0, char
+
+    sd = _parse_date(s.get("start_date"))
+    ed = _parse_date(s.get("stop_date"))
+    start_year = sd.year if sd else s.get("start_year", 2026)
+
+    if sd or ed:
+        frac = _active_fraction(sd, ed, year)
+        if frac <= 0:
+            return 0.0, char
+    else:
+        stop = s.get("stop_year")
+        if year < start_year or (stop and year > stop):
+            return 0.0, char
+        frac = 1.0
 
     base = s.get("amount", 0.0)
     freq = 12 if s.get("frequency", "Annual") == "Monthly" else 1
     annual = base * freq
     cola = s.get("cola", 0.0)
-    annual *= (1 + cola) ** max(0, year - start)
+    annual *= (1 + cola) ** max(0, year - start_year)
+    annual *= frac
 
     # survivor handling: if owner has died, apply survivor %
     if not both_alive and survivor_owner is not None:
         owner = s.get("owner", "Joint")
         if owner != "Joint" and owner != survivor_owner:
             annual *= s.get("survivor_pct", 0.0)
-    return annual, s.get("tax_character", "Ordinary")
+    return annual, char
 
 
 def _aggregate_income(streams, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner):
@@ -79,25 +126,40 @@ def _aggregate_income(streams, year, client_alive, spouse_alive, both_alive, has
     return ordinary_non_ss, gross_ss, recurring_div
 
 
-def _total_rmd(ira_ids, acc_by_id, bal, client_alive, spouse_alive,
+def _total_rmd(ira_ids, owner_map, bal, client_alive, spouse_alive,
                client_dob, spouse_dob, has_spouse, year):
-    """Sum Required Minimum Distributions across tax-deferred accounts."""
+    """Per-account Required Minimum Distributions across tax-deferred accounts.
+
+    Returns (total, {account_id: rmd}). `owner_map` gives the CURRENT owner of each
+    account (reassigned by spousal rollover at first death). RMD start age follows
+    SECURE 2.0 by birth year; each account's RMD is taken from THAT account.
+    """
+    rmd_by = {}
     rmd_total = 0.0
     for aid in ira_ids:
-        owner = acc_by_id[aid].get("owner", "Client")
+        owner = owner_map.get(aid, "Client")
         owner_alive = (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive)
+        rmd_by[aid] = 0.0
         if not owner_alive:
             continue
         dob = client_dob if owner == "Client" else (spouse_dob if has_spouse else client_dob)
-        div = rmd_divisor(_age(dob, year))
+        age = _age(dob, year)
+        if age < rmd_start_age(dob):
+            continue
+        div = rmd_divisor(age)
         if div > 0 and bal[aid] > 0:
-            rmd_total += bal[aid] / div
-    return rmd_total
+            rmd_by[aid] = bal[aid] / div
+            rmd_total += rmd_by[aid]
+    return rmd_total, rmd_by
 
 
 def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
                     start_year, survivor_reduction):
-    """Sum active, inflated expenses for a year (survivor-adjusted after first death)."""
+    """Sum active, inflated expenses for a year (survivor-adjusted after first death).
+
+    Expenses inflate from the projection START year (matching the source sheet) and
+    boundary years prorate by active day-count when start_date/stop_date are given.
+    """
     total = 0.0
     for e in expenses:
         if not e.get("use", True):
@@ -107,44 +169,62 @@ def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
                        or (owner == "Spouse" and spouse_alive))
         if not owner_alive:
             continue
-        es, ee = e.get("start_year", start_year), e.get("stop_year")
-        if year < es or (ee and year > ee):
-            continue
+        sd = _parse_date(e.get("start_date"))
+        ed = _parse_date(e.get("stop_date"))
+        es = e.get("start_year", sd.year if sd else start_year)
+        if sd or ed:
+            frac = _active_fraction(sd, ed, year)
+            if frac <= 0:
+                continue
+        else:
+            ee = e.get("stop_year")
+            if year < es or (ee and year > ee):
+                continue
+            frac = 1.0
         freq = 12 if e.get("frequency", "Annual") == "Monthly" else 1
-        total += e.get("amount", 0.0) * freq * (1 + e.get("inflation", 0.03)) ** max(0, year - es)
+        total += (e.get("amount", 0.0) * freq
+                  * (1 + e.get("inflation", 0.03)) ** max(0, year - start_year)
+                  * frac)
     if not both_alive:
         total *= (1 - survivor_reduction)
     return total
 
 
-def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10, heir_return=None):
-    """SECURE Act post-death inherited-account horizon after the 2nd death.
+def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10,
+                        heir_return=None, heir_ltcg_rate=0.2345, div_yield=0.02):
+    """SECURE Act post-death inherited-account horizon after the 2nd death (matches V9).
 
-    - Inherited Roth keeps compounding TAX-FREE for the full horizon.
-    - Inherited Traditional IRA must be fully depleted within the horizon; each year's
-      withdrawal is taxed at the heirs' ordinary rate and the after-tax proceeds are
-      reinvested (in a taxable sleeve) and keep compounding.
-    - Taxable & real estate received a basis step-up at death and keep compounding.
-    `heir_return`, if provided, overrides the growth rate the heirs earn on the inherited
-    Roth, remaining Traditional, taxable and reinvested sleeve (cash/RE keep their own).
-    Estate settlement cost is applied as a haircut at death (year 0).
+    - Inherited Roth keeps compounding TAX-FREE (settlement haircut applied at death).
+    - Inherited Traditional IRA is depleted over the horizon at the heirs' ordinary rate;
+      the after-tax proceeds are reinvested in a taxable sleeve. (No settlement haircut on
+      the IRA — heirs owe income tax on the full inherited balance.)
+    - Taxable & real estate received a basis step-up at death, then keep compounding;
+      the taxable/reinvest sleeves grow NET of the annual qualified-dividend tax drag
+      (return − div_yield × heir LTCG rate). Heirs owe LTCG on POST-death appreciation.
+    `heir_return`, if provided, overrides the growth rate on Roth / Traditional / taxable /
+    reinvested sleeves (used as-is, no dividend drag).
     """
     def ret(tax_type, default):
         return next((a["return"] for a in accounts if a["tax_type"] == tax_type), default)
 
-    roth_r = heir_return if heir_return is not None else ret("Tax-Free", 0.07)
-    trad_r = heir_return if heir_return is not None else ret("Tax-Deferred", 0.07)
-    tax_r = heir_return if heir_return is not None else ret("Taxable", 0.07)
+    override = heir_return is not None
+    roth_r = heir_return if override else ret("Tax-Free", 0.07)
+    trad_r = heir_return if override else ret("Tax-Deferred", 0.07)
+    base_tax_r = heir_return if override else ret("Taxable", 0.07)
+    tax_r = base_tax_r if override else (base_tax_r - div_yield * heir_ltcg_rate)  # dividend drag
     cash_r = ret("Cash", 0.03)
     re_r = ret("Real Estate", 0.035)
 
-    hc = 1 - settlement_pct  # settlement haircut at death
+    hc = 1 - settlement_pct  # settlement haircut at death (not applied to the inherited IRA)
     roth = final.get("roth", 0) * hc
-    trad = final.get("traditional", 0) * hc
-    taxable = final.get("taxable", 0) * hc
+    trad = final.get("traditional", 0)           # full balance — heirs pay income tax on it
+    taxable0 = final.get("taxable", 0) * hc
+    home0 = final.get("real_estate", 0) * hc
+    taxable = taxable0
     cash = final.get("cash", 0) * hc
-    re = final.get("real_estate", 0) * hc
+    re = home0
     reinvest = 0.0
+    reinvest_basis = 0.0
     cum_ira_tax = 0.0
 
     rows = []
@@ -154,12 +234,17 @@ def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10, he
         tax = wd * heir_rate
         cum_ira_tax += tax
         reinvest += wd - tax                 # after-tax proceeds reinvested
+        reinvest_basis += wd - tax
         roth *= (1 + roth_r)                 # tax-free compounding
         trad *= (1 + trad_r)
         taxable *= (1 + tax_r)
         reinvest *= (1 + tax_r)
         cash *= (1 + cash_r)
         re *= (1 + re_r)
+        # heirs owe LTCG on post-death appreciation of the taxable/reinvest/home sleeves
+        accrued_ltcg = heir_ltcg_rate * (max(0.0, taxable - taxable0)
+                                         + max(0.0, reinvest - reinvest_basis)
+                                         + max(0.0, re - home0))
         rows.append({
             "year_after_death": y,
             "inherited_roth": round(roth, 2),
@@ -168,9 +253,9 @@ def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10, he
             "taxable_and_reinvested": round(taxable + reinvest, 2),
             "cash": round(cash, 2),
             "real_estate": round(re, 2),
-            "total_to_heirs": round(roth + trad + taxable + reinvest + cash + re, 2),
+            "total_to_heirs": round(roth + trad + taxable + reinvest + cash + re - accrued_ltcg, 2),
         })
-    total = roth + trad + taxable + reinvest + cash + re
+    total = rows[-1]["total_to_heirs"] if rows else 0.0
     return rows, round(total, 2), round(cum_ira_tax, 2)
 
 
@@ -185,6 +270,8 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
     step_up = lc.get("step_up_at_death", True)
     horizon = lc.get("post_death_years", 10)
     heir_return = lc.get("heir_reinvest_return")  # None -> use account returns
+    heir_ltcg_rate = lc.get("heir_ltcg_rate", 0.188 + lc.get("heir_state_rate", 0.0))
+    div_yield = cfg.get("dividend_yield", 0.02)
     mortgage = cfg.get("mortgage_balance", 0.0)
     accounts = cfg["accounts"]
 
@@ -199,9 +286,10 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
     inherited_ira_tax_at_death = end_trad * heir_ord_rate
     after_tax_at_death = gross_estate - estate_settlement - inherited_ira_tax_at_death
 
-    # post-death forward value (headline metric, mirrors the spreadsheet longevity view)
+    # post-death forward value (mirrors the spreadsheet longevity view)
     post_rows, total_10yr, cum_ira_tax = _post_death_horizon(
-        final, accounts, heir_ord_rate, settlement_pct, horizon, heir_return)
+        final, accounts, heir_ord_rate, settlement_pct, horizon, heir_return,
+        heir_ltcg_rate, div_yield)
 
     return {
         "gross_estate": round(gross_estate, 2),
@@ -214,6 +302,7 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
         "heir_federal_rate": lc.get("heir_federal_rate"),
         "heir_state_rate": lc.get("heir_state_rate"),
         "heir_reinvest_return": heir_return,
+        "heir_ltcg_rate": round(heir_ltcg_rate, 4),
         "step_up_at_death": step_up,
         "horizon_years": horizon,
         "post_death_rows": post_rows,
@@ -273,15 +362,25 @@ def _withdraw(shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
     return wd, realized_ltcg, ira_withdraw, roth_withdraw
 
 
-def _apply_year_flows(bal, basis, acct, cash_boy, spend_need, ira_out, wd,
+def _apply_year_flows(bal, basis, acct, cash_need, rmd_by, conv_and_wd, wd,
                       roth_withdraw, conversion, surplus, surplus_sweep_to):
-    """Apply one year's cash spend, IRA/taxable/Roth withdrawals, conversion and surplus sweep."""
-    # cash spent first
-    spend_from_cash = min(cash_boy, spend_need)
+    """Apply one year's flows AFTER growth (mirrors the sheet's EOY = BOY×(1+r) ± flows):
+    cash spend, per-account RMD, conversion + discretionary IRA withdrawal (client IRA
+    first), taxable/Roth withdrawals, conversion in, surplus sweep.
+
+    `cash_need` is the spending shortfall after fundable income; cash covers it first.
+    Withdrawal dollar amounts were sized on BOY balances by the circular solver.
+    """
+    # cash covers the income-shortfall first (proportional across grown cash balances)
+    cash_total = sum(bal[i] for i in acct["cash"])
+    spend_from_cash = min(cash_total, max(0.0, cash_need))
     for i in acct["cash"]:
-        bal[i] = max(0.0, bal[i] - (spend_from_cash * (bal[i] / cash_boy if cash_boy else 0)))
-    # IRA out = RMD + conversion + discretionary withdrawal
-    rem = ira_out
+        bal[i] = max(0.0, bal[i] - (spend_from_cash * (bal[i] / cash_total if cash_total else 0)))
+    # each tax-deferred account satisfies its OWN RMD
+    for iid in acct["ira"]:
+        bal[iid] = max(0.0, bal[iid] - rmd_by.get(iid, 0.0))
+    # conversion + discretionary IRA withdrawal drawn in account order (client IRA first)
+    rem = conv_and_wd
     for iid in acct["ira"]:
         t = min(rem, bal[iid]); bal[iid] -= t; rem -= t
     # taxable discretionary withdrawals per converged waterfall
@@ -356,7 +455,7 @@ def run_projection(cfg: dict) -> dict:
     # mutable balances
     bal = {a["id"]: a["beginning_balance"] for a in accounts}
     basis = {a["id"]: a.get("cost_basis", 0.0) for a in accounts}
-    acc_by_id = {a["id"]: a for a in accounts}
+    owner_map = {a["id"]: a.get("owner", "Client") for a in accounts}  # reassigned at first death
 
     cash_ids = [a["id"] for a in accounts if a["tax_type"] == "Cash"]
     taxable_ids = [a["id"] for a in accounts if a["tax_type"] == "Taxable"]
@@ -369,6 +468,7 @@ def run_projection(cfg: dict) -> dict:
             "roth": roth_ids, "other": other_ids, "taxable_set": taxable_set}
 
     magi_history = {}  # year -> MAGI, for the IRMAA 2-year lookback
+    client_alive_prev, spouse_alive_prev = True, has_spouse
     rows = []
 
     for year in range(start_year, end_year + 1):
@@ -391,6 +491,14 @@ def run_projection(cfg: dict) -> dict:
         if not both_alive and has_spouse:
             survivor_owner = "Client" if client_alive else "Spouse"
 
+        # Spousal rollover the year AFTER first death: the decedent's accounts
+        # transfer to the survivor, so RMDs continue on the survivor's age.
+        if has_spouse:
+            if (not client_alive) and client_alive_prev and spouse_alive:
+                owner_map = {k: ("Spouse" if v == "Client" else v) for k, v in owner_map.items()}
+            elif (not spouse_alive) and spouse_alive_prev and client_alive:
+                owner_map = {k: ("Client" if v == "Spouse" else v) for k, v in owner_map.items()}
+
         # 65+ and medicare counts
         num65 = 0
         med_count = 0
@@ -405,8 +513,8 @@ def run_projection(cfg: dict) -> dict:
             streams, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner)
 
         # --- RMDs ---
-        rmd_total = _total_rmd(ira_ids, acc_by_id, bal, client_alive, spouse_alive,
-                               client_dob, spouse_dob, has_spouse, year)
+        rmd_total, rmd_by = _total_rmd(ira_ids, owner_map, bal, client_alive, spouse_alive,
+                                       client_dob, spouse_dob, has_spouse, year)
 
         cash_boy = sum(bal[i] for i in cash_ids)
         cash_interest = cash_boy * cash_rate
@@ -418,50 +526,49 @@ def run_projection(cfg: dict) -> dict:
         taxable_dividends = sum(bal[i] for i in taxable_ids) * div_yield
         recurring_div += taxable_dividends
 
-        # --- Roth conversion (fill the bracket) ---
+        # --- Roth conversion window (fill-the-bracket, sized inside the circular loop) ---
         ira_balance = sum(bal[i] for i in ira_ids)
-        conversion = 0.0
         in_window = roth_enabled and conv_start <= year <= conv_end and ira_balance > 0
-        client_rmd_age = _age(client_dob, year) >= 73
-        if stop_at_rmd and client_rmd_age:
+        if stop_at_rmd and _age(client_dob, year) >= rmd_start_age(client_dob):
             in_window = False
-        if in_window:
-            base_inp = {
-                "filing_status": filing, "year": year,
-                "bracket_index": bracket_index, "irmaa_index": irmaa_index,
-                "num_65plus": num65, "medicare_count": med_count,
-                "ordinary_non_ss": ordinary_non_ss,
-                "ira_distributions": rmd_total,
-                "cash_interest": cash_interest, "gross_ss": gross_ss,
-                "recurring_div_ltcg": recurring_div, "realized_ltcg": 0.0,
-                "state_rate": state_rate, "include_irmaa": include_irmaa,
-            }
-            opt = optimize_conversion(base_inp, target_rate, max_annual)
-            conversion = min(opt["recommended_conversion"], ira_balance)
-            # IRMAA tier cap: a conversion this year (Y) sets the surcharge in year Y+2,
-            # so cap against the Y+2 indexed IRMAA thresholds (forward-indexed).
-            if irmaa_cap is not None:
-                mfj = filing == "MFJ"
-                irmaa_index_yplus2 = (1 + irmaa_index_rate) ** (yr_off + IRMAA_LOOKBACK_YEARS)
-                magi_ceiling = irmaa_threshold_cap(int(irmaa_cap), mfj, irmaa_index_yplus2)
-                base_magi = opt["before"]["magi"]
-                irmaa_headroom = max(0.0, magi_ceiling - base_magi)
-                conversion = min(conversion, irmaa_headroom)
+        mfj = filing == "MFJ"
+        irmaa_index_yplus2 = (1 + irmaa_index_rate) ** (yr_off + IRMAA_LOOKBACK_YEARS)
 
         # --- expenses ---
         total_expense = _total_expenses(
             expenses, year, client_alive, spouse_alive, both_alive, start_year,
             cfg["tax"].get("survivor_spending_reduction", 0.2))
 
-        # --- circular: taxes <-> taxable withdrawals ---
-        realized_ltcg = 0.0
-        ira_withdraw = 0.0
-        roth_withdraw = 0.0
+        # --- circular solve: conversion <-> discretionary IRA withdrawal <-> taxes ---
+        # The conversion fills the target bracket on TOP of RMDs and any discretionary
+        # IRA withdrawal used to fund spending (IRA-first funding consumes bracket room,
+        # leaving less for conversion — mirrors the spreadsheet's iterative solver).
+        # Cash interest is retained in (and compounds inside) the cash account, so it is
+        # taxed but NOT counted as fundable income here.
+        realized_ltcg = ira_withdraw = roth_withdraw = conversion = total_tax = 0.0
         wd = {}
-        total_tax = 0.0
         tax_res = {}
         irmaa_magi = magi_history.get(year - IRMAA_LOOKBACK_YEARS)  # 2-yr lookback
-        for _ in range(4):
+        prev_conv = prev_wd = -1.0
+        for _ in range(40):
+            conversion = 0.0
+            if in_window:
+                base_inp = {
+                    "filing_status": filing, "year": year,
+                    "bracket_index": bracket_index, "irmaa_index": irmaa_index,
+                    "num_65plus": num65, "medicare_count": med_count,
+                    "ordinary_non_ss": ordinary_non_ss,
+                    "ira_distributions": rmd_total + ira_withdraw,
+                    "cash_interest": cash_interest, "gross_ss": gross_ss,
+                    "recurring_div_ltcg": recurring_div, "realized_ltcg": realized_ltcg,
+                    "state_rate": state_rate, "include_irmaa": include_irmaa,
+                }
+                opt = optimize_conversion(base_inp, target_rate, max_annual)
+                conversion = min(opt["recommended_conversion"], max(0.0, ira_balance - ira_withdraw))
+                if irmaa_cap is not None:
+                    magi_ceiling = irmaa_threshold_cap(int(irmaa_cap), mfj, irmaa_index_yplus2)
+                    conversion = min(conversion, max(0.0, magi_ceiling - opt["before"]["magi"]))
+
             ira_dist = rmd_total + conversion + ira_withdraw
             tax_inp = {
                 "filing_status": filing, "year": year,
@@ -477,20 +584,27 @@ def run_projection(cfg: dict) -> dict:
             tax_res = compute_year_tax(tax_inp)
             total_tax = tax_res["total_burden"]
 
-            non_portfolio_income = ordinary_non_ss + gross_ss + recurring_div + rmd_total + cash_interest
-            shortfall = (total_expense + total_tax) - non_portfolio_income - cash_boy
+            funding_income = ordinary_non_ss + gross_ss + recurring_div + rmd_total
+            shortfall = (total_expense + total_tax) - funding_income - cash_boy
             wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
                 shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
-                funding_order, ira_split, rmd_reserve_id, rmd_total)
+                funding_order, ira_split, rmd_reserve_id, rmd_total + conversion)
+
+            if abs(conversion - prev_conv) < 1.0 and abs(ira_withdraw - prev_wd) < 1.0:
+                break
+            prev_conv, prev_wd = conversion, ira_withdraw
 
         magi_history[year] = tax_res["magi"]  # record for future-year IRMAA lookback
 
         spend_need = total_expense + total_tax
-        ira_out = rmd_total + conversion + ira_withdraw
-        surplus = (ordinary_non_ss + gross_ss + recurring_div + rmd_total + cash_interest) - spend_need
-        _apply_year_flows(bal, basis, acct, cash_boy, spend_need, ira_out, wd,
-                          roth_withdraw, conversion, surplus, surplus_sweep_to)
+        funding_income = ordinary_non_ss + gross_ss + recurring_div + rmd_total
+        cash_need = spend_need - funding_income           # income covers spending first
+        surplus = funding_income - spend_need
+        # grow BOY balances first, then apply year-end flows (matches the sheet's
+        # EOY = BOY×(1+r) ± flows convention; current-year flows do not compound)
         _grow_balances(bal, accounts, div_yield)
+        _apply_year_flows(bal, basis, acct, cash_need, rmd_by, conversion + ira_withdraw, wd,
+                          roth_withdraw, conversion, surplus, surplus_sweep_to)
 
         liquid = sum(bal[i] for i in cash_ids + taxable_ids + ira_ids + roth_ids)
         net_worth = liquid + sum(bal[i] for i in other_ids)
@@ -516,6 +630,8 @@ def run_projection(cfg: dict) -> dict:
             "real_estate": round(sum(bal[i] for i in other_ids), 2),
             "net_worth": round(net_worth, 2),
         })
+
+        client_alive_prev, spouse_alive_prev = client_alive, spouse_alive
 
     total_conv = sum(r["roth_conversion"] for r in rows)
     total_tax_paid = sum(r["total_tax"] for r in rows)

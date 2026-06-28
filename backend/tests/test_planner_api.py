@@ -92,7 +92,7 @@ class TestProjection:
         assert r.status_code == 200, r.text
         d = r.json()
         assert "rows" in d and "summary" in d
-        assert len(d["rows"]) == 33, f"expected 33 rows, got {len(d['rows'])}"
+        assert len(d["rows"]) == 37, f"expected 37 rows, got {len(d['rows'])}"
         summary = d["summary"]
         for k in ["total_roth_converted", "lifetime_taxes", "ending_net_worth"]:
             assert k in summary
