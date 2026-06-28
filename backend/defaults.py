@@ -76,6 +76,10 @@ DEFAULT_SCENARIO = {
     },
     "dividend_yield": 0.02,
     "mortgage_balance": 0,
+    "withdrawal": {
+        "funding_order": "Cash → Taxable → IRA → Roth",
+        "ira_split": 0.5,
+    },
     "legacy": {
         "estate_settlement_pct": 0.01,
         "heir_ordinary_rate": 0.30,

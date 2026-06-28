@@ -149,6 +149,30 @@ export const Projection = ({ scenario, setScenario }) => {
           </div>
 
           <div className="pt-2 border-t border-[#EBE8E0]">
+            <Label className="text-xs text-muted-foreground">Funding / Withdrawal Order</Label>
+            <Select value={scenario.withdrawal?.funding_order || "Cash → Taxable → IRA → Roth"}
+              onValueChange={(v) => update("withdrawal.funding_order", v)}>
+              <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="funding-order-select"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Cash → Taxable → IRA → Roth">Cash → Taxable → IRA → Roth</SelectItem>
+                <SelectItem value="Cash → IRA → Taxable → Roth">Cash → IRA → Taxable → Roth</SelectItem>
+                <SelectItem value="Split IRA & Taxable">Split IRA &amp; Taxable</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-muted-foreground mt-1">Cash is always spent first, Roth always last. Saved per scenario.</p>
+            {scenario.withdrawal?.funding_order === "Split IRA & Taxable" && (
+              <div className="mt-3">
+                <div className="flex justify-between mb-2">
+                  <Label className="text-xs text-muted-foreground">IRA share of split</Label>
+                  <span className="font-display font-bold text-[#4A6741]" data-testid="ira-split-label">{Math.round((scenario.withdrawal?.ira_split ?? 0.5) * 100)}%</span>
+                </div>
+                <Slider min={0} max={100} step={5} value={[(scenario.withdrawal?.ira_split ?? 0.5) * 100]}
+                  onValueChange={(v) => update("withdrawal.ira_split", v[0] / 100)} data-testid="ira-split-slider" />
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-[#EBE8E0]">
             <p className="label-cap text-muted-foreground mb-3">Key Balances</p>
             {scenario.accounts.filter((a) => ["Tax-Deferred", "Taxable", "Cash"].includes(a.tax_type)).map((a, i) => {
               const idx = scenario.accounts.findIndex((x) => x.id === a.id);

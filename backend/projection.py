@@ -142,6 +142,59 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
     }
 
 
+def _withdraw(shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
+              funding_order, ira_split, rmd_reserve_id, rmd_total):
+    """Withdraw `shortfall` (after cash) honoring the funding order.
+
+    Cash is always spent before this; Roth is always last. The middle tier
+    (Taxable vs Traditional IRA) order/split is governed by `funding_order`.
+    Returns (withdrawals {id: amount}, realized_ltcg, ira_withdraw, roth_withdraw).
+    """
+    wd = {}
+    realized_ltcg = ira_withdraw = roth_withdraw = 0.0
+    if shortfall <= 0:
+        return wd, realized_ltcg, ira_withdraw, roth_withdraw
+
+    def cap(aid, is_ira):
+        taken = wd.get(aid, 0.0)
+        reserve = rmd_total if (is_ira and aid == rmd_reserve_id) else 0.0
+        return max(0.0, bal[aid] - taken - reserve)
+
+    def take_from(ids, amount, kind):
+        nonlocal realized_ltcg, ira_withdraw, roth_withdraw
+        for aid in ids:
+            if amount <= 0:
+                break
+            t = min(amount, cap(aid, kind == "ira"))
+            if t <= 0:
+                continue
+            wd[aid] = wd.get(aid, 0.0) + t
+            if kind == "taxable":
+                gain_pct = max(0.0, 1 - basis[aid] / bal[aid]) if bal[aid] > 0 else 0.0
+                realized_ltcg += t * gain_pct
+            elif kind == "ira":
+                ira_withdraw += t
+            elif kind == "roth":
+                roth_withdraw += t
+            amount -= t
+        return amount
+
+    remaining = shortfall
+    if funding_order == "Split IRA & Taxable":
+        left = take_from(ira_ids, remaining * ira_split, "ira")
+        left += take_from(taxable_ids, remaining - remaining * ira_split, "taxable")
+        left = take_from(ira_ids, left, "ira")        # overflow if one bucket dry
+        remaining = take_from(taxable_ids, left, "taxable")
+    elif funding_order == "Cash → IRA → Taxable → Roth":
+        remaining = take_from(ira_ids, remaining, "ira")
+        remaining = take_from(taxable_ids, remaining, "taxable")
+    else:  # default: Cash → Taxable → IRA → Roth
+        remaining = take_from(taxable_ids, remaining, "taxable")
+        remaining = take_from(ira_ids, remaining, "ira")
+    take_from(roth_ids, remaining, "roth")            # Roth always last
+    return wd, realized_ltcg, ira_withdraw, roth_withdraw
+
+
 def run_projection(cfg: dict) -> dict:
     h = cfg["household"]
     p = cfg["projection"]
@@ -174,6 +227,10 @@ def run_projection(cfg: dict) -> dict:
     div_yield = cfg.get("dividend_yield", 0.02)
     cash_rate = next((a["return"] for a in accounts if a["tax_type"] == "Cash"), 0.03)
 
+    wd_cfg = cfg.get("withdrawal", {})
+    funding_order = wd_cfg.get("funding_order", "Cash → Taxable → IRA → Roth")
+    ira_split = wd_cfg.get("ira_split", 0.5)
+
     # mutable balances
     bal = {a["id"]: a["beginning_balance"] for a in accounts}
     basis = {a["id"]: a.get("cost_basis", 0.0) for a in accounts}
@@ -184,6 +241,8 @@ def run_projection(cfg: dict) -> dict:
     ira_ids = [a["id"] for a in accounts if a["tax_type"] == "Tax-Deferred"]
     roth_ids = [a["id"] for a in accounts if a["tax_type"] == "Tax-Free"]
     other_ids = [a["id"] for a in accounts if a["tax_type"] in ("Real Estate",)]
+    taxable_set = set(taxable_ids)
+    rmd_reserve_id = ira_ids[0] if ira_ids else None
 
     rows = []
 
@@ -257,6 +316,7 @@ def run_projection(cfg: dict) -> dict:
         realized_ltcg = 0.0
         ira_withdraw = 0.0
         roth_withdraw = 0.0
+        wd = {}
         total_tax = 0.0
         tax_res = {}
         for _ in range(4):
@@ -274,61 +334,28 @@ def run_projection(cfg: dict) -> dict:
             tax_res = compute_year_tax(tax_inp)
             total_tax = tax_res["total_burden"]
 
-            # cash available pre-withdrawal: income streams + RMD + interest - conversion tax-if-from-cash
             non_portfolio_income = ordinary_non_ss + gross_ss + recurring_div + rmd_total + cash_interest
-            need = total_expense + total_tax
-            shortfall = need - non_portfolio_income - cash_boy
-            # reset incremental withdrawals
-            ira_withdraw = 0.0
-            roth_withdraw = 0.0
-            realized_ltcg = 0.0
-            if shortfall > 0:
-                remaining = shortfall
-                # funding order: Taxable then IRA (cash already counted, Roth last)
-                for tid in taxable_ids:
-                    if remaining <= 0:
-                        break
-                    take = min(remaining, bal[tid])
-                    gain_pct = max(0.0, 1 - basis[tid] / bal[tid]) if bal[tid] > 0 else 0.0
-                    realized_ltcg += take * gain_pct
-                    remaining -= take
-                for iid in ira_ids:
-                    if remaining <= 0:
-                        break
-                    avail = max(0.0, bal[iid] - (rmd_total if iid == ira_ids[0] else 0))
-                    take = min(remaining, avail)
-                    ira_withdraw += take
-                    remaining -= take
-                for rid in roth_ids:
-                    if remaining <= 0:
-                        break
-                    take = min(remaining, bal[rid])
-                    roth_withdraw += take
-                    remaining -= take
+            shortfall = (total_expense + total_tax) - non_portfolio_income - cash_boy
+            wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
+                shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
+                funding_order, ira_split, rmd_reserve_id, rmd_total)
 
         # --- apply flows to balances ---
         # deplete cash to need first
         spend_from_cash = min(cash_boy, total_expense + total_tax)
         for i in cash_ids:
             bal[i] = max(0.0, bal[i] - (spend_from_cash * (bal[i] / cash_boy if cash_boy else 0)))
-        # IRA: minus RMD, minus conversion, minus extra withdrawal
+        # IRA: RMD + conversion + discretionary withdrawal
         ira_out = rmd_total + conversion + ira_withdraw
         rem = ira_out
         for iid in ira_ids:
             t = min(rem, bal[iid])
             bal[iid] -= t
             rem -= t
-        # taxable withdrawals: same shortfall the loop taxed as realized LTCG above
-        shortfall_tx = (total_expense + total_tax) - (
-            ordinary_non_ss + gross_ss + recurring_div + rmd_total + cash_interest) - cash_boy
-        if shortfall_tx > 0:
-            remaining = shortfall_tx
-            for tid in taxable_ids:
-                if remaining <= 0:
-                    break
-                take = min(remaining, bal[tid])
-                bal[tid] -= take
-                remaining -= take
+        # taxable discretionary withdrawals per converged waterfall
+        for aid, amt in wd.items():
+            if aid in taxable_set:
+                bal[aid] = max(0.0, bal[aid] - amt)
         # roth withdrawals
         rem = roth_withdraw
         for rid in roth_ids:
