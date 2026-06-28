@@ -92,3 +92,5 @@ ordinary income from LTCG and qualified-dividend income.
   MAGI from year Y−2 (SSA rule). `compute_year_tax` accepts an `irmaa_magi` override (falls back to
   current-year MAGI for the single-year optimizer); the projection tracks `magi_history` and feeds the
   Y−2 value each year. Returns `irmaa_magi` in the breakdown. 34/34 backend tests pass (3 new).
+- **IRMAA tier-cap forward-indexed**: a conversion in year Y sets the Y+2 surcharge, so the cap now
+  compares year-Y MAGI against the **Y+2 indexed** IRMAA thresholds (slightly more headroom, correct).

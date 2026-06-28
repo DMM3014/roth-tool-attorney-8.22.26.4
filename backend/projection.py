@@ -396,10 +396,12 @@ def run_projection(cfg: dict) -> dict:
             }
             opt = optimize_conversion(base_inp, target_rate, max_annual)
             conversion = min(opt["recommended_conversion"], ira_balance)
-            # IRMAA tier cap: keep MAGI at/below the chosen tier ceiling
+            # IRMAA tier cap: a conversion this year (Y) sets the surcharge in year Y+2,
+            # so cap against the Y+2 indexed IRMAA thresholds (forward-indexed).
             if irmaa_cap is not None:
                 mfj = filing == "MFJ"
-                magi_ceiling = irmaa_threshold_cap(int(irmaa_cap), mfj, irmaa_index)
+                irmaa_index_yplus2 = (1 + irmaa_index_rate) ** (yr_off + IRMAA_LOOKBACK_YEARS)
+                magi_ceiling = irmaa_threshold_cap(int(irmaa_cap), mfj, irmaa_index_yplus2)
                 base_magi = opt["before"]["magi"]
                 irmaa_headroom = max(0.0, magi_ceiling - base_magi)
                 conversion = min(conversion, irmaa_headroom)
