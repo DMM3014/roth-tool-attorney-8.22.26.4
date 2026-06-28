@@ -15,6 +15,7 @@ const BRACKETS = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
 const C = { green: "#4A6741", sage: "#7A9B76", terra: "#C87941", sand: "#E6B89C", blue: "#4B7A94" };
 const AXIS_TICK = { fontSize: 11 };
 const BAR_RADIUS = [3, 3, 0, 0];
+const YEARS_AFTER_DEATH_LABEL = { value: "Years after death", position: "insideBottom", offset: -2, fontSize: 10 };
 
 const metricColor = (accent, warn) => {
   if (accent) return "text-[#4A6741]";
@@ -411,7 +412,7 @@ export const Projection = ({ scenario, setScenario }) => {
         <ResponsiveContainer width="100%" height={220}>
           <ComposedChart data={legacy?.post_death_rows || []}>
             <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year_after_death" tick={AXIS_TICK} label={{ value: "Years after death", position: "insideBottom", offset: -2, fontSize: 10 }} />
+            <XAxis dataKey="year_after_death" tick={AXIS_TICK} label={YEARS_AFTER_DEATH_LABEL} />
             <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
             <Tooltip formatter={ttFmt} />
             <Legend />
@@ -436,7 +437,7 @@ export const Projection = ({ scenario, setScenario }) => {
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={postCompare}>
             <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={AXIS_TICK} label={{ value: "Years after death", position: "insideBottom", offset: -2, fontSize: 10 }} />
+            <XAxis dataKey="year" tick={AXIS_TICK} label={YEARS_AFTER_DEATH_LABEL} />
             <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
             <Tooltip formatter={ttFmt} />
             <Legend />

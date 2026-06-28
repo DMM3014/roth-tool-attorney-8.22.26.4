@@ -273,6 +273,46 @@ def _withdraw(shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
     return wd, realized_ltcg, ira_withdraw, roth_withdraw
 
 
+def _apply_year_flows(bal, basis, acct, cash_boy, spend_need, ira_out, wd,
+                      roth_withdraw, conversion, surplus, surplus_sweep_to):
+    """Apply one year's cash spend, IRA/taxable/Roth withdrawals, conversion and surplus sweep."""
+    # cash spent first
+    spend_from_cash = min(cash_boy, spend_need)
+    for i in acct["cash"]:
+        bal[i] = max(0.0, bal[i] - (spend_from_cash * (bal[i] / cash_boy if cash_boy else 0)))
+    # IRA out = RMD + conversion + discretionary withdrawal
+    rem = ira_out
+    for iid in acct["ira"]:
+        t = min(rem, bal[iid]); bal[iid] -= t; rem -= t
+    # taxable discretionary withdrawals per converged waterfall
+    for aid, amt in wd.items():
+        if aid in acct["taxable_set"]:
+            bal[aid] = max(0.0, bal[aid] - amt)
+    # roth withdrawals, then conversion lands in roth
+    rem = roth_withdraw
+    for rid in acct["roth"]:
+        t = min(rem, bal[rid]); bal[rid] -= t; rem -= t
+    if conversion > 0 and acct["roth"]:
+        bal[acct["roth"][0]] += conversion
+    # reinvest surplus (after-tax) — default to taxable brokerage (gross return), add basis
+    if surplus > 0:
+        if surplus_sweep_to == "Taxable" and acct["taxable"]:
+            bal[acct["taxable"][0]] += surplus
+            basis[acct["taxable"][0]] += surplus
+        elif acct["cash"]:
+            bal[acct["cash"][0]] += surplus
+
+
+def _grow_balances(bal, accounts, div_yield):
+    """End-of-year growth: taxable appreciates net of dividend yield; others at full return."""
+    for a in accounts:
+        aid, r = a["id"], a["return"]
+        if a["tax_type"] == "Taxable":
+            bal[aid] *= (1 + (r - div_yield))
+        elif a["tax_type"] in ("Tax-Deferred", "Tax-Free", "Cash", "Real Estate"):
+            bal[aid] *= (1 + r)
+
+
 def run_projection(cfg: dict) -> dict:
     h = cfg["household"]
     p = cfg["projection"]
@@ -325,6 +365,8 @@ def run_projection(cfg: dict) -> dict:
     other_ids = [a["id"] for a in accounts if a["tax_type"] in ("Real Estate",)]
     taxable_set = set(taxable_ids)
     rmd_reserve_id = ira_ids[0] if ira_ids else None
+    acct = {"cash": cash_ids, "taxable": taxable_ids, "ira": ira_ids,
+            "roth": roth_ids, "other": other_ids, "taxable_set": taxable_set}
 
     magi_history = {}  # year -> MAGI, for the IRMAA 2-year lookback
     rows = []
@@ -443,50 +485,12 @@ def run_projection(cfg: dict) -> dict:
 
         magi_history[year] = tax_res["magi"]  # record for future-year IRMAA lookback
 
-        # --- apply flows to balances ---
-        # deplete cash to need first
-        spend_from_cash = min(cash_boy, total_expense + total_tax)
-        for i in cash_ids:
-            bal[i] = max(0.0, bal[i] - (spend_from_cash * (bal[i] / cash_boy if cash_boy else 0)))
-        # IRA: RMD + conversion + discretionary withdrawal
+        spend_need = total_expense + total_tax
         ira_out = rmd_total + conversion + ira_withdraw
-        rem = ira_out
-        for iid in ira_ids:
-            t = min(rem, bal[iid])
-            bal[iid] -= t
-            rem -= t
-        # taxable discretionary withdrawals per converged waterfall
-        for aid, amt in wd.items():
-            if aid in taxable_set:
-                bal[aid] = max(0.0, bal[aid] - amt)
-        # roth withdrawals
-        rem = roth_withdraw
-        for rid in roth_ids:
-            t = min(rem, bal[rid])
-            bal[rid] -= t
-            rem -= t
-        # conversion lands in roth
-        if conversion > 0 and roth_ids:
-            bal[roth_ids[0]] += conversion
-
-        # reinvest surplus income; default sweeps to taxable brokerage (compounds at
-        # gross return) rather than idle cash. Reinvested $ are after-tax, so add to basis.
-        surplus = (ordinary_non_ss + gross_ss + recurring_div + rmd_total + cash_interest) - (total_expense + total_tax)
-        if surplus > 0:
-            if surplus_sweep_to == "Taxable" and taxable_ids:
-                bal[taxable_ids[0]] += surplus
-                basis[taxable_ids[0]] += surplus
-            elif cash_ids:
-                bal[cash_ids[0]] += surplus
-
-        # --- grow balances (end of year) ---
-        for a in accounts:
-            aid = a["id"]
-            r = a["return"]
-            if a["tax_type"] == "Taxable":
-                bal[aid] *= (1 + (r - div_yield))
-            elif a["tax_type"] in ("Tax-Deferred", "Tax-Free", "Cash", "Real Estate"):
-                bal[aid] *= (1 + r)
+        surplus = (ordinary_non_ss + gross_ss + recurring_div + rmd_total + cash_interest) - spend_need
+        _apply_year_flows(bal, basis, acct, cash_boy, spend_need, ira_out, wd,
+                          roth_withdraw, conversion, surplus, surplus_sweep_to)
+        _grow_balances(bal, accounts, div_yield)
 
         liquid = sum(bal[i] for i in cash_ids + taxable_ids + ira_ids + roth_ids)
         net_worth = liquid + sum(bal[i] for i in other_ids)
