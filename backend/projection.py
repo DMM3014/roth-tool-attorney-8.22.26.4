@@ -9,6 +9,8 @@ from datetime import date
 
 from tax_engine import compute_year_tax, optimize_conversion, rmd_divisor, bracket_ceiling, irmaa_threshold_cap
 
+IRMAA_LOOKBACK_YEARS = 2  # IRMAA surcharge is based on MAGI from 2 years prior (hard-coded SSA rule)
+
 
 def _age(dob_year: int, year: int) -> int:
     return year - dob_year
@@ -324,6 +326,7 @@ def run_projection(cfg: dict) -> dict:
     taxable_set = set(taxable_ids)
     rmd_reserve_id = ira_ids[0] if ira_ids else None
 
+    magi_history = {}  # year -> MAGI, for the IRMAA 2-year lookback
     rows = []
 
     for year in range(start_year, end_year + 1):
@@ -413,6 +416,7 @@ def run_projection(cfg: dict) -> dict:
         wd = {}
         total_tax = 0.0
         tax_res = {}
+        irmaa_magi = magi_history.get(year - IRMAA_LOOKBACK_YEARS)  # 2-yr lookback
         for _ in range(4):
             ira_dist = rmd_total + conversion + ira_withdraw
             tax_inp = {
@@ -424,6 +428,7 @@ def run_projection(cfg: dict) -> dict:
                 "cash_interest": cash_interest, "gross_ss": gross_ss,
                 "recurring_div_ltcg": recurring_div, "realized_ltcg": realized_ltcg,
                 "state_rate": state_rate, "include_irmaa": include_irmaa,
+                "irmaa_magi": irmaa_magi,
             }
             tax_res = compute_year_tax(tax_inp)
             total_tax = tax_res["total_burden"]
@@ -433,6 +438,8 @@ def run_projection(cfg: dict) -> dict:
             wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
                 shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
                 funding_order, ira_split, rmd_reserve_id, rmd_total)
+
+        magi_history[year] = tax_res["magi"]  # record for future-year IRMAA lookback
 
         # --- apply flows to balances ---
         # deplete cash to need first

@@ -86,3 +86,9 @@ ordinary income from LTCG and qualified-dividend income.
   portion) for the selected bracket vs no conversions, with a headline advantage badge — makes the
   heir-level Roth advantage (or its absence via taxable step-up) visible at a glance.
 - 31/31 backend tests pass; full frontend validated.
+
+### Phase 14 (2026-06-28)
+- **IRMAA 2-year MAGI lookback (hard-coded)**: the Medicare surcharge in year Y is now driven by the
+  MAGI from year Y−2 (SSA rule). `compute_year_tax` accepts an `irmaa_magi` override (falls back to
+  current-year MAGI for the single-year optimizer); the projection tracks `magi_history` and feeds the
+  Y−2 value each year. Returns `irmaa_magi` in the breakdown. 34/34 backend tests pass (3 new).

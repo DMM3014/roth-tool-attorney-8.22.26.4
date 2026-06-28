@@ -176,7 +176,7 @@ export const Projection = ({ scenario, setScenario }) => {
                 <SelectItem value="3">Stay ≤ IRMAA Tier 3</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[10px] text-muted-foreground mt-1">Caps conversions so MAGI stays within the chosen Medicare/IRMAA tier.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Caps conversions so MAGI stays within the chosen Medicare/IRMAA tier. Surcharges apply on a hard-coded 2-year MAGI lookback.</p>
           </div>
 
           <div className="flex items-center justify-between">

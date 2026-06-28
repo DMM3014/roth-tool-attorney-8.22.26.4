@@ -178,6 +178,11 @@ def compute_year_tax(inp: dict) -> dict:
 
     agi = ordinary_before_ss + total_pref + taxable_ss               # R21
     magi = agi                                                       # R22
+    # IRMAA uses a hard-coded 2-year MAGI lookback: the Medicare surcharge this
+    # year is set by the MAGI from 2 years prior. When the projection supplies that
+    # prior MAGI via `irmaa_magi`, use it; otherwise fall back to current-year MAGI.
+    irmaa_magi = inp.get("irmaa_magi")
+    magi_for_irmaa = irmaa_magi if irmaa_magi is not None else magi
 
     std = standard_deduction(mfj, num65, idx)                        # R23
     senior = senior_bonus_deduction(mfj, num65, magi, year)          # R24
@@ -192,7 +197,7 @@ def compute_year_tax(inp: dict) -> dict:
     state_tax = max(0.0, state_rate * taxable_income)                # R35
 
     tier, medicare = medicare_premiums(
-        magi, mfj, irmaa_idx, medicare_count, include_irmaa,
+        magi_for_irmaa, mfj, irmaa_idx, medicare_count, include_irmaa,
         inp.get("part_b_base", 2435.0), inp.get("part_d_base", 600.0))  # R39-R42
 
     total_tax = fed_ordinary + fed_ltcg + niit + state_tax           # R45
@@ -212,6 +217,7 @@ def compute_year_tax(inp: dict) -> dict:
         "provisional_income": round(provisional, 2),
         "agi": round(agi, 2),
         "magi": round(magi, 2),
+        "irmaa_magi": round(magi_for_irmaa, 2),
         "standard_deduction": round(std, 2),
         "senior_bonus": round(senior, 2),
         "taxable_income": round(taxable_income, 2),
