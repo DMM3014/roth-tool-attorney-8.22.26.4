@@ -76,3 +76,13 @@ ordinary income from LTCG and qualified-dividend income.
   10-year-forward value; `after_tax_estate_at_death` retained. Legacy card visualizes Roth growth
   vs IRA depletion. With the richer model the default optimal shifts to a more conservative bracket.
 - 24/24 backend tests pass; full frontend validated.
+
+### Phase 13 (2026-06-28)
+- **Configurable post-death horizon** (`legacy.post_death_years`) and **heirs' reinvestment return**
+  (`legacy.heir_reinvest_return`, blank = use account returns) — exposed on Plan Inputs.
+- **IRMAA tier-cap on conversions** (`roth.irmaa_tier_cap`: None/0/1/2/3): caps conversions so MAGI
+  stays within the chosen Medicare/IRMAA tier (new `irmaa_threshold_cap` helper). UI selector added.
+- **"Convert vs. Don't" post-death comparison chart**: overlays heir after-tax value (and Roth-only
+  portion) for the selected bracket vs no conversions, with a headline advantage badge — makes the
+  heir-level Roth advantage (or its absence via taxable step-up) visible at a glance.
+- 31/31 backend tests pass; full frontend validated.
