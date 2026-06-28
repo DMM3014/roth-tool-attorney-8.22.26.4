@@ -1,0 +1,31 @@
+{
+  "summary": "Phase 11 (SURPLUS sweep + 10-yr SECURE post-death horizon) fully validated. Backend pytest: 24/24 PASSED (added test_phase11_features.py: 6 new tests, kept all 18 prior). Confirmed legacy block now contains all required fields incl. post_death_rows (len=10), horizon_years=10, after_tax_estate_at_death, heir_federal_rate, heir_state_rate. Inherited Roth grows monotonically (tax-free) and inherited Traditional fully depletes by year 10. Headline after_tax_estate_to_heirs (10-yr) > after_tax_estate_at_death. surplus_sweep_to: Taxable vs Cash produces measurably different ending net worth (Taxable=$68.86M vs Cash=$59.15M). Default sweep best label is a valid bracket label and best==ranked[0]. UI verified end-to-end on all 4 tabs: legacy-card shows '10-Year SECURE Horizon' title, all 5 estate-* metrics populate, ComposedChart renders (2 areas + 1 line), surplus-sweep-select / funding-order-select / ira-split-slider / max-annual-conversion all wired and re-run projection. Scenarios save/load/delete preserves withdrawal.surplus_sweep_to and legacy settings (heir_federal_rate=0.24, post_death_years=10).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase11_features.py",
+    "/app/backend/tests/test_phase10_features.py",
+    "/app/backend/tests/test_phase9_features.py",
+    "/app/backend/tests/test_planner_api.py",
+    "/app/test_reports/pytest/iter4_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "projection.py run_projection (~540 lines) is large; the income/RMD/withdraw/legacy helpers are already modularized but the main loop is doing ~10 distinct steps and would benefit from extracting the EOY apply/grow stage into a helper for readability and unit-testability.",
+    "_post_death_horizon depletes Traditional with `trad / (years - y + 1)` BEFORE growing the remaining balance (good — mimics start-of-year RMD-like withdrawal), but the order means the last year withdraws the entire remaining balance and the post-withdrawal `trad *= (1 + trad_r)` line grows a zero balance — harmless but worth a comment for clarity.",
+    "Heir state rate persists to scenarios but if user blanks legacy.heir_federal_rate (None) only via raw API, the `if 'heir_federal_rate' in lc` branch will sum None+x and crash. Defensive default would be safer (`lc.get('heir_federal_rate') or 0`).",
+    "Surplus sweep into taxable adds the entire surplus to basis (correct) but the same EOY appreciation `(r - div_yield)` is then applied to the augmented balance — fine for first year but means the dividend yield on the freshly-swept surplus is implicitly assumed to be paid out as recurring_div in the SAME year (already counted in surplus). Worth documenting in the API contract.",
+    "frontend `ttFmt = (v) => fmtUSD(v)` is fine but charts apply it to all axes including year_after_death (integer 1..10) in legacy chart tooltips, which will format '1' as '$1' — minor cosmetic.",
+    "/api/insights still returns 200 with '[Error generating insights: ...]' inline on LLM failure; better to surface a structured error so UI can degrade gracefully (carried over from iter3)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase11_features.py"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "100%"},
+  "test_credentials": "No auth required",
+  "seed_data_creation": "Created and cleaned up TEST_phase11_sweep_cash scenario via UI; cleaned residual TEST_* scenarios from prior iterations via DELETE /api/scenarios/{id}.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 4 tabs (tab-optimizer, tab-projection, tab-inputs, tab-scenarios) load. Key Projection testids: surplus-sweep-select, funding-order-select, ira-split-slider (only visible when 'Split IRA & Taxable' selected), max-annual-conversion, proj-bracket-slider, proj-target-label, find-optimal-button, sweep-card, sweep-row-{i}, optimal-result, legacy-card, estate-at-death, estate-ira-tax, estate-roth, estate-gross, estate-after-tax, export-csv-button, print-button. Scenarios use testids scenario-name-input, save-scenario-button, load-{id}, del-{id} (NOT 'scenario-row-{i}'). Defaults: surplus_sweep_to=Taxable, post_death_years=10, heir_federal_rate=0.24, heir_state_rate=0.06 -> heir_ordinary_rate=0.30. Default projection ending_net_worth=$68.86M; switching surplus_sweep_to=Cash drops it to $59.15M. Default after_tax_estate_to_heirs (10-yr) ~$128.85M vs at_death $66.35M. Default sweep best label observed: 'Fill 24% bracket' (or similar valid bracket; matches main-agent note).",
+  "rca of the issue": "N/A — no defects found."
+}

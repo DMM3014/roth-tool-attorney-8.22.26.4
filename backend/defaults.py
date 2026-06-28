@@ -79,11 +79,13 @@ DEFAULT_SCENARIO = {
     "withdrawal": {
         "funding_order": "Cash → Taxable → IRA → Roth",
         "ira_split": 0.5,
+        "surplus_sweep_to": "Taxable",
     },
     "legacy": {
         "estate_settlement_pct": 0.01,
         "heir_federal_rate": 0.24,
         "heir_state_rate": 0.06,
         "step_up_at_death": True,
+        "post_death_years": 10,
     },
 }

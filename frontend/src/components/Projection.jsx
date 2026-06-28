@@ -177,6 +177,18 @@ export const Projection = ({ scenario, setScenario }) => {
                   onValueChange={(v) => update("withdrawal.ira_split", v[0] / 100)} data-testid="ira-split-slider" />
               </div>
             )}
+            <div className="mt-3">
+              <Label className="text-xs text-muted-foreground">Reinvest Surplus Income To</Label>
+              <Select value={scenario.withdrawal?.surplus_sweep_to || "Taxable"}
+                onValueChange={(v) => update("withdrawal.surplus_sweep_to", v)}>
+                <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="surplus-sweep-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Taxable">Taxable brokerage (gross return)</SelectItem>
+                  <SelectItem value="Cash">Cash (cash rate)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">Leftover income/dividends reinvested here; taxable compounds at the gross return with added basis.</p>
+            </div>
           </div>
 
           <div className="pt-2 border-t border-[#EBE8E0]">
@@ -355,18 +367,30 @@ export const Projection = ({ scenario, setScenario }) => {
       <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="legacy-card">
         <div className="flex items-center gap-2 mb-4">
           <Gift className="h-4 w-4 text-[#4A6741]" />
-          <h3 className="font-display text-base font-bold tracking-tight">Legacy & Estate at Second Death</h3>
+          <h3 className="font-display text-base font-bold tracking-tight">Legacy & Estate — {legacy?.horizon_years || 10}-Year SECURE Horizon After 2nd Death</h3>
         </div>
-        <p className="text-xs text-muted-foreground mb-5">
-          Taxable & home receive a basis step-up (no embedded-gain tax). Inherited traditional IRA is taxed to heirs (SECURE 10-year, PV-at-death) at {fmtPct(legacy?.heir_ordinary_rate)}. Roth passes tax-free.
+        <p className="text-xs text-muted-foreground mb-5 max-w-4xl">
+          Headline value is projected <span className="font-medium">{legacy?.horizon_years || 10} years after the second death</span>: the inherited Roth keeps compounding <span className="font-medium">tax-free</span>, while the inherited Traditional IRA must be fully drawn down within 10 years and is taxed to heirs at {fmtPct(legacy?.heir_ordinary_rate)} (after-tax proceeds reinvested). Taxable &amp; home received a basis step-up at death.
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <EstateMetric label="Gross Estate" value={fmtUSD(legacy?.gross_estate)} testid="estate-gross" />
-          <EstateMetric label="Settlement Costs" value={`−${fmtUSD(legacy?.estate_settlement)}`} warn testid="estate-settlement" />
-          <EstateMetric label="Inherited IRA Tax" value={`−${fmtUSD(legacy?.inherited_ira_tax)}`} warn testid="estate-ira-tax" />
-          <EstateMetric label="Tax-Free Roth to Heirs" value={fmtUSD(legacy?.tax_free_roth_to_heirs)} accent testid="estate-roth" />
-          <EstateMetric label="After-Tax Estate to Heirs" value={fmtUSD(legacy?.after_tax_estate_to_heirs)} accent big testid="estate-after-tax" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <EstateMetric label="After-Tax at Death" value={fmtUSD(legacy?.after_tax_estate_at_death)} testid="estate-at-death" />
+          <EstateMetric label={`Inherited IRA Tax (${legacy?.horizon_years || 10}-yr)`} value={`−${fmtUSD(legacy?.inherited_ira_tax)}`} warn testid="estate-ira-tax" />
+          <EstateMetric label={`Tax-Free Roth @ Yr ${legacy?.horizon_years || 10}`} value={fmtUSD(legacy?.tax_free_roth_to_heirs)} accent testid="estate-roth" />
+          <EstateMetric label="Gross Estate at Death" value={fmtUSD(legacy?.gross_estate)} testid="estate-gross" />
+          <EstateMetric label={`After-Tax to Heirs @ Yr ${legacy?.horizon_years || 10}`} value={fmtUSD(legacy?.after_tax_estate_to_heirs)} accent big testid="estate-after-tax" />
         </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <ComposedChart data={legacy?.post_death_rows || []}>
+            <CartesianGrid strokeOpacity={0.1} vertical={false} />
+            <XAxis dataKey="year_after_death" tick={AXIS_TICK} label={{ value: "Years after death", position: "insideBottom", offset: -2, fontSize: 10 }} />
+            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
+            <Tooltip formatter={ttFmt} />
+            <Legend />
+            <Area type="monotone" dataKey="inherited_roth" name="Inherited Roth (tax-free)" stroke={C.green} fill={C.green} fillOpacity={0.75} />
+            <Area type="monotone" dataKey="inherited_traditional" name="Inherited Traditional (depleting)" stroke={C.terra} fill={C.terra} fillOpacity={0.65} />
+            <Line type="monotone" dataKey="total_to_heirs" name="Total to Heirs" stroke={C.blue} strokeWidth={2.5} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
       </Card>
 
       {/* AI */}

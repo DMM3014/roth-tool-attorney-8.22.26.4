@@ -115,18 +115,73 @@ def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
     return total
 
 
+def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10):
+    """SECURE Act 10-year inherited-account horizon after the 2nd death.
+
+    - Inherited Roth keeps compounding TAX-FREE for the full 10 years.
+    - Inherited Traditional IRA must be fully depleted within 10 years; each year's
+      withdrawal is taxed at the heirs' ordinary rate and the after-tax proceeds are
+      reinvested (in a taxable sleeve) and keep compounding.
+    - Taxable & real estate received a basis step-up at death and keep compounding.
+    Estate settlement cost is applied as a haircut at death (year 0).
+    """
+    def ret(tax_type, default):
+        return next((a["return"] for a in accounts if a["tax_type"] == tax_type), default)
+
+    roth_r = ret("Tax-Free", 0.07)
+    trad_r = ret("Tax-Deferred", 0.07)
+    tax_r = ret("Taxable", 0.07)
+    cash_r = ret("Cash", 0.03)
+    re_r = ret("Real Estate", 0.035)
+
+    hc = 1 - settlement_pct  # settlement haircut at death
+    roth = final.get("roth", 0) * hc
+    trad = final.get("traditional", 0) * hc
+    taxable = final.get("taxable", 0) * hc
+    cash = final.get("cash", 0) * hc
+    re = final.get("real_estate", 0) * hc
+    reinvest = 0.0
+    cum_ira_tax = 0.0
+
+    rows = []
+    for y in range(1, years + 1):
+        wd = trad / (years - y + 1)          # deplete remaining over remaining years
+        trad -= wd
+        tax = wd * heir_rate
+        cum_ira_tax += tax
+        reinvest += wd - tax                 # after-tax proceeds reinvested
+        roth *= (1 + roth_r)                 # tax-free compounding
+        trad *= (1 + trad_r)
+        taxable *= (1 + tax_r)
+        reinvest *= (1 + tax_r)
+        cash *= (1 + cash_r)
+        re *= (1 + re_r)
+        rows.append({
+            "year_after_death": y,
+            "inherited_roth": round(roth, 2),
+            "inherited_traditional": round(trad, 2),
+            "ira_tax_paid": round(tax, 2),
+            "taxable_and_reinvested": round(taxable + reinvest, 2),
+            "cash": round(cash, 2),
+            "real_estate": round(re, 2),
+            "total_to_heirs": round(roth + trad + taxable + reinvest + cash + re, 2),
+        })
+    total = roth + trad + taxable + reinvest + cash + re
+    return rows, round(total, 2), round(cum_ira_tax, 2)
+
+
 def _compute_legacy(cfg: dict, final: dict) -> dict:
-    """Estate at second death: step-up on taxable/home, heir tax on inherited IRA, tax-free Roth."""
+    """Estate at second death + SECURE Act 10-year inherited-account horizon."""
     lc = cfg.get("legacy", {})
     settlement_pct = lc.get("estate_settlement_pct", 0.01)
-    # Heir ordinary rate = heir federal marginal + heir state marginal (what heirs pay
-    # to draw down the inherited Traditional IRA). Falls back to an explicit blended rate.
     if "heir_federal_rate" in lc or "heir_state_rate" in lc:
         heir_ord_rate = lc.get("heir_federal_rate", 0.24) + lc.get("heir_state_rate", 0.0)
     else:
         heir_ord_rate = lc.get("heir_ordinary_rate", 0.30)
     step_up = lc.get("step_up_at_death", True)
+    horizon = lc.get("post_death_years", 10)
     mortgage = cfg.get("mortgage_balance", 0.0)
+    accounts = cfg["accounts"]
 
     end_nw = final.get("net_worth", 0)
     end_trad = final.get("traditional", 0)
@@ -134,18 +189,28 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
 
     gross_estate = max(0.0, end_nw - mortgage)
     estate_settlement = settlement_pct * gross_estate
-    inherited_ira_tax = end_trad * heir_ord_rate  # SECURE 10-yr, PV-at-death approximation
-    after_tax_estate = gross_estate - estate_settlement - inherited_ira_tax
+
+    # immediate (at-death) after-tax value — PV-at-death approximation
+    inherited_ira_tax_at_death = end_trad * heir_ord_rate
+    after_tax_at_death = gross_estate - estate_settlement - inherited_ira_tax_at_death
+
+    # 10-year forward value (headline metric, mirrors the spreadsheet longevity view)
+    post_rows, total_10yr, cum_ira_tax = _post_death_horizon(
+        final, accounts, heir_ord_rate, settlement_pct, horizon)
+
     return {
         "gross_estate": round(gross_estate, 2),
         "estate_settlement": round(estate_settlement, 2),
-        "inherited_ira_tax": round(inherited_ira_tax, 2),
-        "tax_free_roth_to_heirs": round(end_roth, 2),
-        "after_tax_estate_to_heirs": round(after_tax_estate, 2),
+        "inherited_ira_tax": round(cum_ira_tax, 2),
+        "tax_free_roth_to_heirs": post_rows[-1]["inherited_roth"] if post_rows else round(end_roth, 2),
+        "after_tax_estate_to_heirs": total_10yr,
+        "after_tax_estate_at_death": round(after_tax_at_death, 2),
         "heir_ordinary_rate": round(heir_ord_rate, 4),
         "heir_federal_rate": lc.get("heir_federal_rate"),
         "heir_state_rate": lc.get("heir_state_rate"),
         "step_up_at_death": step_up,
+        "horizon_years": horizon,
+        "post_death_rows": post_rows,
     }
 
 
@@ -237,6 +302,7 @@ def run_projection(cfg: dict) -> dict:
     wd_cfg = cfg.get("withdrawal", {})
     funding_order = wd_cfg.get("funding_order", "Cash → Taxable → IRA → Roth")
     ira_split = wd_cfg.get("ira_split", 0.5)
+    surplus_sweep_to = wd_cfg.get("surplus_sweep_to", "Taxable")
 
     # mutable balances
     bal = {a["id"]: a["beginning_balance"] for a in accounts}
@@ -380,10 +446,15 @@ def run_projection(cfg: dict) -> dict:
         if conversion > 0 and roth_ids:
             bal[roth_ids[0]] += conversion
 
-        # sweep surplus income into cash
+        # reinvest surplus income; default sweeps to taxable brokerage (compounds at
+        # gross return) rather than idle cash. Reinvested $ are after-tax, so add to basis.
         surplus = (ordinary_non_ss + gross_ss + recurring_div + rmd_total + cash_interest) - (total_expense + total_tax)
-        if surplus > 0 and cash_ids:
-            bal[cash_ids[0]] += surplus
+        if surplus > 0:
+            if surplus_sweep_to == "Taxable" and taxable_ids:
+                bal[taxable_ids[0]] += surplus
+                basis[taxable_ids[0]] += surplus
+            elif cash_ids:
+                bal[cash_ids[0]] += surplus
 
         # --- grow balances (end of year) ---
         for a in accounts:

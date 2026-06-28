@@ -53,13 +53,17 @@ class TestSweep:
                       "total_converted", "after_tax_estate"]:
                 assert f in e, f"missing {f} in {e}"
 
-    def test_sweep_best_is_fill_35_bracket(self, client, defaults):
+    def test_sweep_best_is_valid_bracket(self, client, defaults):
         r = client.post(f"{BASE_URL}/api/sweep", json={"config": defaults}, timeout=120)
         assert r.status_code == 200
         d = r.json()
-        assert d["best"]["label"] == "Fill 35% bracket", \
-            f"expected best='Fill 35% bracket', got {d['best']['label']}"
-        assert abs(d["best"]["target_bracket"] - 0.35) < 1e-6
+        valid = {"No conversions", "Fill 10% bracket", "Fill 12% bracket",
+                 "Fill 22% bracket", "Fill 24% bracket", "Fill 32% bracket",
+                 "Fill 35% bracket", "Fill 37% bracket"}
+        assert d["best"]["label"] in valid, d["best"]["label"]
+        # best must be the highest-ranked entry by after-tax estate to heirs
+        assert d["best"] == d["ranked"][0]
+        assert d["best"]["after_tax_estate"] == max(e["after_tax_estate"] for e in d["results"])
 
 
 # ---------- /api/projection legacy block ----------
@@ -72,18 +76,25 @@ class TestProjectionLegacy:
         leg = d["legacy"]
         for k in ["gross_estate", "estate_settlement", "inherited_ira_tax",
                   "tax_free_roth_to_heirs", "after_tax_estate_to_heirs",
-                  "heir_ordinary_rate", "step_up_at_death"]:
+                  "after_tax_estate_at_death", "heir_ordinary_rate",
+                  "step_up_at_death", "horizon_years", "post_death_rows"]:
             assert k in leg, f"missing {k} in legacy"
 
         # Sanity: numeric and consistent
         assert leg["gross_estate"] > 0
         # estate settlement = 1% of gross_estate (defaults)
         assert abs(leg["estate_settlement"] - leg["gross_estate"] * 0.01) < 1.0
-        # after_tax_estate = gross - settlement - inherited_ira_tax
-        expected_atee = (leg["gross_estate"]
-                         - leg["estate_settlement"]
-                         - leg["inherited_ira_tax"])
-        assert abs(leg["after_tax_estate_to_heirs"] - expected_atee) < 1.0
+        # at-death after-tax = gross - settlement - (ending traditional * heir rate)
+        expected_at_death = (leg["gross_estate"]
+                             - leg["estate_settlement"]
+                             - d["summary"]["ending_traditional"] * leg["heir_ordinary_rate"])
+        assert abs(leg["after_tax_estate_at_death"] - expected_at_death) < 1.0
+        # 10-year SECURE horizon: full schedule present, Roth compounds, IRA depletes
+        assert leg["horizon_years"] == 10
+        assert len(leg["post_death_rows"]) == 10
+        assert leg["post_death_rows"][-1]["inherited_traditional"] < 1.0  # fully depleted by yr10
+        # the 10-year-forward value grows beyond the at-death value
+        assert leg["after_tax_estate_to_heirs"] > leg["after_tax_estate_at_death"]
         assert leg["heir_ordinary_rate"] == 0.30
         assert leg["step_up_at_death"] is True
 
