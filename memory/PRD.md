@@ -33,9 +33,17 @@ ordinary income from LTCG and qualified-dividend income.
 - Multi-year projection (33 yrs) with survivor MFJ→Single transition; with-vs-without conversion comparison.
 - Scenario save/load/delete (MongoDB). AI insights streaming. Tested 100% backend + frontend.
 
+### Phase 9 (2026-06-28)
+- Editable income-stream / expense / account tables in new **Plan Inputs** tab.
+- **One-click "Find Optimal Bracket"** sweep (`/api/sweep`): runs all brackets + no-conversion, ranks by
+  after-tax estate to heirs (tie-break: lower lifetime tax), auto-applies the winner.
+- **CSV export** + **Print/PDF** of the projection.
+- **Legacy & Estate** view: gross estate, settlement cost, inherited-IRA tax (PV-at-death @ heir rate),
+  basis step-up on taxable/home, tax-free Roth to heirs. Returned in `/api/projection.legacy`.
+- All validated: 12/12 backend pytest, 100% frontend.
+
 ## Backlog / Next
-- P1: Editable income-stream & expense tables in the UI (currently fixed from defaults; balances editable).
-- P1: Surface marginal-rate-aware "optimal bracket" auto-suggestion across the whole horizon.
+- P1: Model the SECURE 10-year inherited-IRA stretch explicitly (currently PV-at-death approximation).
 - P2: IRMAA tier cap enforcement on conversions; Monte Carlo / sequence-of-returns risk.
-- P2: Export projection to CSV/PDF; legacy/estate (step-up, heir tax) view from the source `Legacy` sheet.
+- P2: Lifetime-gifting program (§2503(e)) from source sheet; split run_projection into helpers.
 - P2: Migrate deprecated on_event shutdown to lifespan handler.

@@ -388,12 +388,12 @@ def run_projection(cfg: dict) -> dict:
 def sweep_brackets(cfg: dict) -> dict:
     """Run the projection for each candidate target bracket (+ no-conversion) and
     rank by lifetime taxes and after-tax estate to heirs. Phase 9 auto-optimizer."""
+    import copy
     candidates = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]
     results = []
 
     # baseline: conversions disabled
-    base_cfg = dict(cfg)
-    base_cfg["roth"] = dict(cfg["roth"])
+    base_cfg = copy.deepcopy(cfg)
     base_cfg["roth"]["enabled"] = False
     base = run_projection(base_cfg)
     results.append({
@@ -407,8 +407,7 @@ def sweep_brackets(cfg: dict) -> dict:
     })
 
     for rate in candidates:
-        c = dict(cfg)
-        c["roth"] = dict(cfg["roth"])
+        c = copy.deepcopy(cfg)
         c["roth"]["enabled"] = True
         c["roth"]["target_bracket"] = rate
         r = run_projection(c)
@@ -422,8 +421,8 @@ def sweep_brackets(cfg: dict) -> dict:
             "after_tax_estate": r["legacy"]["after_tax_estate_to_heirs"],
         })
 
-    # rank by highest after-tax estate to heirs (true optimization metric)
-    ranked = sorted(results, key=lambda x: x["after_tax_estate"], reverse=True)
+    # rank by highest after-tax estate; tie-break on lower lifetime taxes
+    ranked = sorted(results, key=lambda x: (-x["after_tax_estate"], x["lifetime_taxes"]))
     best = ranked[0]
     return {
         "results": results,
