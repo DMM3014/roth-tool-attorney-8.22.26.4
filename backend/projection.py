@@ -293,6 +293,13 @@ def run_projection(cfg: dict) -> dict:
         cash_boy = sum(bal[i] for i in cash_ids)
         cash_interest = cash_boy * cash_rate
 
+        # Taxable-account dividends: paid out as cash income each year, taxed at
+        # qualified-dividend / LTCG (preferential) rates. The account itself
+        # appreciates at (gross return − dividend yield), so dividends do NOT
+        # compound inside the account — only the appreciation does (step-up at death).
+        taxable_dividends = sum(bal[i] for i in taxable_ids) * div_yield
+        recurring_div += taxable_dividends
+
         # --- Roth conversion (fill the bracket) ---
         ira_balance = sum(bal[i] for i in ira_ids)
         conversion = 0.0

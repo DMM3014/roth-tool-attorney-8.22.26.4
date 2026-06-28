@@ -30,9 +30,9 @@ DEFAULT_SCENARIO = {
         {"id": "PEN01", "owner": "Client", "type": "Pension", "description": "Client Pension",
          "start_year": 2027, "stop_year": None, "amount": 4500, "frequency": "Monthly",
          "cola": 0.04, "tax_character": "Ordinary", "taxable_pct": 1.0, "survivor_pct": 0.5, "use": True},
-        {"id": "DIV03", "owner": "Joint", "type": "Dividend/LTCG", "description": "Joint Dividends & Realized LTCG",
-         "start_year": 2026, "stop_year": None, "amount": 150000, "frequency": "Annual",
-         "cola": 0.03, "tax_character": "QDiv/LTCG", "taxable_pct": 1.0, "survivor_pct": 1.0, "use": True},
+        {"id": "DIV03", "owner": "Joint", "type": "Dividend/LTCG", "description": "Other Dividends & Realized LTCG (manual)",
+         "start_year": 2026, "stop_year": None, "amount": 0, "frequency": "Annual",
+         "cola": 0.03, "tax_character": "QDiv/LTCG", "taxable_pct": 1.0, "survivor_pct": 1.0, "use": False},
     ],
     "expenses": [
         {"id": "EXP01", "owner": "Joint", "category": "Living Expenses", "start_year": 2026,

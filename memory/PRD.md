@@ -56,4 +56,12 @@ ordinary income from LTCG and qualified-dividend income.
 - **Funding / Withdrawal Order** selector (Cash→Taxable→IRA→Roth · Cash→IRA→Taxable→Roth · Split,
   with IRA-share slider), stored per-scenario; cash always first, Roth always last.
 - **Max Annual Conversion** dollar cap added to the projection controls.
-- Withdrawal waterfall refactored into a single `_withdraw` helper. 18/18 backend tests, 100% frontend.
+### Phase 11 (2026-06-28)
+- **Taxable-account dividends** now modeled: each year taxable BOY balance × dividend yield is paid
+  out as cash income, taxed at qualified-dividend/LTCG (preferential) rates; the account appreciates
+  at (gross return − dividend yield). New `dividend-yield` input + guidance note (enter GROSS return;
+  appreciation computed net of dividends). Default DIV03 static stream turned off to avoid double-count.
+- Confirmed funding-order/heir-rate sensitivity: with dividends modeled the 35–37% fill still wins
+  on the default 33yr/7% case; setting dividend yield to 0 (taxable becomes Roth-like via step-up)
+  collapses the conversion advantage to ~$3M (no-conversion estate rises $44M→$66.6M).
+- 18/18 backend tests pass.

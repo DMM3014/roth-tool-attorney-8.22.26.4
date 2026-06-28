@@ -132,9 +132,22 @@ export const PlanInputs = ({ scenario, setScenario }) => {
 
       {/* Accounts */}
       <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="accounts-editor">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-1">
           <PiggyBank className="h-4 w-4 text-[#4A6741]" />
           <h3 className="font-display text-lg font-bold tracking-tight">Accounts</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4 max-w-3xl">
+          Enter each <span className="font-medium">taxable account's Expected Return as the GROSS total return</span> (e.g. 0.07).
+          The engine pays out the dividend yield below as taxable cash income each year and grows the account at the
+          <span className="font-medium"> appreciation rate = gross return − dividend yield</span> (so set the return gross; appreciation is computed net of dividends automatically).
+          Tax-deferred, Roth, cash and real-estate accounts grow at their full return.
+        </p>
+        <div className="mb-4 max-w-xs">
+          <Label className="text-xs text-muted-foreground">Taxable Dividend Yield</Label>
+          <Input type="number" step={0.005} value={scenario.dividend_yield ?? 0.02} data-testid="dividend-yield"
+            onChange={(e) => setScenario((p) => ({ ...p, dividend_yield: parseFloat(e.target.value) || 0 }))}
+            className="mt-1 bg-[#F9F8F6]" />
+          <p className="text-[10px] text-muted-foreground mt-1">Paid to cash as qualified dividends (taxed at LTCG rates). 0 = pure appreciation, makes taxable behave like a Roth via step-up.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
