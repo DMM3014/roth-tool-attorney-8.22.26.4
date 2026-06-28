@@ -108,6 +108,17 @@ def irmaa_tier(magi: float, mfj: bool, idx: float) -> int:
     return sum(1 for t in thresholds if magi >= t * idx)
 
 
+def irmaa_threshold_cap(tier_cap: int, mfj: bool, idx: float) -> float:
+    """Max MAGI to stay AT or BELOW IRMAA `tier_cap` (0 = base/no surcharge).
+
+    Returns the indexed MAGI ceiling = start of the next tier. inf if cap exceeds tiers.
+    """
+    thresholds = IRMAA_MFJ if mfj else IRMAA_SINGLE
+    if tier_cap is None or tier_cap >= len(thresholds):
+        return float("inf")
+    return thresholds[tier_cap] * idx
+
+
 def standard_deduction(mfj: bool, num65: int, idx: float) -> float:
     """Indexed standard deduction incl. 65+ additions (Tax!R23)."""
     return ((STD_MFJ if mfj else STD_SGL)

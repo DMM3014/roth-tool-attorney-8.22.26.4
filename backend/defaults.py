@@ -73,6 +73,7 @@ DEFAULT_SCENARIO = {
         "target_bracket": 0.24,
         "max_annual": 0.0,
         "stop_at_rmd_age": True,
+        "irmaa_tier_cap": None,
     },
     "dividend_yield": 0.02,
     "mortgage_balance": 0,
@@ -87,5 +88,6 @@ DEFAULT_SCENARIO = {
         "heir_state_rate": 0.06,
         "step_up_at_death": True,
         "post_death_years": 10,
+        "heir_reinvest_return": None,
     },
 }

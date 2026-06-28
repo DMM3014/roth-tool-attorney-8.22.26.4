@@ -7,7 +7,7 @@ the spreadsheet's CashFlow/Accounts/RMD/Income/Tax circular relationship
 from __future__ import annotations
 from datetime import date
 
-from tax_engine import compute_year_tax, optimize_conversion, rmd_divisor, bracket_ceiling
+from tax_engine import compute_year_tax, optimize_conversion, rmd_divisor, bracket_ceiling, irmaa_threshold_cap
 
 
 def _age(dob_year: int, year: int) -> int:
@@ -115,22 +115,24 @@ def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
     return total
 
 
-def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10):
-    """SECURE Act 10-year inherited-account horizon after the 2nd death.
+def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10, heir_return=None):
+    """SECURE Act post-death inherited-account horizon after the 2nd death.
 
-    - Inherited Roth keeps compounding TAX-FREE for the full 10 years.
-    - Inherited Traditional IRA must be fully depleted within 10 years; each year's
+    - Inherited Roth keeps compounding TAX-FREE for the full horizon.
+    - Inherited Traditional IRA must be fully depleted within the horizon; each year's
       withdrawal is taxed at the heirs' ordinary rate and the after-tax proceeds are
       reinvested (in a taxable sleeve) and keep compounding.
     - Taxable & real estate received a basis step-up at death and keep compounding.
+    `heir_return`, if provided, overrides the growth rate the heirs earn on the inherited
+    Roth, remaining Traditional, taxable and reinvested sleeve (cash/RE keep their own).
     Estate settlement cost is applied as a haircut at death (year 0).
     """
     def ret(tax_type, default):
         return next((a["return"] for a in accounts if a["tax_type"] == tax_type), default)
 
-    roth_r = ret("Tax-Free", 0.07)
-    trad_r = ret("Tax-Deferred", 0.07)
-    tax_r = ret("Taxable", 0.07)
+    roth_r = heir_return if heir_return is not None else ret("Tax-Free", 0.07)
+    trad_r = heir_return if heir_return is not None else ret("Tax-Deferred", 0.07)
+    tax_r = heir_return if heir_return is not None else ret("Taxable", 0.07)
     cash_r = ret("Cash", 0.03)
     re_r = ret("Real Estate", 0.035)
 
@@ -180,6 +182,7 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
         heir_ord_rate = lc.get("heir_ordinary_rate", 0.30)
     step_up = lc.get("step_up_at_death", True)
     horizon = lc.get("post_death_years", 10)
+    heir_return = lc.get("heir_reinvest_return")  # None -> use account returns
     mortgage = cfg.get("mortgage_balance", 0.0)
     accounts = cfg["accounts"]
 
@@ -194,9 +197,9 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
     inherited_ira_tax_at_death = end_trad * heir_ord_rate
     after_tax_at_death = gross_estate - estate_settlement - inherited_ira_tax_at_death
 
-    # 10-year forward value (headline metric, mirrors the spreadsheet longevity view)
+    # post-death forward value (headline metric, mirrors the spreadsheet longevity view)
     post_rows, total_10yr, cum_ira_tax = _post_death_horizon(
-        final, accounts, heir_ord_rate, settlement_pct, horizon)
+        final, accounts, heir_ord_rate, settlement_pct, horizon, heir_return)
 
     return {
         "gross_estate": round(gross_estate, 2),
@@ -208,6 +211,7 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
         "heir_ordinary_rate": round(heir_ord_rate, 4),
         "heir_federal_rate": lc.get("heir_federal_rate"),
         "heir_state_rate": lc.get("heir_state_rate"),
+        "heir_reinvest_return": heir_return,
         "step_up_at_death": step_up,
         "horizon_years": horizon,
         "post_death_rows": post_rows,
@@ -292,6 +296,9 @@ def run_projection(cfg: dict) -> dict:
     target_rate = roth.get("target_bracket", 0.24)
     max_annual = roth.get("max_annual", 0.0)
     stop_at_rmd = roth.get("stop_at_rmd_age", True)
+    irmaa_cap = roth.get("irmaa_tier_cap")  # None = no cap; int tier (0=base/no surcharge)
+    if irmaa_cap in ("", "None", "none"):
+        irmaa_cap = None
 
     streams = cfg["income_streams"]
     expenses = cfg["expenses"]
@@ -386,6 +393,13 @@ def run_projection(cfg: dict) -> dict:
             }
             opt = optimize_conversion(base_inp, target_rate, max_annual)
             conversion = min(opt["recommended_conversion"], ira_balance)
+            # IRMAA tier cap: keep MAGI at/below the chosen tier ceiling
+            if irmaa_cap is not None:
+                mfj = filing == "MFJ"
+                magi_ceiling = irmaa_threshold_cap(int(irmaa_cap), mfj, irmaa_index)
+                base_magi = opt["before"]["magi"]
+                irmaa_headroom = max(0.0, magi_ceiling - base_magi)
+                conversion = min(conversion, irmaa_headroom)
 
         # --- expenses ---
         total_expense = _total_expenses(

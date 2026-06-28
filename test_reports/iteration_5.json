@@ -1,0 +1,37 @@
+{
+  "summary": "Phase 12 features (IRMAA tier-cap on conversions, configurable post-death horizon, heir reinvest return override + Convert vs Don't comparison chart) fully validated. Backend pytest: 31/31 PASSED (7 new in test_phase12_features.py + 24 prior). Verified IRMAA cap monotonicity (0 < tier 2 < None for total_roth_converted), horizon=20 yields 20 post-death rows + larger after-tax estate vs 10, heir_reinvest_return=0.04 lowers after-tax estate vs default None, regression sweep best==ranked[0] with valid label, /api/tax/year still returns 320800/22500. UI: irmaa-cap-select re-runs projection on change (heir-advantage-badge updates), convert-compare-card renders ComposedChart with 4 lines (Convert/NoConvert solid + Convert/NoConvert Roth-only dashed), title reflects horizon_years (verified updated to '20 Years Post-Death'). Plan Inputs post-death-years and heir-reinvest-return are editable (blank=auto). Scenarios save/load/delete preserves roth.irmaa_tier_cap=2, legacy.post_death_years=15, legacy.heir_reinvest_return=0.05. Optimizer tab still functional (tax-conversion-amount=$82,750).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Projection convert-compare-card", "issues": ["With default config (24% bracket, no IRMAA cap), initial heir-advantage-badge can read 'Converting helps heirs by $0' because the at-death step-up and 10-year horizon largely neutralize the conversion benefit; this is a valid math result but may surprise users — consider adding a tooltip explaining that under step-up rules conversions may not add heir value for this default profile."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase12_features.py",
+    "/app/backend/tests/test_phase11_features.py",
+    "/app/backend/tests/test_phase10_features.py",
+    "/app/backend/tests/test_phase9_features.py",
+    "/app/backend/tests/test_planner_api.py",
+    "/app/test_reports/pytest/iter5_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "projection.py irmaa_cap parsing accepts string sentinels ('', 'None', 'none') and casts via int(irmaa_cap) — a non-integer string like 'Tier 2' or '2.5' would raise ValueError. Consider try/except or stricter Pydantic validation on the API boundary.",
+    "_post_death_horizon uses heir_return for Taxable too, but cash and real estate keep their own returns regardless of override. The docstring says all sleeves except cash/RE — consistent and documented, but adding a unit test for cash/RE growth invariance under heir_return override would harden the contract.",
+    "Projection.jsx postCompare assumes legacy.post_death_rows and legacyNo.post_death_rows have identical length; if horizon ever differs between with/without-conversion scenarios (shouldn't, since horizon comes from cfg.legacy.post_death_years), iteration would silently skip rows. Defensive: zip on min(length) or guard.",
+    "Projection.jsx irmaa-cap-select stringifies/parses the int through SelectItem values — fine, but a future numeric tier like 4 would need a new SelectItem. Consider deriving the dropdown options from a constants array shared with the backend tiers.",
+    "Carry-over from iter4: /api/insights still returns 200 with inline error text on LLM failure; recommend structured error envelope."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase12_features.py"
+  ],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "100%"},
+  "test_credentials": "No auth required",
+  "seed_data_creation": "Created and cleaned up TEST_phase12 scenario (id 23ff5802-850c-4712-baad-8bd422339960) via UI save/load/delete to validate persistence of new fields.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 12 testids: irmaa-cap-select (values: None | '0' | '1' | '2' | '3'), convert-compare-card, heir-advantage-badge, post-death-years (Input), heir-reinvest-return (Input, blank=auto/null). Convert-compare ComposedChart contains 4 Lines: Convert (solid green), NoConvert (solid terra), ConvertRoth (dashed green), NoConvertRoth (dashed terra). Backend invariants observed at defaults: irmaa_tier_cap=0 -> total_roth_converted~$10k, =2 -> ~$1.2M, =None -> ~$4.16M. horizon_years=20 returns 20 post_death_rows. heir_reinvest_return=0.04 reduces after_tax_estate_to_heirs vs None. Scenarios endpoint persists all phase-12 fields under config.roth and config.legacy. tab-optimizer/projection/inputs/scenarios all stable; load-{id} / del-{id} selectors used in Scenarios tab (NOT scenario-row-{i}).",
+  "rca of the issue": "N/A — no defects found. All 7 phase-12 backend assertions and 4 frontend UI flows pass."
+}

@@ -209,6 +209,20 @@ export const PlanInputs = ({ scenario, setScenario }) => {
               className="mt-1 bg-[#F9F8F6]" />
             <p className="text-[10px] text-muted-foreground mt-1">% of gross estate at 2nd death.</p>
           </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Post-Death Horizon (years)</Label>
+            <Input type="number" step={1} value={scenario.legacy.post_death_years ?? 10} data-testid="post-death-years"
+              onChange={(e) => setScenario((p) => ({ ...p, legacy: { ...p.legacy, post_death_years: parseInt(e.target.value, 10) || 10 } }))}
+              className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">SECURE drawdown window (default 10).</p>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Heirs' Reinvestment Return</Label>
+            <Input type="number" step={0.005} value={scenario.legacy.heir_reinvest_return ?? ""} placeholder="auto (account return)" data-testid="heir-reinvest-return"
+              onChange={(e) => setScenario((p) => ({ ...p, legacy: { ...p.legacy, heir_reinvest_return: e.target.value === "" ? null : parseFloat(e.target.value) } }))}
+              className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">Growth heirs earn post-death. Blank = use account returns.</p>
+          </div>
           <div className="md:col-span-2 flex items-end">
             <div className="rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 p-3 w-full" data-testid="blended-heir-rate">
               <p className="label-cap text-[#4A6741] text-[10px] mb-1">Blended Heir Rate on Inherited IRA</p>

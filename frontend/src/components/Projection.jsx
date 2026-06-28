@@ -88,8 +88,21 @@ export const Projection = ({ scenario, setScenario }) => {
   const s = withRoth?.summary;
   const sn = noRoth?.summary;
   const legacy = withRoth?.legacy;
+  const legacyNo = noRoth?.legacy;
   const taxDelta = s && sn ? sn.lifetime_taxes - s.lifetime_taxes : 0;
   const nwDelta = s && sn ? s.ending_net_worth - sn.ending_net_worth : 0;
+  const heirDelta = legacy && legacyNo ? legacy.after_tax_estate_to_heirs - legacyNo.after_tax_estate_to_heirs : 0;
+
+  const postCompare = useMemo(() => {
+    if (!legacy?.post_death_rows || !legacyNo?.post_death_rows) return [];
+    return legacy.post_death_rows.map((row, i) => ({
+      year: row.year_after_death,
+      Convert: row.total_to_heirs,
+      NoConvert: legacyNo.post_death_rows[i]?.total_to_heirs,
+      ConvertRoth: row.inherited_roth,
+      NoConvertRoth: legacyNo.post_death_rows[i]?.inherited_roth,
+    }));
+  }, [legacy, legacyNo]);
 
   const aiSummary = useMemo(
     () => s && {
@@ -148,6 +161,22 @@ export const Projection = ({ scenario, setScenario }) => {
             <Input type="number" step={10000} value={r.max_annual ?? 0} data-testid="max-annual-conversion"
               onChange={(e) => update("roth.max_annual", parseFloat(e.target.value) || 0)} className="mt-1 bg-[#F9F8F6]" />
             <p className="text-[10px] text-muted-foreground mt-1">Hard dollar cap per year, on top of the bracket ceiling above.</p>
+          </div>
+
+          <div>
+            <Label className="text-xs text-muted-foreground">Limit Conversions by IRMAA Tier</Label>
+            <Select value={r.irmaa_tier_cap == null ? "None" : String(r.irmaa_tier_cap)}
+              onValueChange={(v) => update("roth.irmaa_tier_cap", v === "None" ? null : parseInt(v, 10))}>
+              <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="irmaa-cap-select"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="None">No IRMAA cap</SelectItem>
+                <SelectItem value="0">Avoid all surcharges (base tier)</SelectItem>
+                <SelectItem value="1">Stay ≤ IRMAA Tier 1</SelectItem>
+                <SelectItem value="2">Stay ≤ IRMAA Tier 2</SelectItem>
+                <SelectItem value="3">Stay ≤ IRMAA Tier 3</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-muted-foreground mt-1">Caps conversions so MAGI stays within the chosen Medicare/IRMAA tier.</p>
           </div>
 
           <div className="flex items-center justify-between">
@@ -389,6 +418,32 @@ export const Projection = ({ scenario, setScenario }) => {
             <Area type="monotone" dataKey="inherited_roth" name="Inherited Roth (tax-free)" stroke={C.green} fill={C.green} fillOpacity={0.75} />
             <Area type="monotone" dataKey="inherited_traditional" name="Inherited Traditional (depleting)" stroke={C.terra} fill={C.terra} fillOpacity={0.65} />
             <Line type="monotone" dataKey="total_to_heirs" name="Total to Heirs" stroke={C.blue} strokeWidth={2.5} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </Card>
+
+      {/* Convert vs Don't — post-death heir value */}
+      <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="convert-compare-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+          <h3 className="font-display text-base font-bold tracking-tight">Convert vs. Don't — Heir Value Over {legacy?.horizon_years || 10} Years Post-Death</h3>
+          <div className={`rounded-full px-4 py-1.5 text-sm font-medium ${heirDelta >= 0 ? "bg-[#4A6741]/10 text-[#4A6741]" : "bg-[#C87941]/10 text-[#C87941]"}`} data-testid="heir-advantage-badge">
+            {heirDelta >= 0 ? "Converting helps heirs by " : "Converting costs heirs "}{fmtUSD(Math.abs(heirDelta))}
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5 max-w-4xl">
+          After-tax value delivered to heirs for the <span className="font-medium">selected {(BRACKETS[targetIdx] * 100).toFixed(0)}% bracket strategy</span> vs. doing no conversions — solid = total estate, dashed = the tax-free Roth portion. When the lines nearly overlap, conversions add little for heirs.
+        </p>
+        <ResponsiveContainer width="100%" height={260}>
+          <ComposedChart data={postCompare}>
+            <CartesianGrid strokeOpacity={0.1} vertical={false} />
+            <XAxis dataKey="year" tick={AXIS_TICK} label={{ value: "Years after death", position: "insideBottom", offset: -2, fontSize: 10 }} />
+            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
+            <Tooltip formatter={ttFmt} />
+            <Legend />
+            <Line type="monotone" dataKey="Convert" name={`Convert (${(BRACKETS[targetIdx] * 100).toFixed(0)}%)`} stroke={C.green} strokeWidth={2.5} dot={false} />
+            <Line type="monotone" dataKey="NoConvert" name="No conversions" stroke={C.terra} strokeWidth={2.5} dot={false} />
+            <Line type="monotone" dataKey="ConvertRoth" name="Convert — Roth only" stroke={C.green} strokeWidth={1.5} strokeDasharray="5 4" dot={false} />
+            <Line type="monotone" dataKey="NoConvertRoth" name="No-convert — Roth only" stroke={C.terra} strokeWidth={1.5} strokeDasharray="5 4" dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </Card>
