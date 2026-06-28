@@ -65,3 +65,14 @@ ordinary income from LTCG and qualified-dividend income.
   on the default 33yr/7% case; setting dividend yield to 0 (taxable becomes Roth-like via step-up)
   collapses the conversion advantage to ~$3M (no-conversion estate rises $44M→$66.6M).
 - 18/18 backend tests pass.
+
+### Phase 12 (2026-06-28)
+- **Surplus income/dividends reinvested into the taxable brokerage** at the gross return (basis
+  increased accordingly); configurable via `withdrawal.surplus_sweep_to` (Taxable | Cash, default
+  Taxable) with a UI selector. Verified: Taxable sweep $68.86M vs Cash $59.15M ending net worth.
+- **Full 10-year post-death SECURE-Act horizon** (`_post_death_horizon`): inherited Roth compounds
+  tax-free 10 yrs; inherited Traditional IRA depleted over 10 yrs and taxed to heirs (after-tax
+  proceeds reinvested); taxable/home step-up. Headline `after_tax_estate_to_heirs` is now the
+  10-year-forward value; `after_tax_estate_at_death` retained. Legacy card visualizes Roth growth
+  vs IRA depletion. With the richer model the default optimal shifts to a more conservative bracket.
+- 24/24 backend tests pass; full frontend validated.
