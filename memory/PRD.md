@@ -94,3 +94,43 @@ ordinary income from LTCG and qualified-dividend income.
   Y−2 value each year. Returns `irmaa_magi` in the breakdown. 34/34 backend tests pass (3 new).
 - **IRMAA tier-cap forward-indexed**: a conversion in year Y sets the Y+2 surcharge, so the cap now
   compares year-Y MAGI against the **Y+2 indexed** IRMAA thresholds (slightly more headroom, correct).
+
+### Phase 15 — V9 spreadsheet reconciliation (2026-06-28)
+Reconciled the engine to **Retirement_Optimizer V9.xlsm "Scenario 1"** (Fill 24% pre-RMD, IRA-first).
+Every headline now matches within ~1% (user-agreed tolerance):
+| Metric | Model | V9 | Δ |
+|---|---|---|---|
+| Total lifetime conversions | 3,890,427 | 3,894,632 | −0.1% |
+| Lifetime taxes + Medicare | 7,765,488 | 7,810,252 | −0.6% |
+| Gross estate @ 2nd death | 81,426,835 | 81,538,200 | −0.1% |
+| Traditional IRA @ 2nd death | 4,520,255 | 4,520,453 | −0.0% |
+| Heir tax on inherited IRA (PV) | 1,430,661 | 1,430,723 | −0.0% |
+| After-tax legacy (nominal) | 79,181,906 | 79,292,095 | −0.1% |
+| Children's wealth @ +10 | 140,350,666 | 141,792,197 | −1.0% |
+
+Engine changes (`projection.py`, `tax_engine.py`):
+- **Day-count proration**: income/expense boundary years prorate by active days/365 (mid-year
+  retirement, SS claim, 65th-birthday medical switch). New `start_date`/`stop_date` fields (engine
+  prefers them; falls back to `start_year`/`stop_year`). Income COLA compounds from the stream's start
+  year; expenses inflate from the projection start year.
+- **SECURE 2.0 RMD start age** by birth year (72 / 73 / **75** for born ≥1960) via `rmd_start_age`;
+  conversions stop at the same age.
+- **Conversion sized inside the circular solver**, net of RMDs and discretionary IRA withdrawals
+  (IRA-first funding consumes bracket room, leaving less for conversion — matches the sheet's solver).
+- **Income covers spending first**: cash is only tapped for the net shortfall (fixed a bug that drained
+  cash by the full spend each year). Cash interest is retained in (and compounds inside) cash.
+- **Grow-then-apply order**: EOY = BOY×(1+r) ± flows (current-year conversions/RMDs no longer compound).
+- **Per-account RMD** taken from each account; conversions/withdrawals draw client-IRA-first; spousal
+  IRA **rollover** the year after first death (RMDs continue on the survivor's age).
+- **Post-death horizon** matches V9: inherited Roth compounds tax-free, inherited IRA depleted at the
+  heir ordinary rate (no settlement haircut), taxable/reinvest sleeves grow net of the dividend tax drag
+  and incur accrued LTCG on post-death appreciation. New `legacy.heir_ltcg_rate` (default 0.188+state).
+- **Default scenario is now V9 Scenario 1** (`defaults.py`). Frontend Plan Inputs uses **date inputs**
+  for income/expense start/stop (synced to year fields); header reads "v9 Longevity Engine"; RMD-stop
+  label is dynamic by birth year.
+- Tests: new `test_phase14_v9_reconciliation.py` (11 assertions). **45/45 backend tests pass**; full
+  frontend validated by the testing agent (9/9 checks, 0 issues). Validation harness:
+  `backend/tests/v9_scenario1.py` + `v9_compare.py`.
+
+KNOWN: AI Insights streaming currently returns a budget error — the **Emergent LLM key budget is
+exceeded** (unrelated to this work; user must top up at Profile → Universal Key → Add Balance).
