@@ -12,6 +12,7 @@ export const Planner = () => {
 
   useEffect(() => {
     fetchDefaults().then(setScenario);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!scenario) {

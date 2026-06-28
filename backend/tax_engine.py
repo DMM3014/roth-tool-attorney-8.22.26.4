@@ -108,6 +108,35 @@ def irmaa_tier(magi: float, mfj: bool, idx: float) -> int:
     return sum(1 for t in thresholds if magi >= t * idx)
 
 
+def standard_deduction(mfj: bool, num65: int, idx: float) -> float:
+    """Indexed standard deduction incl. 65+ additions (Tax!R23)."""
+    return ((STD_MFJ if mfj else STD_SGL)
+            + num65 * (ADD65_MFJ if mfj else ADD65_SGL)) * idx
+
+
+def senior_bonus_deduction(mfj: bool, num65: int, magi: float, year: int) -> float:
+    """OBBBA senior bonus: $6,000/person 65+, 6% phaseout, through 2028 (Tax!R24)."""
+    if year > SENIOR_LAST_YEAR:
+        return 0.0
+    sen_thr = SENIOR_THRESH_MFJ if mfj else SENIOR_THRESH_SGL
+    return max(0.0, num65 * SENIOR_BONUS - SENIOR_PHASEOUT * max(0.0, magi - sen_thr))
+
+
+def niit_tax(total_pref: float, cash_interest: float, magi: float, mfj: bool) -> float:
+    """3.8% on lesser of NII or MAGI excess over threshold (Tax!R32)."""
+    thr = NIIT_THRESH_MFJ if mfj else NIIT_THRESH_SGL
+    return NIIT_RATE * min(total_pref + cash_interest, max(0.0, magi - thr))
+
+
+def medicare_premiums(magi: float, mfj: bool, irmaa_idx: float, medicare_count: int,
+                      include_irmaa: bool, part_b_base: float, part_d_base: float) -> tuple[int, float]:
+    """Returns (irmaa_tier, total Medicare premiums) (Tax!R39-R42)."""
+    tier = irmaa_tier(magi, mfj, irmaa_idx) if include_irmaa else 0
+    part_b = part_b_base * irmaa_idx * (IRMAA_PARTB_MULT[tier - 1] if tier > 0 else 1)
+    part_d = part_d_base * irmaa_idx + (IRMAA_PARTD_SURCHARGE[tier - 1] * irmaa_idx if tier > 0 else 0)
+    return tier, medicare_count * (part_b + part_d)
+
+
 def compute_year_tax(inp: dict) -> dict:
     """Single-year tax computation. `inp` keys mirror the Tax sheet rows.
 
@@ -129,8 +158,6 @@ def compute_year_tax(inp: dict) -> dict:
 
     state_rate = inp.get("state_rate", 0.0)
     include_irmaa = inp.get("include_irmaa", True)
-    part_b_base = inp.get("part_b_base", 2435.0)
-    part_d_base = inp.get("part_d_base", 600.0)
 
     total_pref = recurring_div_ltcg + realized_ltcg                 # R13
     ordinary_before_ss = ordinary_non_ss + ira_distributions + cash_interest  # R14
@@ -141,14 +168,8 @@ def compute_year_tax(inp: dict) -> dict:
     agi = ordinary_before_ss + total_pref + taxable_ss               # R21
     magi = agi                                                       # R22
 
-    std = ((STD_MFJ if mfj else STD_SGL)
-           + num65 * (ADD65_MFJ if mfj else ADD65_SGL)) * idx        # R23
-    if year > SENIOR_LAST_YEAR:
-        senior = 0.0
-    else:
-        sen_thr = SENIOR_THRESH_MFJ if mfj else SENIOR_THRESH_SGL
-        senior = max(0.0, num65 * SENIOR_BONUS
-                     - SENIOR_PHASEOUT * max(0.0, magi - sen_thr))   # R24
+    std = standard_deduction(mfj, num65, idx)                        # R23
+    senior = senior_bonus_deduction(mfj, num65, magi, year)          # R24
 
     taxable_income = max(0.0, agi - std - senior)                    # R25
     pref_within = min(total_pref, taxable_income)                    # R26
@@ -156,14 +177,12 @@ def compute_year_tax(inp: dict) -> dict:
 
     fed_ordinary = federal_ordinary_tax(ordinary_taxable, mfj, idx)  # R30
     fed_ltcg = federal_ltcg_tax(ordinary_taxable, pref_within, mfj, idx)  # R31
-    niit = NIIT_RATE * min(total_pref + cash_interest,
-                           max(0.0, magi - (NIIT_THRESH_MFJ if mfj else NIIT_THRESH_SGL)))  # R32
+    niit = niit_tax(total_pref, cash_interest, magi, mfj)            # R32
     state_tax = max(0.0, state_rate * taxable_income)                # R35
 
-    tier = irmaa_tier(magi, mfj, irmaa_idx) if include_irmaa else 0  # R39
-    part_b = part_b_base * irmaa_idx * (IRMAA_PARTB_MULT[tier - 1] if tier > 0 else 1)
-    part_d = part_d_base * irmaa_idx + (IRMAA_PARTD_SURCHARGE[tier - 1] * irmaa_idx if tier > 0 else 0)
-    medicare = medicare_count * (part_b + part_d)                    # R42
+    tier, medicare = medicare_premiums(
+        magi, mfj, irmaa_idx, medicare_count, include_irmaa,
+        inp.get("part_b_base", 2435.0), inp.get("part_d_base", 600.0))  # R39-R42
 
     total_tax = fed_ordinary + fed_ltcg + niit + state_tax           # R45
     eff_rate = total_tax / agi if agi > 0 else 0.0                   # R46

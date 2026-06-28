@@ -13,6 +13,14 @@ import { AIInsights } from "@/components/AIInsights";
 
 const BRACKETS = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
 const C = { green: "#4A6741", sage: "#7A9B76", terra: "#C87941", sand: "#E6B89C", blue: "#4B7A94" };
+const AXIS_TICK = { fontSize: 11 };
+const BAR_RADIUS = [3, 3, 0, 0];
+
+const metricColor = (accent, warn) => {
+  if (accent) return "text-[#4A6741]";
+  if (warn) return "text-[#C87941]";
+  return "text-[#1A1A1A]";
+};
 
 const ttFmt = (v) => fmtUSD(v);
 
@@ -45,6 +53,7 @@ export const Projection = ({ scenario, setScenario }) => {
         else update("roth.enabled", false);
       })
       .finally(() => setSweeping(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario]);
 
   const run = useCallback(() => {
@@ -236,8 +245,8 @@ export const Projection = ({ scenario, setScenario }) => {
         <ResponsiveContainer width="100%" height={260}>
           <ComposedChart data={chartData}>
             <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`} tick={{ fontSize: 11 }} width={50} />
+            <XAxis dataKey="year" tick={AXIS_TICK} />
+            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`} tick={AXIS_TICK} width={50} />
             <Tooltip formatter={ttFmt} />
             <Legend />
             <Bar dataKey="conversion" name="Roth Conversion" fill={C.sand} barSize={6} />
@@ -253,8 +262,8 @@ export const Projection = ({ scenario, setScenario }) => {
         <ResponsiveContainer width="100%" height={240}>
           <AreaChart data={chartData}>
             <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={{ fontSize: 11 }} width={45} />
+            <XAxis dataKey="year" tick={AXIS_TICK} />
+            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
             <Tooltip formatter={ttFmt} />
             <Legend />
             <Area type="monotone" stackId="1" dataKey="Cash" stroke={C.blue} fill={C.blue} fillOpacity={0.7} />
@@ -271,10 +280,10 @@ export const Projection = ({ scenario, setScenario }) => {
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={chartData}>
             <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={{ fontSize: 11 }} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e3).toFixed(0)}k`} tick={{ fontSize: 11 }} width={45} />
+            <XAxis dataKey="year" tick={AXIS_TICK} />
+            <YAxis tickFormatter={(v) => `$${(v / 1e3).toFixed(0)}k`} tick={AXIS_TICK} width={45} />
             <Tooltip formatter={ttFmt} />
-            <Bar dataKey="tax" name="Total Tax" fill={C.terra} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="tax" name="Total Tax" fill={C.terra} radius={BAR_RADIUS} />
           </BarChart>
         </ResponsiveContainer>
       </Card>
@@ -355,6 +364,6 @@ const SummaryCard = ({ icon: Icon, label, value, sub, accent, testid }) => (
 const EstateMetric = ({ label, value, accent, warn, big, testid }) => (
   <div className={`rounded-lg border p-4 ${big ? "border-[#4A6741]/30 bg-[#4A6741]/5" : "border-[#EBE8E0] bg-white"}`}>
     <p className="label-cap text-muted-foreground text-[10px] mb-1">{label}</p>
-    <p data-testid={testid} className={`font-display ${big ? "text-2xl" : "text-lg"} font-bold ${accent ? "text-[#4A6741]" : warn ? "text-[#C87941]" : "text-[#1A1A1A]"}`}>{value}</p>
+    <p data-testid={testid} className={`font-display ${big ? "text-2xl" : "text-lg"} font-bold ${metricColor(accent, warn)}`}>{value}</p>
   </div>
 );

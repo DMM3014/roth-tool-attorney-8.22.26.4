@@ -13,7 +13,10 @@ export const Scenarios = ({ scenario, setScenario }) => {
   const h = scenario.household;
 
   const refresh = () => listScenarios().then(setItems);
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updH = (k, v) => setScenario((p) => ({ ...p, household: { ...p.household, [k]: v } }));
 

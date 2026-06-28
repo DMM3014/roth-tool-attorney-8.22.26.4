@@ -43,6 +43,105 @@ def _stream_amount(s: dict, year: int, both_alive: bool, survivor_owner: str | N
     return annual, s.get("tax_character", "Ordinary")
 
 
+def _aggregate_income(streams, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner):
+    """Sum income streams into (ordinary_non_ss, gross_ss, recurring_div) for a year."""
+    ordinary_non_ss = 0.0
+    gross_ss = 0.0
+    recurring_div = 0.0
+    for s in streams:
+        owner = s.get("owner", "Joint")
+        owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
+                       or (owner == "Spouse" and spouse_alive))
+        if not owner_alive and s.get("tax_character") != "SS" and owner != "Joint":
+            continue
+        amt, char = _stream_amount(s, year, both_alive, survivor_owner)
+        if char == "SS":
+            if not both_alive and has_spouse:
+                if (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive):
+                    gross_ss += amt
+            else:
+                gross_ss += amt
+        elif char == "QDiv/LTCG":
+            recurring_div += amt
+        elif char == "Annuity":
+            ordinary_non_ss += amt * s.get("taxable_pct", 1.0)
+        else:
+            ordinary_non_ss += amt
+
+    # survivor SS = higher of the two benefits (approximate)
+    if not both_alive and has_spouse and gross_ss == 0:
+        ss_vals = [_stream_amount(s, year, True, None)[0]
+                   for s in streams if s.get("tax_character") == "SS"]
+        if ss_vals:
+            gross_ss = max(ss_vals)
+    return ordinary_non_ss, gross_ss, recurring_div
+
+
+def _total_rmd(ira_ids, acc_by_id, bal, client_alive, spouse_alive,
+               client_dob, spouse_dob, has_spouse, year):
+    """Sum Required Minimum Distributions across tax-deferred accounts."""
+    rmd_total = 0.0
+    for aid in ira_ids:
+        owner = acc_by_id[aid].get("owner", "Client")
+        owner_alive = (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive)
+        if not owner_alive:
+            continue
+        dob = client_dob if owner == "Client" else (spouse_dob if has_spouse else client_dob)
+        div = rmd_divisor(_age(dob, year))
+        if div > 0 and bal[aid] > 0:
+            rmd_total += bal[aid] / div
+    return rmd_total
+
+
+def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
+                    start_year, survivor_reduction):
+    """Sum active, inflated expenses for a year (survivor-adjusted after first death)."""
+    total = 0.0
+    for e in expenses:
+        if not e.get("use", True):
+            continue
+        owner = e.get("owner", "Joint")
+        owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
+                       or (owner == "Spouse" and spouse_alive))
+        if not owner_alive:
+            continue
+        es, ee = e.get("start_year", start_year), e.get("stop_year")
+        if year < es or (ee and year > ee):
+            continue
+        freq = 12 if e.get("frequency", "Annual") == "Monthly" else 1
+        total += e.get("amount", 0.0) * freq * (1 + e.get("inflation", 0.03)) ** max(0, year - es)
+    if not both_alive:
+        total *= (1 - survivor_reduction)
+    return total
+
+
+def _compute_legacy(cfg: dict, final: dict) -> dict:
+    """Estate at second death: step-up on taxable/home, heir tax on inherited IRA, tax-free Roth."""
+    lc = cfg.get("legacy", {})
+    settlement_pct = lc.get("estate_settlement_pct", 0.01)
+    heir_ord_rate = lc.get("heir_ordinary_rate", 0.30)
+    step_up = lc.get("step_up_at_death", True)
+    mortgage = cfg.get("mortgage_balance", 0.0)
+
+    end_nw = final.get("net_worth", 0)
+    end_trad = final.get("traditional", 0)
+    end_roth = final.get("roth", 0)
+
+    gross_estate = max(0.0, end_nw - mortgage)
+    estate_settlement = settlement_pct * gross_estate
+    inherited_ira_tax = end_trad * heir_ord_rate  # SECURE 10-yr, PV-at-death approximation
+    after_tax_estate = gross_estate - estate_settlement - inherited_ira_tax
+    return {
+        "gross_estate": round(gross_estate, 2),
+        "estate_settlement": round(estate_settlement, 2),
+        "inherited_ira_tax": round(inherited_ira_tax, 2),
+        "tax_free_roth_to_heirs": round(end_roth, 2),
+        "after_tax_estate_to_heirs": round(after_tax_estate, 2),
+        "heir_ordinary_rate": heir_ord_rate,
+        "step_up_at_death": step_up,
+    }
+
+
 def run_projection(cfg: dict) -> dict:
     h = cfg["household"]
     p = cfg["projection"]
@@ -118,55 +217,12 @@ def run_projection(cfg: dict) -> dict:
                     med_count += 1
 
         # --- income streams ---
-        ordinary_non_ss = 0.0
-        gross_ss = 0.0
-        recurring_div = 0.0
-        for s in streams:
-            owner = s.get("owner", "Joint")
-            owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
-                           or (owner == "Spouse" and spouse_alive))
-            if not owner_alive and s.get("tax_character") != "SS":
-                # non-SS owner-specific income stops at owner death (survivor% applies for joint pensions)
-                if owner != "Joint":
-                    continue
-            amt, char = _stream_amount(s, year, both_alive, survivor_owner)
-            if char == "SS":
-                # survivor takes higher benefit; simplified: surviving spouse keeps larger SS
-                if not both_alive and has_spouse:
-                    # handled below via max; here just add owner SS if owner alive
-                    if (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive):
-                        gross_ss += amt
-                else:
-                    gross_ss += amt
-            elif char == "QDiv/LTCG":
-                recurring_div += amt
-            elif char == "Annuity":
-                ordinary_non_ss += amt * s.get("taxable_pct", 1.0)
-            else:
-                ordinary_non_ss += amt
-
-        # survivor SS = higher of the two benefits (approximate)
-        if not both_alive and has_spouse and gross_ss == 0:
-            ss_vals = []
-            for s in streams:
-                if s.get("tax_character") == "SS":
-                    a, _ = _stream_amount(s, year, True, None)
-                    ss_vals.append(a)
-            if ss_vals:
-                gross_ss = max(ss_vals)
+        ordinary_non_ss, gross_ss, recurring_div = _aggregate_income(
+            streams, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner)
 
         # --- RMDs ---
-        rmd_total = 0.0
-        for aid in ira_ids:
-            a = acc_by_id[aid]
-            owner = a.get("owner", "Client")
-            owner_alive = (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive)
-            dob = client_dob if owner == "Client" else (spouse_dob if has_spouse else client_dob)
-            if not owner_alive:
-                continue
-            div = rmd_divisor(_age(dob, year))
-            if div > 0 and bal[aid] > 0:
-                rmd_total += bal[aid] / div
+        rmd_total = _total_rmd(ira_ids, acc_by_id, bal, client_alive, spouse_alive,
+                               client_dob, spouse_dob, has_spouse, year)
 
         cash_boy = sum(bal[i] for i in cash_ids)
         cash_interest = cash_boy * cash_rate
@@ -193,23 +249,9 @@ def run_projection(cfg: dict) -> dict:
             conversion = min(opt["recommended_conversion"], ira_balance)
 
         # --- expenses ---
-        total_expense = 0.0
-        for e in expenses:
-            if not e.get("use", True):
-                continue
-            owner = e.get("owner", "Joint")
-            owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
-                           or (owner == "Spouse" and spouse_alive))
-            if not owner_alive:
-                continue
-            es, ee = e.get("start_year", start_year), e.get("stop_year")
-            if year < es or (ee and year > ee):
-                continue
-            freq = 12 if e.get("frequency", "Annual") == "Monthly" else 1
-            amt = e.get("amount", 0.0) * freq * (1 + e.get("inflation", 0.03)) ** max(0, year - es)
-            total_expense += amt
-        if not both_alive:
-            total_expense *= (1 - cfg["tax"].get("survivor_spending_reduction", 0.2))
+        total_expense = _total_expenses(
+            expenses, year, client_alive, spouse_alive, both_alive, start_year,
+            cfg["tax"].get("survivor_spending_reduction", 0.2))
 
         # --- circular: taxes <-> taxable withdrawals ---
         realized_ltcg = 0.0
@@ -340,48 +382,19 @@ def run_projection(cfg: dict) -> dict:
     total_tax_paid = sum(r["total_tax"] for r in rows)
     final = rows[-1] if rows else {}
 
-    # --- Legacy / estate at second death (final modeled year) ---
-    legacy_cfg = cfg.get("legacy", {})
-    settlement_pct = legacy_cfg.get("estate_settlement_pct", 0.01)
-    heir_ord_rate = legacy_cfg.get("heir_ordinary_rate", 0.30)
-    step_up = legacy_cfg.get("step_up_at_death", True)
-    mortgage = cfg.get("mortgage_balance", 0.0)
-
-    end_nw = final.get("net_worth", 0)
-    end_trad = final.get("traditional", 0)
-    end_roth = final.get("roth", 0)
-    end_taxable = final.get("taxable", 0)
-    end_realestate = final.get("real_estate", 0)
-
-    gross_estate = max(0.0, end_nw - mortgage)
-    estate_settlement = settlement_pct * gross_estate
-    # SECURE 10-yr inherited IRA: heirs pay ordinary tax (PV-at-death drag)
-    inherited_ira_tax = end_trad * heir_ord_rate
-    # taxable & home get a basis step-up -> no embedded-gain tax to heirs
-    embedded_gain_tax = 0.0 if step_up else 0.0
-    after_tax_estate = gross_estate - estate_settlement - inherited_ira_tax - embedded_gain_tax
-
     return {
         "rows": rows,
         "summary": {
             "years": len(rows),
             "total_roth_converted": round(total_conv, 2),
             "lifetime_taxes": round(total_tax_paid, 2),
-            "ending_net_worth": end_nw,
-            "ending_roth": end_roth,
-            "ending_traditional": end_trad,
-            "ending_taxable": end_taxable,
-            "ending_real_estate": end_realestate,
+            "ending_net_worth": final.get("net_worth", 0),
+            "ending_roth": final.get("roth", 0),
+            "ending_traditional": final.get("traditional", 0),
+            "ending_taxable": final.get("taxable", 0),
+            "ending_real_estate": final.get("real_estate", 0),
         },
-        "legacy": {
-            "gross_estate": round(gross_estate, 2),
-            "estate_settlement": round(estate_settlement, 2),
-            "inherited_ira_tax": round(inherited_ira_tax, 2),
-            "tax_free_roth_to_heirs": round(end_roth, 2),
-            "after_tax_estate_to_heirs": round(after_tax_estate, 2),
-            "heir_ordinary_rate": heir_ord_rate,
-            "step_up_at_death": step_up,
-        },
+        "legacy": _compute_legacy(cfg, final),
     }
 
 

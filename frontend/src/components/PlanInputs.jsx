@@ -7,9 +7,14 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 
 const Cell = ({ children, w }) => <td className={`px-2 py-1.5 ${w || ""}`}>{children}</td>;
 
+const parseField = (raw, type) => {
+  if (type !== "number") return raw;
+  return raw === "" ? null : parseFloat(raw);
+};
+
 const Txt = ({ value, onChange, type = "text", testid, step }) => (
   <Input type={type} step={step} value={value ?? ""} data-testid={testid}
-    onChange={(e) => onChange(type === "number" ? (e.target.value === "" ? null : parseFloat(e.target.value)) : e.target.value)}
+    onChange={(e) => onChange(parseField(e.target.value, type))}
     className="h-8 bg-[#F9F8F6] text-xs px-2" />
 );
 
@@ -19,6 +24,10 @@ const Sel = ({ value, onChange, options, testid }) => (
     <SelectContent>{options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
   </Select>
 );
+
+const OWNERS = ["Client", "Spouse", "Joint"];
+const FREQS = ["Annual", "Monthly"];
+const TAX_CHARS = ["Ordinary", "SS", "Annuity", "QDiv/LTCG"];
 
 export const PlanInputs = ({ scenario, setScenario }) => {
   const mut = (key, idx, field, value) => {
@@ -61,10 +70,10 @@ export const PlanInputs = ({ scenario, setScenario }) => {
               {scenario.income_streams.map((s, i) => (
                 <tr key={s.id} className="border-b border-[#F3F1EC]" data-testid={`income-row-${i}`}>
                   <Cell w="min-w-[160px]"><Txt value={s.description} onChange={(v) => mut("income_streams", i, "description", v)} testid={`inc-desc-${i}`} /></Cell>
-                  <Cell><Sel value={s.owner} onChange={(v) => mut("income_streams", i, "owner", v)} options={["Client", "Spouse", "Joint"]} testid={`inc-owner-${i}`} /></Cell>
-                  <Cell><Sel value={s.tax_character} onChange={(v) => mut("income_streams", i, "tax_character", v)} options={["Ordinary", "SS", "Annuity", "QDiv/LTCG"]} testid={`inc-char-${i}`} /></Cell>
+                  <Cell><Sel value={s.owner} onChange={(v) => mut("income_streams", i, "owner", v)} options={OWNERS} testid={`inc-owner-${i}`} /></Cell>
+                  <Cell><Sel value={s.tax_character} onChange={(v) => mut("income_streams", i, "tax_character", v)} options={TAX_CHARS} testid={`inc-char-${i}`} /></Cell>
                   <Cell w="w-24"><Txt type="number" value={s.amount} onChange={(v) => mut("income_streams", i, "amount", v)} testid={`inc-amt-${i}`} /></Cell>
-                  <Cell><Sel value={s.frequency} onChange={(v) => mut("income_streams", i, "frequency", v)} options={["Annual", "Monthly"]} testid={`inc-freq-${i}`} /></Cell>
+                  <Cell><Sel value={s.frequency} onChange={(v) => mut("income_streams", i, "frequency", v)} options={FREQS} testid={`inc-freq-${i}`} /></Cell>
                   <Cell w="w-16"><Txt type="number" step={0.01} value={s.cola} onChange={(v) => mut("income_streams", i, "cola", v)} testid={`inc-cola-${i}`} /></Cell>
                   <Cell w="w-20"><Txt type="number" value={s.start_year} onChange={(v) => mut("income_streams", i, "start_year", v)} testid={`inc-start-${i}`} /></Cell>
                   <Cell w="w-20"><Txt type="number" value={s.stop_year} onChange={(v) => mut("income_streams", i, "stop_year", v)} testid={`inc-stop-${i}`} /></Cell>
@@ -105,9 +114,9 @@ export const PlanInputs = ({ scenario, setScenario }) => {
               {scenario.expenses.map((e, i) => (
                 <tr key={e.id} className="border-b border-[#F3F1EC]" data-testid={`expense-row-${i}`}>
                   <Cell w="min-w-[160px]"><Txt value={e.category} onChange={(v) => mut("expenses", i, "category", v)} testid={`exp-cat-${i}`} /></Cell>
-                  <Cell><Sel value={e.owner} onChange={(v) => mut("expenses", i, "owner", v)} options={["Client", "Spouse", "Joint"]} testid={`exp-owner-${i}`} /></Cell>
+                  <Cell><Sel value={e.owner} onChange={(v) => mut("expenses", i, "owner", v)} options={OWNERS} testid={`exp-owner-${i}`} /></Cell>
                   <Cell w="w-24"><Txt type="number" value={e.amount} onChange={(v) => mut("expenses", i, "amount", v)} testid={`exp-amt-${i}`} /></Cell>
-                  <Cell><Sel value={e.frequency} onChange={(v) => mut("expenses", i, "frequency", v)} options={["Annual", "Monthly"]} testid={`exp-freq-${i}`} /></Cell>
+                  <Cell><Sel value={e.frequency} onChange={(v) => mut("expenses", i, "frequency", v)} options={FREQS} testid={`exp-freq-${i}`} /></Cell>
                   <Cell w="w-16"><Txt type="number" step={0.01} value={e.inflation} onChange={(v) => mut("expenses", i, "inflation", v)} testid={`exp-infl-${i}`} /></Cell>
                   <Cell w="w-20"><Txt type="number" value={e.start_year} onChange={(v) => mut("expenses", i, "start_year", v)} testid={`exp-start-${i}`} /></Cell>
                   <Cell w="w-20"><Txt type="number" value={e.stop_year} onChange={(v) => mut("expenses", i, "stop_year", v)} testid={`exp-stop-${i}`} /></Cell>

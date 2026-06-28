@@ -188,10 +188,16 @@ export const Optimizer = ({ scenario }) => {
   );
 };
 
+const metricColor = (accent, warn) => {
+  if (accent) return "text-[#4A6741]";
+  if (warn) return "text-[#C87941]";
+  return "text-[#1A1A1A]";
+};
+
 const Metric = ({ label, value, accent, warn, testid }) => (
   <div className="rounded-lg border border-[#EBE8E0] bg-white p-4">
     <p className="label-cap text-muted-foreground text-[10px] mb-1">{label}</p>
-    <p data-testid={testid} className={`font-display text-xl font-bold ${accent ? "text-[#4A6741]" : warn ? "text-[#C87941]" : "text-[#1A1A1A]"}`}>{value}</p>
+    <p data-testid={testid} className={`font-display text-xl font-bold ${metricColor(accent, warn)}`}>{value}</p>
   </div>
 );
 

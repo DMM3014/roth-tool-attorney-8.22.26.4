@@ -33,6 +33,11 @@ export const AIInsights = ({ summary, testid }) => {
     }
   };
 
+  const buttonLabel = () => {
+    if (loading) return "Analyzing…";
+    return text ? "Regenerate" : "Generate AI Insights";
+  };
+
   return (
     <div data-testid={testid}>
       {!text && (
@@ -51,7 +56,7 @@ export const AIInsights = ({ summary, testid }) => {
         className="bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full"
       >
         {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-        {loading ? "Analyzing…" : text ? "Regenerate" : "Generate AI Insights"}
+        {buttonLabel()}
       </Button>
     </div>
   );
