@@ -1,6 +1,7 @@
-import { Plus, Trash2, Coins, Receipt, PiggyBank } from "lucide-react";
+import { Plus, Trash2, Coins, Receipt, PiggyBank, Landmark } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
@@ -155,6 +156,54 @@ export const PlanInputs = ({ scenario, setScenario }) => {
               ))}
             </tbody>
           </table>
+        </div>
+      </Card>
+      {/* Tax assumptions & heirs */}
+      <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="tax-heirs-editor">
+        <div className="flex items-center gap-2 mb-1">
+          <Landmark className="h-4 w-4 text-[#4A6741]" />
+          <h3 className="font-display text-lg font-bold tracking-tight">Tax Assumptions & Heirs</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5 max-w-3xl">
+          The heir tax rate is what your beneficiaries pay to draw down an <span className="font-medium">inherited Traditional IRA</span> (SECURE 10-year). It drives the "Find Optimal Bracket" result — converting at a rate <span className="font-medium">higher</span> than your heirs' rate destroys value, so set this to your beneficiaries' real bracket.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div>
+            <Label className="text-xs text-muted-foreground">Your State Income Tax Rate</Label>
+            <Input type="number" step={0.001} value={scenario.tax.state_rate} data-testid="tax-state-rate"
+              onChange={(e) => setScenario((p) => ({ ...p, tax: { ...p.tax, state_rate: parseFloat(e.target.value) || 0 } }))}
+              className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">e.g. 0.0399 = 3.99%. Set 0 to disable.</p>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Heirs' Federal Tax Rate</Label>
+            <Input type="number" step={0.01} value={scenario.legacy.heir_federal_rate} data-testid="heir-fed-rate"
+              onChange={(e) => setScenario((p) => ({ ...p, legacy: { ...p.legacy, heir_federal_rate: parseFloat(e.target.value) || 0 } }))}
+              className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">Heirs' marginal federal bracket.</p>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Heirs' State Tax Rate</Label>
+            <Input type="number" step={0.01} value={scenario.legacy.heir_state_rate} data-testid="heir-state-rate"
+              onChange={(e) => setScenario((p) => ({ ...p, legacy: { ...p.legacy, heir_state_rate: parseFloat(e.target.value) || 0 } }))}
+              className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">Heirs' state bracket (0 if none).</p>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Estate Settlement Cost</Label>
+            <Input type="number" step={0.005} value={scenario.legacy.estate_settlement_pct} data-testid="estate-settlement-pct"
+              onChange={(e) => setScenario((p) => ({ ...p, legacy: { ...p.legacy, estate_settlement_pct: parseFloat(e.target.value) || 0 } }))}
+              className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">% of gross estate at 2nd death.</p>
+          </div>
+          <div className="md:col-span-2 flex items-end">
+            <div className="rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 p-3 w-full" data-testid="blended-heir-rate">
+              <p className="label-cap text-[#4A6741] text-[10px] mb-1">Blended Heir Rate on Inherited IRA</p>
+              <p className="font-display text-2xl font-bold text-[#4A6741]">
+                {(((scenario.legacy.heir_federal_rate || 0) + (scenario.legacy.heir_state_rate || 0)) * 100).toFixed(1)}%
+              </p>
+            </div>
+          </div>
         </div>
       </Card>
     </div>

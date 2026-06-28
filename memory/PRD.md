@@ -47,3 +47,13 @@ ordinary income from LTCG and qualified-dividend income.
 - P2: IRMAA tier cap enforcement on conversions; Monte Carlo / sequence-of-returns risk.
 - P2: Lifetime-gifting program (§2503(e)) from source sheet; split run_projection into helpers.
 - P2: Migrate deprecated on_event shutdown to lifespan handler.
+
+### Phase 10 (2026-06-28)
+- **Heir tax bracket** is now a real input (federal + state, blended) driving the legacy/estate
+  calc and the "Find Optimal Bracket" sweep — converting above heirs' rate is correctly penalized.
+- **State income tax rate** and **Estate settlement %** exposed on the Plan Inputs "Tax Assumptions
+  & Heirs" card with a live blended-heir-rate readout.
+- **Funding / Withdrawal Order** selector (Cash→Taxable→IRA→Roth · Cash→IRA→Taxable→Roth · Split,
+  with IRA-share slider), stored per-scenario; cash always first, Roth always last.
+- **Max Annual Conversion** dollar cap added to the projection controls.
+- Withdrawal waterfall refactored into a single `_withdraw` helper. 18/18 backend tests, 100% frontend.

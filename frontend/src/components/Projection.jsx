@@ -143,6 +143,13 @@ export const Projection = ({ scenario, setScenario }) => {
             </div>
           </div>
 
+          <div>
+            <Label className="text-xs text-muted-foreground">Max Annual Conversion ($, 0 = no cap)</Label>
+            <Input type="number" step={10000} value={r.max_annual ?? 0} data-testid="max-annual-conversion"
+              onChange={(e) => update("roth.max_annual", parseFloat(e.target.value) || 0)} className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">Hard dollar cap per year, on top of the bracket ceiling above.</p>
+          </div>
+
           <div className="flex items-center justify-between">
             <Label className="text-sm">Stop at RMD age (73)</Label>
             <Switch checked={r.stop_at_rmd_age} onCheckedChange={(v) => update("roth.stop_at_rmd_age", v)} data-testid="stop-rmd-switch" />

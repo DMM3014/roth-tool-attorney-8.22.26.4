@@ -119,7 +119,12 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
     """Estate at second death: step-up on taxable/home, heir tax on inherited IRA, tax-free Roth."""
     lc = cfg.get("legacy", {})
     settlement_pct = lc.get("estate_settlement_pct", 0.01)
-    heir_ord_rate = lc.get("heir_ordinary_rate", 0.30)
+    # Heir ordinary rate = heir federal marginal + heir state marginal (what heirs pay
+    # to draw down the inherited Traditional IRA). Falls back to an explicit blended rate.
+    if "heir_federal_rate" in lc or "heir_state_rate" in lc:
+        heir_ord_rate = lc.get("heir_federal_rate", 0.24) + lc.get("heir_state_rate", 0.0)
+    else:
+        heir_ord_rate = lc.get("heir_ordinary_rate", 0.30)
     step_up = lc.get("step_up_at_death", True)
     mortgage = cfg.get("mortgage_balance", 0.0)
 
@@ -137,7 +142,9 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
         "inherited_ira_tax": round(inherited_ira_tax, 2),
         "tax_free_roth_to_heirs": round(end_roth, 2),
         "after_tax_estate_to_heirs": round(after_tax_estate, 2),
-        "heir_ordinary_rate": heir_ord_rate,
+        "heir_ordinary_rate": round(heir_ord_rate, 4),
+        "heir_federal_rate": lc.get("heir_federal_rate"),
+        "heir_state_rate": lc.get("heir_state_rate"),
         "step_up_at_death": step_up,
     }
 
