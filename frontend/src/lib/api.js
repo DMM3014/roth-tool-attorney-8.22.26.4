@@ -5,6 +5,7 @@ export const API = `${BACKEND_URL}/api`;
 
 export const fetchDefaults = () => axios.get(`${API}/defaults`).then((r) => r.data);
 export const runProjection = (config) => axios.post(`${API}/projection`, { config }).then((r) => r.data);
+export const runSweep = (config) => axios.post(`${API}/sweep`, { config }).then((r) => r.data);
 export const optimizeConversion = (inputs, target_rate, max_conversion = 0) =>
   axios.post(`${API}/tax/optimize`, { inputs, target_rate, max_conversion }).then((r) => r.data);
 export const computeYearTax = (inputs) => axios.post(`${API}/tax/year`, { inputs }).then((r) => r.data);
@@ -15,3 +16,17 @@ export const deleteScenario = (id) => axios.delete(`${API}/scenarios/${id}`).the
 export const fmtUSD = (v) =>
   v == null ? "—" : v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 export const fmtPct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
+
+export const downloadCSV = (rows, filename) => {
+  if (!rows || !rows.length) return;
+  const cols = Object.keys(rows[0]);
+  const lines = [cols.join(",")];
+  rows.forEach((r) => lines.push(cols.map((c) => (r[c] == null ? "" : r[c])).join(",")));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};

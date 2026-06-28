@@ -1,13 +1,14 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Area, AreaChart, Bar, BarChart, Line, ComposedChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
-import { Wallet, Landmark, Receipt, Sparkles } from "lucide-react";
+import { Wallet, Landmark, Receipt, Sparkles, Wand2, Award, Download, Printer, Gift } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { runProjection, fmtUSD, fmtPct } from "@/lib/api";
+import { runProjection, runSweep, downloadCSV, fmtUSD, fmtPct } from "@/lib/api";
 import { AIInsights } from "@/components/AIInsights";
 
 const BRACKETS = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
@@ -19,6 +20,8 @@ export const Projection = ({ scenario, setScenario }) => {
   const [withRoth, setWithRoth] = useState(null);
   const [noRoth, setNoRoth] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [sweep, setSweep] = useState(null);
+  const [sweeping, setSweeping] = useState(false);
   const r = scenario.roth;
   const targetIdx = BRACKETS.indexOf(r.target_bracket) >= 0 ? BRACKETS.indexOf(r.target_bracket) : 3;
 
@@ -32,6 +35,17 @@ export const Projection = ({ scenario, setScenario }) => {
       return next;
     });
   };
+
+  const findOptimal = useCallback(() => {
+    setSweeping(true);
+    runSweep(scenario)
+      .then((res) => {
+        setSweep(res);
+        if (res.best?.target_bracket != null) update("roth.target_bracket", res.best.target_bracket);
+        else update("roth.enabled", false);
+      })
+      .finally(() => setSweeping(false));
+  }, [scenario]);
 
   const run = useCallback(() => {
     setLoading(true);
@@ -64,6 +78,7 @@ export const Projection = ({ scenario, setScenario }) => {
 
   const s = withRoth?.summary;
   const sn = noRoth?.summary;
+  const legacy = withRoth?.legacy;
   const taxDelta = s && sn ? sn.lifetime_taxes - s.lifetime_taxes : 0;
   const nwDelta = s && sn ? s.ending_net_worth - sn.ending_net_worth : 0;
 
@@ -74,6 +89,8 @@ export const Projection = ({ scenario, setScenario }) => {
       roth_controls: scenario.roth,
       with_conversions: s,
       without_conversions: sn,
+      legacy_estate: legacy,
+      bracket_sweep_ranked: sweep?.ranked,
       lifetime_tax_savings: taxDelta,
       ending_networth_difference: nwDelta,
       sample_years: withRoth.rows.filter((_, i) => i % 5 === 0).map((x) => ({
@@ -81,7 +98,7 @@ export const Projection = ({ scenario, setScenario }) => {
         traditional: x.traditional, roth: x.roth, marginal_rate: x.marginal_rate,
       })),
     },
-    [s, sn, taxDelta, nwDelta, withRoth, scenario]
+    [s, sn, taxDelta, nwDelta, withRoth, scenario, sweep, legacy]
   );
 
   return (
@@ -161,6 +178,57 @@ export const Projection = ({ scenario, setScenario }) => {
         </p>
         <p className="text-xs text-muted-foreground mt-1">{taxDelta >= 0 ? "saved by converting" : "more tax from converting"}</p>
       </div>
+
+      {/* One-click optimizer sweep */}
+      <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4 bg-white" data-testid="sweep-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2">
+            <Wand2 className="h-4 w-4 text-[#4A6741]" />
+            <h3 className="font-display text-base font-bold tracking-tight">Find the Bracket That Minimizes Lifetime Tax</h3>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={findOptimal} disabled={sweeping} data-testid="find-optimal-button"
+              className="bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
+              <Wand2 className="h-4 w-4 mr-2" />{sweeping ? "Sweeping all brackets…" : "Find Optimal Bracket"}
+            </Button>
+            <Button variant="outline" onClick={() => downloadCSV(withRoth?.rows, "retirement_projection.csv")}
+              disabled={!withRoth} data-testid="export-csv-button" className="rounded-full">
+              <Download className="h-4 w-4 mr-2" /> CSV
+            </Button>
+            <Button variant="outline" onClick={() => window.print()} data-testid="print-button" className="rounded-full">
+              <Printer className="h-4 w-4 mr-2" /> Print / PDF
+            </Button>
+          </div>
+        </div>
+        {!sweep && <p className="text-sm text-muted-foreground">Sweeps every target bracket (and no-conversion) and ranks each by the after-tax estate passed to heirs — then auto-applies the winner.</p>}
+        {sweep && (
+          <div className="overflow-x-auto">
+            <div className="flex items-center gap-2 mb-3 text-sm">
+              <Award className="h-4 w-4 text-[#C87941]" />
+              <span className="font-semibold">Optimal:</span>
+              <span data-testid="optimal-result" className="font-display font-bold text-[#4A6741]">{sweep.best.label}</span>
+              <span className="text-muted-foreground">→ {fmtUSD(sweep.best.after_tax_estate)} to heirs · {fmtUSD(sweep.best.lifetime_taxes)} lifetime tax</span>
+            </div>
+            <table className="w-full text-xs">
+              <thead className="text-muted-foreground text-right border-b border-[#EBE8E0]">
+                <tr><th className="text-left py-2">Strategy</th><th>Total Converted</th><th>Lifetime Taxes</th><th>Ending Roth</th><th>Ending Net Worth</th><th>After-Tax to Heirs</th></tr>
+              </thead>
+              <tbody>
+                {sweep.ranked.map((row, i) => (
+                  <tr key={row.label} className={`text-right border-b border-[#F3F1EC] tabular-nums ${i === 0 ? "bg-[#4A6741]/5 font-medium" : ""}`} data-testid={`sweep-row-${i}`}>
+                    <td className="text-left py-2">{i === 0 && "★ "}{row.label}</td>
+                    <td>{fmtUSD(row.total_converted)}</td>
+                    <td className="text-[#C87941]">{fmtUSD(row.lifetime_taxes)}</td>
+                    <td>{fmtUSD(row.ending_roth)}</td>
+                    <td>{fmtUSD(row.ending_net_worth)}</td>
+                    <td className="text-[#4A6741] font-medium">{fmtUSD(row.after_tax_estate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {/* Net worth comparison chart */}
       <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-3" data-testid="networth-chart">
@@ -243,6 +311,24 @@ export const Projection = ({ scenario, setScenario }) => {
         </table>
       </Card>
 
+      {/* Legacy / Estate */}
+      <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="legacy-card">
+        <div className="flex items-center gap-2 mb-4">
+          <Gift className="h-4 w-4 text-[#4A6741]" />
+          <h3 className="font-display text-base font-bold tracking-tight">Legacy & Estate at Second Death</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-5">
+          Taxable & home receive a basis step-up (no embedded-gain tax). Inherited traditional IRA is taxed to heirs (SECURE 10-year, PV-at-death) at {fmtPct(legacy?.heir_ordinary_rate)}. Roth passes tax-free.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <EstateMetric label="Gross Estate" value={fmtUSD(legacy?.gross_estate)} testid="estate-gross" />
+          <EstateMetric label="Settlement Costs" value={`−${fmtUSD(legacy?.estate_settlement)}`} warn testid="estate-settlement" />
+          <EstateMetric label="Inherited IRA Tax" value={`−${fmtUSD(legacy?.inherited_ira_tax)}`} warn testid="estate-ira-tax" />
+          <EstateMetric label="Tax-Free Roth to Heirs" value={fmtUSD(legacy?.tax_free_roth_to_heirs)} accent testid="estate-roth" />
+          <EstateMetric label="After-Tax Estate to Heirs" value={fmtUSD(legacy?.after_tax_estate_to_heirs)} accent big testid="estate-after-tax" />
+        </div>
+      </Card>
+
       {/* AI */}
       <Card className="p-6 bg-[#EBE8E0]/60 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="ai-insights-panel-proj">
         <div className="flex items-center gap-2 mb-3">
@@ -264,4 +350,11 @@ const SummaryCard = ({ icon: Icon, label, value, sub, accent, testid }) => (
     <p className={`font-display text-2xl font-bold ${accent === "terra" ? "text-[#C87941]" : "text-[#4A6741]"}`}>{value}</p>
     <p className="text-xs text-muted-foreground mt-1">{sub}</p>
   </Card>
+);
+
+const EstateMetric = ({ label, value, accent, warn, big, testid }) => (
+  <div className={`rounded-lg border p-4 ${big ? "border-[#4A6741]/30 bg-[#4A6741]/5" : "border-[#EBE8E0] bg-white"}`}>
+    <p className="label-cap text-muted-foreground text-[10px] mb-1">{label}</p>
+    <p data-testid={testid} className={`font-display ${big ? "text-2xl" : "text-lg"} font-bold ${accent ? "text-[#4A6741]" : warn ? "text-[#C87941]" : "text-[#1A1A1A]"}`}>{value}</p>
+  </div>
 );

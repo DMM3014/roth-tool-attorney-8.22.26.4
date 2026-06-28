@@ -75,4 +75,10 @@ DEFAULT_SCENARIO = {
         "stop_at_rmd_age": True,
     },
     "dividend_yield": 0.02,
+    "mortgage_balance": 0,
+    "legacy": {
+        "estate_settlement_pct": 0.01,
+        "heir_ordinary_rate": 0.30,
+        "step_up_at_death": True,
+    },
 }

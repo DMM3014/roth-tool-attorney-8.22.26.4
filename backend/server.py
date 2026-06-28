@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 
 from tax_engine import compute_year_tax, optimize_conversion
-from projection import run_projection
+from projection import run_projection, sweep_brackets
 from defaults import DEFAULT_SCENARIO
 
 ROOT_DIR = Path(__file__).parent
@@ -87,6 +87,15 @@ async def projection(req: ProjectionRequest):
         return run_projection(req.config)
     except Exception as e:
         logging.exception("projection failed")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.post("/sweep")
+async def sweep(req: ProjectionRequest):
+    try:
+        return sweep_brackets(req.config)
+    except Exception as e:
+        logging.exception("sweep failed")
         raise HTTPException(status_code=400, detail=str(e))
 
 

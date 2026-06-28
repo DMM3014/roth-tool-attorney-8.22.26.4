@@ -339,14 +339,96 @@ def run_projection(cfg: dict) -> dict:
     total_conv = sum(r["roth_conversion"] for r in rows)
     total_tax_paid = sum(r["total_tax"] for r in rows)
     final = rows[-1] if rows else {}
+
+    # --- Legacy / estate at second death (final modeled year) ---
+    legacy_cfg = cfg.get("legacy", {})
+    settlement_pct = legacy_cfg.get("estate_settlement_pct", 0.01)
+    heir_ord_rate = legacy_cfg.get("heir_ordinary_rate", 0.30)
+    step_up = legacy_cfg.get("step_up_at_death", True)
+    mortgage = cfg.get("mortgage_balance", 0.0)
+
+    end_nw = final.get("net_worth", 0)
+    end_trad = final.get("traditional", 0)
+    end_roth = final.get("roth", 0)
+    end_taxable = final.get("taxable", 0)
+    end_realestate = final.get("real_estate", 0)
+
+    gross_estate = max(0.0, end_nw - mortgage)
+    estate_settlement = settlement_pct * gross_estate
+    # SECURE 10-yr inherited IRA: heirs pay ordinary tax (PV-at-death drag)
+    inherited_ira_tax = end_trad * heir_ord_rate
+    # taxable & home get a basis step-up -> no embedded-gain tax to heirs
+    embedded_gain_tax = 0.0 if step_up else 0.0
+    after_tax_estate = gross_estate - estate_settlement - inherited_ira_tax - embedded_gain_tax
+
     return {
         "rows": rows,
         "summary": {
             "years": len(rows),
             "total_roth_converted": round(total_conv, 2),
             "lifetime_taxes": round(total_tax_paid, 2),
-            "ending_net_worth": final.get("net_worth", 0),
-            "ending_roth": final.get("roth", 0),
-            "ending_traditional": final.get("traditional", 0),
+            "ending_net_worth": end_nw,
+            "ending_roth": end_roth,
+            "ending_traditional": end_trad,
+            "ending_taxable": end_taxable,
+            "ending_real_estate": end_realestate,
+        },
+        "legacy": {
+            "gross_estate": round(gross_estate, 2),
+            "estate_settlement": round(estate_settlement, 2),
+            "inherited_ira_tax": round(inherited_ira_tax, 2),
+            "tax_free_roth_to_heirs": round(end_roth, 2),
+            "after_tax_estate_to_heirs": round(after_tax_estate, 2),
+            "heir_ordinary_rate": heir_ord_rate,
+            "step_up_at_death": step_up,
         },
     }
+
+
+def sweep_brackets(cfg: dict) -> dict:
+    """Run the projection for each candidate target bracket (+ no-conversion) and
+    rank by lifetime taxes and after-tax estate to heirs. Phase 9 auto-optimizer."""
+    candidates = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]
+    results = []
+
+    # baseline: conversions disabled
+    base_cfg = dict(cfg)
+    base_cfg["roth"] = dict(cfg["roth"])
+    base_cfg["roth"]["enabled"] = False
+    base = run_projection(base_cfg)
+    results.append({
+        "label": "No conversions",
+        "target_bracket": None,
+        "lifetime_taxes": base["summary"]["lifetime_taxes"],
+        "ending_net_worth": base["summary"]["ending_net_worth"],
+        "ending_roth": base["summary"]["ending_roth"],
+        "total_converted": 0.0,
+        "after_tax_estate": base["legacy"]["after_tax_estate_to_heirs"],
+    })
+
+    for rate in candidates:
+        c = dict(cfg)
+        c["roth"] = dict(cfg["roth"])
+        c["roth"]["enabled"] = True
+        c["roth"]["target_bracket"] = rate
+        r = run_projection(c)
+        results.append({
+            "label": f"Fill {int(rate*100)}% bracket",
+            "target_bracket": rate,
+            "lifetime_taxes": r["summary"]["lifetime_taxes"],
+            "ending_net_worth": r["summary"]["ending_net_worth"],
+            "ending_roth": r["summary"]["ending_roth"],
+            "total_converted": r["summary"]["total_roth_converted"],
+            "after_tax_estate": r["legacy"]["after_tax_estate_to_heirs"],
+        })
+
+    # rank by highest after-tax estate to heirs (true optimization metric)
+    ranked = sorted(results, key=lambda x: x["after_tax_estate"], reverse=True)
+    best = ranked[0]
+    return {
+        "results": results,
+        "ranked": ranked,
+        "best": best,
+        "metric": "after_tax_estate_to_heirs",
+    }
+
