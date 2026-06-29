@@ -1,0 +1,38 @@
+{
+  "summary": "Frontend-only verification of the new 'Detail / Cashflow' tab. All 6 review-request bullets PASS. Tab renders both Account Detail and Cashflow cards, 37 lifetime year rows + 10 heir rows populate with dollar values (no all-dash rows), Net Worth column populated for every lifetime row (37/37 $ values, 0 dashes), heir rows visually shaded orange (#FBF7F0), both CSV exports trigger real browser downloads (account_detail.csv, cashflow.csv), and switching across all 5 tabs (optimizer→projection→cashflow→inputs→scenarios) works without crashes. One non-fatal React console warning observed: 'Each child in a list should have a unique key prop. Check the render method of DetailCashflow.' — caused by use of <> fragments inside .map() loops in DetailCashflow.jsx. Does NOT block rendering but should be cleaned up.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_checklist": {
+    "tab_cashflow_renders_both_cards": "PASS — clicking [data-testid=tab-cashflow] shows [data-testid=account-detail-card] AND [data-testid=cashflow-card] within ~2s of projection",
+    "account_detail_lifetime_rows": "PASS — 37 rows matching acct-row-{year} from 2026 through 2062 with per-account $ values, per-tax-type Σ subtotals, and Net Worth ($13,772,402 → $81,426,835)",
+    "account_detail_networth_column_populated": "PASS — 37/37 lifetime rows show $ value in Net Worth column, 0 dashes",
+    "account_detail_heir_rows": "PASS — 10 acct-heir-row-{1..10} rows (years 2063+1 through 2072+10). Per-account cells show '—' (expected: individual accounts merged post-death), inherited-bucket subtotals AND total_to_heirs populated ($85,123,133 → $140,350,666). Heir rows visually shaded with background rgb(251,247,240) ≡ #FBF7F0 (orange tint), distinct from white lifetime rows.",
+    "cashflow_rows_populated": "PASS — 37 cf-row-{year} rows. Sample 2026: Wages $350,000 · Dividends $120,000 · Interest $30,000 · RMD — · Roth Conv. $55,750 · Expenses $286,000 · Income Tax $126,598 · Surplus $57,402. Sample 2062: shows RMD $565,881, Income Tax $335,510, Medicare $27,215, Surplus $516,206.",
+    "csv_export_account_detail": "PASS — clicking [data-testid=export-account-detail] triggers download event with suggested_filename='account_detail.csv', no console errors",
+    "csv_export_cashflow": "PASS — clicking [data-testid=export-cashflow] triggers download event with suggested_filename='cashflow.csv', no console errors",
+    "tab_switching_no_crash": "PASS — all 5 tabs (optimizer / projection / cashflow / inputs / scenarios) navigated in sequence; UI re-renders cleanly; no page errors; only the non-fatal React key warning above"
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Low-priority cleanup: in DetailCashflow.jsx replace bare <> fragments inside .map((g) => ...) with <Fragment key={g.type}>...</Fragment> (3 occurrences at lines ~97-102, ~110-115, ~124-129). This silences the React 'each child in a list should have a unique key prop' console warning. Does NOT affect rendering/functionality.",
+    "Low-priority polish: cashflow cell render uses `{v ? num(v) : '—'}` (line 171). A legitimate value of 0 is falsy and would render as '—' rather than '$0'. Recommend `{v == null ? '—' : num(v)}` to match the Account Detail helper. Not currently visible because backend appears to send null for empty rows, but is a latent inconsistency."
+  ],
+  "critical_code_review_comments": [
+    "DetailCashflow.jsx uses unkeyed React fragments (<>...</>) as the top-level element returned from .map((g) => ...) calls inside both <thead> and <tbody>. This produces a 'missing key' console warning on every render. Replace with `<Fragment key={g.type}>` (and import { Fragment } from 'react').",
+    "Cashflow cell: `{v ? num(v) : '—'}` falsy-renders 0 as '—'. Use null-check (`v == null`) to align with num() helper and avoid hiding a legitimate $0 value.",
+    "useEffect dependency `[scenario]` on line 22 — since `scenario` is a brand-new object reference whenever the parent rerenders, the projection will refire even when the underlying data is unchanged. Consider a stable signature (JSON.stringify, or a hash field) to avoid duplicate /api/project calls every time the user mouses over a control elsewhere in the page.",
+    "Heir row per-account cells render '—' literal text; this is correct functionally but a tiny tooltip ('individual accounts merged at second death') would help non-spreadsheet users understand why those cells are blank."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (not tested per request)", "frontend": "100% (8/8 functional checks pass; 1 non-fatal console warning)"},
+  "test_credentials": "n/a — open calculator, no auth",
+  "seed_data_creation": "None — no scenarios saved during this run",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Detail/Cashflow tab is wired and works end-to-end. Account-detail table = 37 lifetime rows + 10 heir rows; cashflow = 37 rows; both CSVs export. Only outstanding item is the React key-prop console warning in DetailCashflow.jsx (cosmetic, non-blocking). Backend /api/project response contract is confirmed correct: rows[].account_balances{}, rows[].cashflow{}, legacy.post_death_rows[] with bucket keys (inherited_roth, inherited_traditional, taxable_and_reinvested, cash, real_estate, total_to_heirs). Tax math NOT re-verified per agent_to_agent_context_note.",
+  "rca of the issue": "n/a — no defects. Key-prop warning RCA: DetailCashflow.jsx returns shorthand fragments <> from inside `.map((g) => ...)` callbacks; React requires the top-level node returned from a map to carry a key. Fix: import Fragment from 'react' and use `<Fragment key={g.type}>...</Fragment>` (or, simpler, wrap in a real DOM element/array). Three occurrences to update."
+}
