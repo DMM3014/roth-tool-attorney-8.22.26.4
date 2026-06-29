@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree } from "lucide-react";
+import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchDefaults } from "@/lib/api";
 import { Optimizer } from "@/components/Optimizer";
@@ -7,6 +7,7 @@ import { Projection } from "@/components/Projection";
 import { Scenarios } from "@/components/Scenarios";
 import { PlanInputs } from "@/components/PlanInputs";
 import { DetailCashflow } from "@/components/DetailCashflow";
+import { Compare } from "@/components/Compare";
 
 export const Planner = () => {
   const [scenario, setScenario] = useState(null);
@@ -58,6 +59,9 @@ export const Planner = () => {
             <TabsTrigger value="scenarios" data-testid="tab-scenarios" className="gap-2 data-[state=active]:bg-white">
               <FolderOpen className="h-4 w-4" /> Scenarios
             </TabsTrigger>
+            <TabsTrigger value="compare" data-testid="tab-compare" className="gap-2 data-[state=active]:bg-white">
+              <GitCompareArrows className="h-4 w-4" /> Compare
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="optimizer">
@@ -74,6 +78,9 @@ export const Planner = () => {
           </TabsContent>
           <TabsContent value="scenarios">
             <Scenarios scenario={scenario} setScenario={setScenario} />
+          </TabsContent>
+          <TabsContent value="compare">
+            <Compare scenario={scenario} />
           </TabsContent>
         </Tabs>
       </main>
