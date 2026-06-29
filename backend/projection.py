@@ -10,7 +10,8 @@ from datetime import date
 from typing import Any
 
 from tax_engine import (compute_year_tax, optimize_conversion, rmd_divisor,
-                        rmd_start_age, bracket_ceiling, irmaa_threshold_cap)
+                        rmd_start_age, bracket_ceiling, irmaa_threshold_cap,
+                        bracket_fill, irmaa_thresholds)
 
 IRMAA_LOOKBACK_YEARS = 2  # IRMAA surcharge is based on MAGI from 2 years prior (hard-coded SSA rule)
 
@@ -678,6 +679,19 @@ def run_projection(cfg: dict) -> dict:
             "total_tax": round(total_tax, 2),
             "effective_rate": tax_res["effective_rate"],
             "marginal_rate": tax_res["marginal_ordinary_rate"],
+            "ordinary_taxable_income": tax_res["ordinary_taxable_income"],
+            "magi": tax_res["magi"],
+            "irmaa_magi": tax_res["irmaa_magi"],
+            "irmaa_tier": tax_res["irmaa_tier"],
+            "irmaa_thresholds": irmaa_thresholds(mfj, irmaa_index),
+            "bracket_fill": bracket_fill(tax_res["ordinary_taxable_income"], mfj, bracket_index),
+            "tax_breakdown": {
+                "ordinary": tax_res["federal_ordinary_tax"],
+                "preferential": tax_res["federal_ltcg_tax"],
+                "niit": tax_res["niit"],
+                "state": tax_res["state_tax"],
+                "medicare": tax_res["medicare_premiums"],
+            },
             "cash": round(sum(bal[i] for i in cash_ids), 2),
             "taxable": round(sum(bal[i] for i in taxable_ids), 2),
             "traditional": round(sum(bal[i] for i in ira_ids), 2),

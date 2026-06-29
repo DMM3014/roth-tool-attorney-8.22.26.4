@@ -125,6 +125,30 @@ def irmaa_tier(magi: float, mfj: bool, idx: float) -> int:
     return sum(1 for t in thresholds if magi >= t * idx)
 
 
+def irmaa_thresholds(mfj: bool, idx: float) -> list[float]:
+    """The 5 indexed IRMAA MAGI tier-entry thresholds for the year (Tax!R39)."""
+    thresholds = IRMAA_MFJ if mfj else IRMAA_SINGLE
+    return [round(t * idx, 2) for t in thresholds]
+
+
+def bracket_fill(ordinary_taxable: float, mfj: bool, idx: float) -> list[dict]:
+    """Split ordinary taxable income into the dollars sitting in each marginal band.
+
+    Returns a list of {"rate", "amount"} for every bracket from 10% up to (and
+    including) the band the last dollar lands in. Mirrors the indexed floors used
+    by federal_ordinary_tax so the segments reconcile with the tax computed.
+    """
+    floors = BRACKET_FLOOR_MFJ if mfj else BRACKET_FLOOR_SGL
+    out = []
+    for i, rate in enumerate(BRACKET_RATES):
+        lo = floors[i] * idx
+        hi = floors[i + 1] * idx if i + 1 < len(floors) else float("inf")
+        amount = max(0.0, min(ordinary_taxable, hi) - lo)
+        out.append({"rate": rate, "amount": round(amount, 2)})
+    return out
+
+
+
 def irmaa_threshold_cap(tier_cap: int, mfj: bool, idx: float) -> float:
     """Max MAGI to stay AT or BELOW IRMAA `tier_cap` (0 = base/no surcharge).
 
