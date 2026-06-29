@@ -176,3 +176,14 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   (Δ vs the first selected). Files: `Compare.jsx`, `CompareChart.jsx`; wired into `Planner.jsx`.
   Each slot runs `/api/projection`; effect debounced via a JSON signature with an `alive` race guard.
   Verified by testing agent (iteration_8.json) — 9/9 frontend checks PASS, 0 console errors.
+- **Analytics tab — 8 MGP/Boldin-style charts (DONE)**: new top-level "Analytics" tab (after Detail/
+  Cashflow) with: (1) Income sources stacked bar vs spending line, (2) Tax bracket-fill stacked bars +
+  marginal-rate step line, (3) Annual surplus/(shortfall) green/red bars, (4) Tax composition stacked
+  (ordinary/LTCG/NIIT/state/Medicare), (5) RMD vs Traditional/Roth balances dual-axis, (6) IRMAA cliff
+  MAGI area vs 5 indexed tier step-lines, (7) Effective vs marginal rate lines, (8) Cumulative lifetime
+  taxes convert-vs-no-convert area. Files: `Analytics.jsx`, `AnalyticsCharts.jsx`; wired into `Planner.jsx`.
+  Backend: added per-row `ordinary_taxable_income`, `magi`, `irmaa_tier`, `irmaa_thresholds`,
+  `bracket_fill`, `tax_breakdown` (projection.py) + `bracket_fill()`/`irmaa_thresholds()` helpers
+  (tax_engine.py). Tax math unchanged — 45/45 tests pass. Analytics runs the projection with + without
+  conversions (debounced, short-circuits the 2nd call when conversions already off).
+  Verified by testing agent (iteration_9.json) — 7/7 frontend checks PASS, 0 console errors.

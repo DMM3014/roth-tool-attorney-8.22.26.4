@@ -14,11 +14,15 @@ export const Analytics = ({ scenario }) => {
   const sig = JSON.stringify(scenario);
   useEffect(() => {
     let alive = true;
-    const noCfg = JSON.parse(JSON.stringify(scenario));
-    noCfg.roth.enabled = false;
     const t = setTimeout(() => {
-      Promise.all([runProjection(scenario), runProjection(noCfg)]).then(([a, b]) => {
-        if (alive) { setWithRoth(a); setNoRoth(b); }
+      const tasks = [runProjection(scenario)];
+      if (scenario.roth?.enabled) {
+        const noCfg = JSON.parse(JSON.stringify(scenario));
+        noCfg.roth.enabled = false;
+        tasks.push(runProjection(noCfg));
+      }
+      Promise.all(tasks).then(([a, b]) => {
+        if (alive) { setWithRoth(a); setNoRoth(b || a); }
       });
     }, 300);
     return () => { alive = false; clearTimeout(t); };
