@@ -168,3 +168,11 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   merge / step-up at the second death. Self-verified via screenshot + real download event.
   Note: yarn.lock integrity hash for `@emergentbase/visual-edits` was stale and updated to the current
   CDN tarball hash to unblock `yarn add`.
+- **Compare tab (DONE)**: new top-level "Compare" tab lets users pick up to 3 scenarios from dropdowns
+  (the live "Current (working scenario)" + any saved scenarios) and view them side by side. Shows
+  (1) a Headline Metrics table (lifetime taxes, ending net worth, total converted, ending Roth,
+  after-tax to heirs, inherited IRA tax) with a ★ on the most-favorable value per row, (2) a net-worth-
+  over-time overlay line chart with one line per scenario, and (3) a year-by-year net-worth delta table
+  (Δ vs the first selected). Files: `Compare.jsx`, `CompareChart.jsx`; wired into `Planner.jsx`.
+  Each slot runs `/api/projection`; effect debounced via a JSON signature with an `alive` race guard.
+  Verified by testing agent (iteration_8.json) — 9/9 frontend checks PASS, 0 console errors.
