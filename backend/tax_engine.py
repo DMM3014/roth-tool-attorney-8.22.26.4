@@ -94,10 +94,17 @@ def federal_ltcg_tax(ord_tax: float, pref: float, mfj: bool, idx: float) -> floa
 
 
 def marginal_ordinary_rate(ordinary_taxable: float, mfj: bool, idx: float) -> float:
+    """Rate applied to the LAST dollar of ordinary taxable income.
+
+    Uses a $1 tolerance so income filled *exactly* to the top of a bracket reports that
+    bracket's rate (the rate those dollars were actually taxed at) rather than flickering
+    up to the next bracket on the boundary — e.g. a "fill to 24%" conversion reads 24%,
+    not 32%.
+    """
     floors = BRACKET_FLOOR_MFJ if mfj else BRACKET_FLOOR_SGL
     rate = BRACKET_RATES[0]
     for r, f in zip(BRACKET_RATES, floors):
-        if ordinary_taxable >= f * idx:
+        if ordinary_taxable > f * idx + 1.0:
             rate = r
     return rate
 
