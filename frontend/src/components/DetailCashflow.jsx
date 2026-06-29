@@ -1,8 +1,8 @@
 import { useEffect, useState, Fragment } from "react";
-import { Download, Wallet, Table2 } from "lucide-react";
+import { Download, Wallet, Table2, FileSpreadsheet } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { runProjection, downloadCSV, fmtUSD } from "@/lib/api";
+import { runProjection, downloadCSV, downloadWorkbook, fmtUSD } from "@/lib/api";
 
 const TYPE_GROUPS = [
   { type: "Cash", label: "Cash", bucket: "cash" },
@@ -17,9 +17,13 @@ const num = (v) => (v == null ? "—" : fmtUSD(v));
 export const DetailCashflow = ({ scenario }) => {
   const [data, setData] = useState(null);
 
+  const sig = JSON.stringify(scenario);
   useEffect(() => {
-    runProjection(scenario).then(setData);
-  }, [scenario]);
+    let active = true;
+    const t = setTimeout(() => runProjection(scenario).then((d) => active && setData(d)), 300);
+    return () => { active = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
 
   if (!data) {
     return <div className="py-20 text-center text-muted-foreground animate-pulse label-cap">Running projection…</div>;
@@ -38,10 +42,10 @@ export const DetailCashflow = ({ scenario }) => {
   // ---------- Account Detail table ----------
   const acctSubtotal = (row, g) => g.accts.reduce((s, a) => s + (row.account_balances?.[a.id] || 0), 0);
 
-  const acctCsv = () => {
+  const buildAcctRows = () => {
     const out = [];
     rows.forEach((r) => {
-      const rec = { year: r.year };
+      const rec = { Year: r.year };
       groups.forEach((g) => {
         g.accts.forEach((a) => { rec[a.name] = r.account_balances?.[a.id] ?? ""; });
         rec[`${g.label} Total`] = acctSubtotal(r, g);
@@ -50,7 +54,7 @@ export const DetailCashflow = ({ scenario }) => {
       out.push(rec);
     });
     postRows.forEach((p) => {
-      const rec = { year: `${lastYear + p.year_after_death} (heirs +${p.year_after_death})` };
+      const rec = { Year: `${lastYear + p.year_after_death} (heirs +${p.year_after_death})` };
       groups.forEach((g) => {
         g.accts.forEach((a) => { rec[a.name] = ""; });
         rec[`${g.label} Total`] = p[g.bucket] ?? "";
@@ -58,8 +62,9 @@ export const DetailCashflow = ({ scenario }) => {
       rec["Net Worth"] = p.total_to_heirs;
       out.push(rec);
     });
-    downloadCSV(out, "account_detail.csv");
+    return out;
   };
+  const acctCsv = () => downloadCSV(buildAcctRows(), "account_detail.csv");
 
   // ---------- Cashflow table ----------
   const CF_COLS = [
@@ -69,15 +74,53 @@ export const DetailCashflow = ({ scenario }) => {
     ["from_cash", "← Cash"], ["from_taxable", "← Taxable"], ["from_ira", "← IRA"], ["from_roth", "← Roth"],
     ["surplus", "Surplus / (Short)"],
   ];
-  const cfCsv = () => {
-    downloadCSV(rows.map((r) => ({ year: r.year, ...CF_COLS.reduce((o, [k, l]) => ({ ...o, [l]: r.cashflow?.[k] ?? "" }), {}) })), "cashflow.csv");
-  };
+  const buildCfRows = () =>
+    rows.map((r) => ({ Year: r.year, ...CF_COLS.reduce((o, [k, l]) => ({ ...o, [l]: r.cashflow?.[k] ?? "" }), {}) }));
+  const cfCsv = () => downloadCSV(buildCfRows(), "cashflow.csv");
+
+  // ---------- Projection summary ----------
+  const buildSummaryRows = () =>
+    rows.map((r) => ({
+      Year: r.year,
+      Filing: r.filing_status,
+      "Client Age": r.client_age ?? "",
+      "Spouse Age": r.spouse_age ?? "",
+      "Ordinary Income": r.ordinary_income,
+      RMD: r.rmd,
+      "Roth Conversion": r.roth_conversion,
+      "LTCG / Dividends": r.preferential_income,
+      "Total Tax": r.total_tax,
+      "Marginal Rate": r.marginal_rate,
+      Traditional: r.traditional,
+      Roth: r.roth,
+      "Net Worth": r.net_worth,
+    }));
+
+  const fullPlan = () => downloadWorkbook([
+    { name: "Projection Summary", rows: buildSummaryRows() },
+    { name: "Account Detail", rows: buildAcctRows() },
+    { name: "Cashflow", rows: buildCfRows() },
+  ], "retirement_plan.xlsx");
 
   const th = "px-2 py-2 text-right font-semibold whitespace-nowrap";
   const td = "px-2 py-1.5 text-right tabular-nums whitespace-nowrap";
 
   return (
     <div className="space-y-10">
+      {/* Full-plan export toolbar */}
+      <div className="flex items-center justify-between rounded-xl border border-[#EBE8E0] bg-[#F9F8F6] px-5 py-4" data-testid="full-plan-toolbar">
+        <div className="flex items-center gap-2">
+          <FileSpreadsheet className="h-5 w-5 text-[#4A6741]" />
+          <div>
+            <p className="font-display text-sm font-bold tracking-tight">Download full plan</p>
+            <p className="text-[11px] text-muted-foreground">One Excel workbook · Projection Summary + Account Detail + Cashflow (one sheet each)</p>
+          </div>
+        </div>
+        <Button size="sm" onClick={fullPlan} data-testid="export-full-plan" className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
+          <Download className="h-4 w-4" /> Excel (.xlsx)
+        </Button>
+      </div>
+
       {/* Account Detail */}
       <Card className="border-[#EBE8E0] shadow-none" data-testid="account-detail-card">
         <div className="flex items-center justify-between p-6 pb-3">
@@ -123,7 +166,7 @@ export const DetailCashflow = ({ scenario }) => {
                   </td>
                   {groups.map((g) => (
                     <Fragment key={g.type}>
-                      {g.accts.map((a) => <td key={a.id} className={`${td} text-muted-foreground`}>—</td>)}
+                      {g.accts.map((a) => <td key={a.id} className={`${td} text-muted-foreground cursor-help`} title="Individual accounts merge and receive a basis step-up at the second death — only the inherited-bucket subtotals are tracked over the 10-year SECURE horizon.">—</td>)}
                       <td key={`${g.type}-sub`} className={`${td} font-semibold text-[#4A6741] border-l border-[#EBE8E0]`}>{num(p[g.bucket])}</td>
                     </Fragment>
                   ))}

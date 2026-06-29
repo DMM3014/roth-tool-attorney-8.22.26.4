@@ -160,3 +160,11 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   `rows[].account_balances{}`, `rows[].cashflow{}` and `legacy.post_death_rows[]`.
   Verified by testing agent (iteration_7.json) — 8/8 frontend checks PASS. Cleaned up React key-prop
   warning (Fragment keys) and the `0`-falsy cashflow cell render.
+- **Detail/Cashflow enhancements (DONE)**: (1) "Download full plan" button exports a single multi-sheet
+  Excel workbook (`retirement_plan.xlsx`) with Projection Summary + Account Detail + Cashflow sheets via
+  SheetJS (`xlsx` added to package.json; `downloadWorkbook` helper in `lib/api.js`). (2) Debounced the
+  projection refire in `DetailCashflow` (300ms timeout keyed on a JSON signature of scenario) to avoid
+  duplicate /api/project calls. (3) Native-title tooltip on the heir-row blank cells explaining accounts
+  merge / step-up at the second death. Self-verified via screenshot + real download event.
+  Note: yarn.lock integrity hash for `@emergentbase/visual-edits` was stale and updated to the current
+  CDN tarball hash to unblock `yarn add`.

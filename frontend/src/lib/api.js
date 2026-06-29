@@ -1,4 +1,5 @@
 import axios from "axios";
+import * as XLSX from "xlsx";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
@@ -29,4 +30,14 @@ export const downloadCSV = (rows, filename) => {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+};
+
+// sheets: [{ name, rows: [{...}] }] -> single multi-sheet .xlsx workbook
+export const downloadWorkbook = (sheets, filename) => {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(({ name, rows }) => {
+    const ws = XLSX.utils.json_to_sheet(rows && rows.length ? rows : [{}]);
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  });
+  XLSX.writeFile(wb, filename);
 };
