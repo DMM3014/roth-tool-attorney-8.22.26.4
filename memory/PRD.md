@@ -134,3 +134,18 @@ Engine changes (`projection.py`, `tax_engine.py`):
 
 KNOWN: AI Insights streaming currently returns a budget error — the **Emergent LLM key budget is
 exceeded** (unrelated to this work; user must top up at Profile → Universal Key → Add Balance).
+
+### Phase 16 — code-quality refactor (2026-06-28)
+Applied the legitimate code-review findings (kept the V9 reconciliation green throughout — 44/44 tests):
+- **Backend `run_projection` complexity**: extracted the 40-iteration conversion/withdrawal circular
+  solver into `_solve_year_conversion(ctx, bal, basis)` (with a `_SolveCtx` dataclass to group args)
+  and result roll-up into `_aggregate_results(cfg, rows)`. Behavior identical (V9 year-by-year test guards).
+- **Frontend hook deps**: memoized `update()` with `useCallback` and fixed `findOptimal` deps in
+  `Projection.jsx`; removed the unnecessary eslint-disable in `Planner.jsx`.
+- **Projection.jsx breakdown**: extracted all chart JSX into `ProjectionCharts.jsx` (NetWorth /
+  Composition / Tax / LegacyHorizon / ConvertCompare); main file 484 → 414 lines, recharts imports gone.
+- **Dynamic RMD-stop label** by birth year (SECURE 2.0).
+- **Deliberately NOT changed (linter false positives)**: `is None`/`is not None` are correct PEP8 (changing
+  to `==` would introduce bugs); `craco.config.js` console.warn is already dev-gated build infra;
+  `use-toast.js` is a vendored shadcn file with the intentional `[state]` dependency. `compute_year_tax`
+  was left as-is — all math already lives in dedicated helpers; its length is the 30-key result dict.

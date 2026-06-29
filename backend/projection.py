@@ -5,7 +5,9 @@ the spreadsheet's CashFlow/Accounts/RMD/Income/Tax circular relationship
 (taxes -> withdrawals -> taxable income -> taxes), resolved by iteration.
 """
 from __future__ import annotations
+from dataclasses import dataclass, field
 from datetime import date
+from typing import Any
 
 from tax_engine import (compute_year_tax, optimize_conversion, rmd_divisor,
                         rmd_start_age, bracket_ceiling, irmaa_threshold_cap)
@@ -412,6 +414,91 @@ def _grow_balances(bal, accounts, div_yield):
             bal[aid] *= (1 + r)
 
 
+@dataclass
+class _SolveCtx:
+    """Per-year inputs for the conversion/withdrawal circular solver (groups what would
+    otherwise be a dozen positional args)."""
+    tax_base: dict
+    in_window: bool
+    target_rate: float
+    max_annual: float
+    irmaa_cap: Any
+    mfj: bool
+    irmaa_index_yplus2: float
+    irmaa_magi: Any
+    rmd_total: float
+    cash_boy: float
+    total_expense: float
+    ira_balance: float
+    funding_order: str
+    ira_split: float
+    rmd_reserve_id: Any
+    taxable_ids: list
+    ira_ids: list
+    roth_ids: list
+
+
+def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
+    """Resolve the circular conversion <-> discretionary-IRA-withdrawal <-> tax relationship
+    for one year. The conversion fills the target bracket on TOP of RMDs and any discretionary
+    IRA withdrawal used to fund spending (IRA-first funding consumes bracket room, leaving less
+    for conversion — mirrors the spreadsheet's iterative solver). Cash interest is taxed but
+    retained in cash, so it is NOT counted as fundable income.
+
+    Returns (conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw).
+    """
+    realized_ltcg = ira_withdraw = roth_withdraw = conversion = 0.0
+    wd, tax_res = {}, {}
+    prev_conv = prev_wd = -1.0
+    for _ in range(40):
+        conversion = 0.0
+        if ctx.in_window:
+            base_inp = {**ctx.tax_base, "ira_distributions": ctx.rmd_total + ira_withdraw,
+                        "realized_ltcg": realized_ltcg}
+            opt = optimize_conversion(base_inp, ctx.target_rate, ctx.max_annual)
+            conversion = min(opt["recommended_conversion"], max(0.0, ctx.ira_balance - ira_withdraw))
+            if ctx.irmaa_cap is not None:
+                magi_ceiling = irmaa_threshold_cap(int(ctx.irmaa_cap), ctx.mfj, ctx.irmaa_index_yplus2)
+                conversion = min(conversion, max(0.0, magi_ceiling - opt["before"]["magi"]))
+
+        tax_inp = {**ctx.tax_base,
+                   "ira_distributions": ctx.rmd_total + conversion + ira_withdraw,
+                   "realized_ltcg": realized_ltcg, "irmaa_magi": ctx.irmaa_magi}
+        tax_res = compute_year_tax(tax_inp)
+        total_tax = tax_res["total_burden"]
+
+        funding_income = (ctx.tax_base["ordinary_non_ss"] + ctx.tax_base["gross_ss"]
+                          + ctx.tax_base["recurring_div_ltcg"] + ctx.rmd_total)
+        shortfall = (ctx.total_expense + total_tax) - funding_income - ctx.cash_boy
+        wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
+            shortfall, bal, basis, ctx.taxable_ids, ctx.ira_ids, ctx.roth_ids,
+            ctx.funding_order, ctx.ira_split, ctx.rmd_reserve_id, ctx.rmd_total + conversion)
+
+        if abs(conversion - prev_conv) < 1.0 and abs(ira_withdraw - prev_wd) < 1.0:
+            break
+        prev_conv, prev_wd = conversion, ira_withdraw
+    return conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw
+
+
+def _aggregate_results(cfg: dict, rows: list) -> dict:
+    """Roll year rows up into summary totals + the legacy block."""
+    final = rows[-1] if rows else {}
+    return {
+        "rows": rows,
+        "summary": {
+            "years": len(rows),
+            "total_roth_converted": round(sum(r["roth_conversion"] for r in rows), 2),
+            "lifetime_taxes": round(sum(r["total_tax"] for r in rows), 2),
+            "ending_net_worth": final.get("net_worth", 0),
+            "ending_roth": final.get("roth", 0),
+            "ending_traditional": final.get("traditional", 0),
+            "ending_taxable": final.get("taxable", 0),
+            "ending_real_estate": final.get("real_estate", 0),
+        },
+        "legacy": _compute_legacy(cfg, final),
+    }
+
+
 def run_projection(cfg: dict) -> dict:
     h = cfg["household"]
     p = cfg["projection"]
@@ -540,59 +627,26 @@ def run_projection(cfg: dict) -> dict:
             cfg["tax"].get("survivor_spending_reduction", 0.2))
 
         # --- circular solve: conversion <-> discretionary IRA withdrawal <-> taxes ---
-        # The conversion fills the target bracket on TOP of RMDs and any discretionary
-        # IRA withdrawal used to fund spending (IRA-first funding consumes bracket room,
-        # leaving less for conversion — mirrors the spreadsheet's iterative solver).
-        # Cash interest is retained in (and compounds inside) the cash account, so it is
-        # taxed but NOT counted as fundable income here.
-        realized_ltcg = ira_withdraw = roth_withdraw = conversion = total_tax = 0.0
-        wd = {}
-        tax_res = {}
-        irmaa_magi = magi_history.get(year - IRMAA_LOOKBACK_YEARS)  # 2-yr lookback
-        prev_conv = prev_wd = -1.0
-        for _ in range(40):
-            conversion = 0.0
-            if in_window:
-                base_inp = {
-                    "filing_status": filing, "year": year,
-                    "bracket_index": bracket_index, "irmaa_index": irmaa_index,
-                    "num_65plus": num65, "medicare_count": med_count,
-                    "ordinary_non_ss": ordinary_non_ss,
-                    "ira_distributions": rmd_total + ira_withdraw,
-                    "cash_interest": cash_interest, "gross_ss": gross_ss,
-                    "recurring_div_ltcg": recurring_div, "realized_ltcg": realized_ltcg,
-                    "state_rate": state_rate, "include_irmaa": include_irmaa,
-                }
-                opt = optimize_conversion(base_inp, target_rate, max_annual)
-                conversion = min(opt["recommended_conversion"], max(0.0, ira_balance - ira_withdraw))
-                if irmaa_cap is not None:
-                    magi_ceiling = irmaa_threshold_cap(int(irmaa_cap), mfj, irmaa_index_yplus2)
-                    conversion = min(conversion, max(0.0, magi_ceiling - opt["before"]["magi"]))
-
-            ira_dist = rmd_total + conversion + ira_withdraw
-            tax_inp = {
-                "filing_status": filing, "year": year,
-                "bracket_index": bracket_index, "irmaa_index": irmaa_index,
-                "num_65plus": num65, "medicare_count": med_count,
-                "ordinary_non_ss": ordinary_non_ss,
-                "ira_distributions": ira_dist,
-                "cash_interest": cash_interest, "gross_ss": gross_ss,
-                "recurring_div_ltcg": recurring_div, "realized_ltcg": realized_ltcg,
-                "state_rate": state_rate, "include_irmaa": include_irmaa,
-                "irmaa_magi": irmaa_magi,
-            }
-            tax_res = compute_year_tax(tax_inp)
-            total_tax = tax_res["total_burden"]
-
-            funding_income = ordinary_non_ss + gross_ss + recurring_div + rmd_total
-            shortfall = (total_expense + total_tax) - funding_income - cash_boy
-            wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
-                shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
-                funding_order, ira_split, rmd_reserve_id, rmd_total + conversion)
-
-            if abs(conversion - prev_conv) < 1.0 and abs(ira_withdraw - prev_wd) < 1.0:
-                break
-            prev_conv, prev_wd = conversion, ira_withdraw
+        tax_base = {
+            "filing_status": filing, "year": year,
+            "bracket_index": bracket_index, "irmaa_index": irmaa_index,
+            "num_65plus": num65, "medicare_count": med_count,
+            "ordinary_non_ss": ordinary_non_ss, "cash_interest": cash_interest,
+            "gross_ss": gross_ss, "recurring_div_ltcg": recurring_div,
+            "state_rate": state_rate, "include_irmaa": include_irmaa,
+        }
+        ctx = _SolveCtx(
+            tax_base=tax_base, in_window=in_window, target_rate=target_rate,
+            max_annual=max_annual, irmaa_cap=irmaa_cap, mfj=mfj,
+            irmaa_index_yplus2=irmaa_index_yplus2,
+            irmaa_magi=magi_history.get(year - IRMAA_LOOKBACK_YEARS),  # 2-yr lookback
+            rmd_total=rmd_total, cash_boy=cash_boy, total_expense=total_expense,
+            ira_balance=ira_balance, funding_order=funding_order, ira_split=ira_split,
+            rmd_reserve_id=rmd_reserve_id, taxable_ids=taxable_ids, ira_ids=ira_ids,
+            roth_ids=roth_ids)
+        conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw = \
+            _solve_year_conversion(ctx, bal, basis)
+        total_tax = tax_res["total_burden"]
 
         magi_history[year] = tax_res["magi"]  # record for future-year IRMAA lookback
 
@@ -633,24 +687,7 @@ def run_projection(cfg: dict) -> dict:
 
         client_alive_prev, spouse_alive_prev = client_alive, spouse_alive
 
-    total_conv = sum(r["roth_conversion"] for r in rows)
-    total_tax_paid = sum(r["total_tax"] for r in rows)
-    final = rows[-1] if rows else {}
-
-    return {
-        "rows": rows,
-        "summary": {
-            "years": len(rows),
-            "total_roth_converted": round(total_conv, 2),
-            "lifetime_taxes": round(total_tax_paid, 2),
-            "ending_net_worth": final.get("net_worth", 0),
-            "ending_roth": final.get("roth", 0),
-            "ending_traditional": final.get("traditional", 0),
-            "ending_taxable": final.get("taxable", 0),
-            "ending_real_estate": final.get("real_estate", 0),
-        },
-        "legacy": _compute_legacy(cfg, final),
-    }
+    return _aggregate_results(cfg, rows)
 
 
 def sweep_brackets(cfg: dict) -> dict:

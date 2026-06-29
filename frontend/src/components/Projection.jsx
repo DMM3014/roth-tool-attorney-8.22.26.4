@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Area, AreaChart, Bar, BarChart, Line, ComposedChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from "recharts";
 import { Wallet, Landmark, Receipt, Sparkles, Wand2, Award, Download, Printer, Gift } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -10,20 +9,15 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { runProjection, runSweep, downloadCSV, fmtUSD, fmtPct } from "@/lib/api";
 import { AIInsights } from "@/components/AIInsights";
+import { NetWorthChart, CompositionChart, TaxChart, LegacyHorizonChart, ConvertCompareChart } from "@/components/ProjectionCharts";
 
 const BRACKETS = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
-const C = { green: "#4A6741", sage: "#7A9B76", terra: "#C87941", sand: "#E6B89C", blue: "#4B7A94" };
-const AXIS_TICK = { fontSize: 11 };
-const BAR_RADIUS = [3, 3, 0, 0];
-const YEARS_AFTER_DEATH_LABEL = { value: "Years after death", position: "insideBottom", offset: -2, fontSize: 10 };
 
 const metricColor = (accent, warn) => {
   if (accent) return "text-[#4A6741]";
   if (warn) return "text-[#C87941]";
   return "text-[#1A1A1A]";
 };
-
-const ttFmt = (v) => fmtUSD(v);
 
 export const Projection = ({ scenario, setScenario }) => {
   const [withRoth, setWithRoth] = useState(null);
@@ -38,7 +32,7 @@ export const Projection = ({ scenario, setScenario }) => {
   })();
   const targetIdx = BRACKETS.indexOf(r.target_bracket) >= 0 ? BRACKETS.indexOf(r.target_bracket) : 3;
 
-  const update = (path, value) => {
+  const update = useCallback((path, value) => {
     setScenario((prev) => {
       const next = JSON.parse(JSON.stringify(prev));
       const keys = path.split(".");
@@ -47,7 +41,7 @@ export const Projection = ({ scenario, setScenario }) => {
       o[keys[keys.length - 1]] = value;
       return next;
     });
-  };
+  }, [setScenario]);
 
   const findOptimal = useCallback(() => {
     setSweeping(true);
@@ -58,8 +52,7 @@ export const Projection = ({ scenario, setScenario }) => {
         else update("roth.enabled", false);
       })
       .finally(() => setSweeping(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scenario]);
+  }, [scenario, update]);
 
   const run = useCallback(() => {
     setLoading(true);
@@ -317,53 +310,13 @@ export const Projection = ({ scenario, setScenario }) => {
       </Card>
 
       {/* Net worth comparison chart */}
-      <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-3" data-testid="networth-chart">
-        <h3 className="font-display text-base font-bold tracking-tight mb-4">Net Worth — Conversions vs. No Conversions {loading && <span className="text-xs text-muted-foreground animate-pulse">updating…</span>}</h3>
-        <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={chartData}>
-            <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={AXIS_TICK} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(1)}M`} tick={AXIS_TICK} width={50} />
-            <Tooltip formatter={ttFmt} />
-            <Legend />
-            <Bar dataKey="conversion" name="Roth Conversion" fill={C.sand} barSize={6} />
-            <Line type="monotone" dataKey="netRoth" name="With Conversions" stroke={C.green} strokeWidth={2.5} dot={false} />
-            <Line type="monotone" dataKey="netNo" name="No Conversions" stroke={C.terra} strokeWidth={2} strokeDasharray="5 4" dot={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </Card>
+      <NetWorthChart data={chartData} loading={loading} />
 
       {/* Account composition */}
-      <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-2" data-testid="composition-chart">
-        <h3 className="font-display text-base font-bold tracking-tight mb-4">Account Composition Over Time</h3>
-        <ResponsiveContainer width="100%" height={240}>
-          <AreaChart data={chartData}>
-            <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={AXIS_TICK} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
-            <Tooltip formatter={ttFmt} />
-            <Legend />
-            <Area type="monotone" stackId="1" dataKey="Cash" stroke={C.blue} fill={C.blue} fillOpacity={0.7} />
-            <Area type="monotone" stackId="1" dataKey="Taxable" stroke={C.sage} fill={C.sage} fillOpacity={0.7} />
-            <Area type="monotone" stackId="1" dataKey="Traditional" stroke={C.terra} fill={C.terra} fillOpacity={0.7} />
-            <Area type="monotone" stackId="1" dataKey="Roth" stroke={C.green} fill={C.green} fillOpacity={0.8} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </Card>
+      <CompositionChart data={chartData} />
 
       {/* Annual taxes */}
-      <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-2" data-testid="tax-chart">
-        <h3 className="font-display text-base font-bold tracking-tight mb-4">Annual Tax Burden</h3>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={chartData}>
-            <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={AXIS_TICK} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e3).toFixed(0)}k`} tick={AXIS_TICK} width={45} />
-            <Tooltip formatter={ttFmt} />
-            <Bar dataKey="tax" name="Total Tax" fill={C.terra} radius={BAR_RADIUS} />
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
+      <TaxChart data={chartData} />
 
       {/* Year table */}
       <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4 overflow-x-auto" data-testid="projection-table">
@@ -413,18 +366,7 @@ export const Projection = ({ scenario, setScenario }) => {
           <EstateMetric label="Gross Estate at Death" value={fmtUSD(legacy?.gross_estate)} testid="estate-gross" />
           <EstateMetric label={`After-Tax to Heirs @ Yr ${legacy?.horizon_years || 10}`} value={fmtUSD(legacy?.after_tax_estate_to_heirs)} accent big testid="estate-after-tax" />
         </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <ComposedChart data={legacy?.post_death_rows || []}>
-            <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year_after_death" tick={AXIS_TICK} label={YEARS_AFTER_DEATH_LABEL} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
-            <Tooltip formatter={ttFmt} />
-            <Legend />
-            <Area type="monotone" dataKey="inherited_roth" name="Inherited Roth (tax-free)" stroke={C.green} fill={C.green} fillOpacity={0.75} />
-            <Area type="monotone" dataKey="inherited_traditional" name="Inherited Traditional (depleting)" stroke={C.terra} fill={C.terra} fillOpacity={0.65} />
-            <Line type="monotone" dataKey="total_to_heirs" name="Total to Heirs" stroke={C.blue} strokeWidth={2.5} dot={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
+        <LegacyHorizonChart rows={legacy?.post_death_rows} />
       </Card>
 
       {/* Convert vs Don't — post-death heir value */}
@@ -438,19 +380,7 @@ export const Projection = ({ scenario, setScenario }) => {
         <p className="text-xs text-muted-foreground mb-5 max-w-4xl">
           After-tax value delivered to heirs for the <span className="font-medium">selected {(BRACKETS[targetIdx] * 100).toFixed(0)}% bracket strategy</span> vs. doing no conversions — solid = total estate, dashed = the tax-free Roth portion. When the lines nearly overlap, conversions add little for heirs.
         </p>
-        <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={postCompare}>
-            <CartesianGrid strokeOpacity={0.1} vertical={false} />
-            <XAxis dataKey="year" tick={AXIS_TICK} label={YEARS_AFTER_DEATH_LABEL} />
-            <YAxis tickFormatter={(v) => `$${(v / 1e6).toFixed(0)}M`} tick={AXIS_TICK} width={45} />
-            <Tooltip formatter={ttFmt} />
-            <Legend />
-            <Line type="monotone" dataKey="Convert" name={`Convert (${(BRACKETS[targetIdx] * 100).toFixed(0)}%)`} stroke={C.green} strokeWidth={2.5} dot={false} />
-            <Line type="monotone" dataKey="NoConvert" name="No conversions" stroke={C.terra} strokeWidth={2.5} dot={false} />
-            <Line type="monotone" dataKey="ConvertRoth" name="Convert — Roth only" stroke={C.green} strokeWidth={1.5} strokeDasharray="5 4" dot={false} />
-            <Line type="monotone" dataKey="NoConvertRoth" name="No-convert — Roth only" stroke={C.terra} strokeWidth={1.5} strokeDasharray="5 4" dot={false} />
-          </ComposedChart>
-        </ResponsiveContainer>
+        <ConvertCompareChart data={postCompare} targetPct={(BRACKETS[targetIdx] * 100).toFixed(0)} />
       </Card>
 
       {/* AI */}
