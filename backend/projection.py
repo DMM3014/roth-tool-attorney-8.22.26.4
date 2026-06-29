@@ -653,6 +653,7 @@ def run_projection(cfg: dict) -> dict:
         spend_need = total_expense + total_tax
         funding_income = ordinary_non_ss + gross_ss + recurring_div + rmd_total
         cash_need = spend_need - funding_income           # income covers spending first
+        cash_drawn = min(cash_boy, max(0.0, cash_need))
         surplus = funding_income - spend_need
         # grow BOY balances first, then apply year-end flows (matches the sheet's
         # EOY = BOY×(1+r) ± flows convention; current-year flows do not compound)
@@ -683,6 +684,27 @@ def run_projection(cfg: dict) -> dict:
             "roth": round(sum(bal[i] for i in roth_ids), 2),
             "real_estate": round(sum(bal[i] for i in other_ids), 2),
             "net_worth": round(net_worth, 2),
+            # per-account end-of-year balances (for the Account Detail view)
+            "account_balances": {aid: round(bal[aid], 2)
+                                 for aid in (cash_ids + taxable_ids + ira_ids + roth_ids + other_ids)},
+            # year-by-year cashflow line items (mirrors the spreadsheet CashFlow sheet)
+            "cashflow": {
+                "wages_pension": round(ordinary_non_ss, 2),
+                "gross_ss": round(gross_ss, 2),
+                "taxable_ss": tax_res["taxable_ss"],
+                "dividends": round(recurring_div, 2),
+                "interest": round(cash_interest, 2),
+                "rmd": round(rmd_total, 2),
+                "conversion": round(conversion, 2),
+                "expenses": round(total_expense, 2),
+                "income_tax": tax_res["total_income_tax"],
+                "medicare": tax_res["medicare_premiums"],
+                "from_cash": round(cash_drawn, 2),
+                "from_taxable": round(sum(v for k, v in wd.items() if k in taxable_set), 2),
+                "from_ira": round(ira_withdraw, 2),
+                "from_roth": round(roth_withdraw, 2),
+                "surplus": round(surplus, 2),
+            },
         })
 
         client_alive_prev, spouse_alive_prev = client_alive, spouse_alive
