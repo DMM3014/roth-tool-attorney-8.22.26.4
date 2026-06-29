@@ -149,3 +149,14 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   to `==` would introduce bugs); `craco.config.js` console.warn is already dev-gated build infra;
   `use-toast.js` is a vendored shadcn file with the intentional `[state]` dependency. `compute_year_tax`
   was left as-is — all math already lives in dedicated helpers; its length is the 30-key result dict.
+
+## Implemented (2026-06-29)
+- **Detail / Cashflow tab (DONE)**: wired `DetailCashflow.jsx` into `Planner.jsx` as a new tab placed
+  right after "Multi-Year Projection". Renders two tables: (1) Account Detail — per-account balances,
+  per-tax-type subtotals and Net Worth for every lifetime year + the 10-year post-death heir horizon
+  (inherited-bucket subtotals + total-to-heirs); (2) Cashflow — year-by-year line items (wages/pension,
+  SS, dividends, interest, RMD, Roth conversion, expenses, income tax, Medicare/IRMAA, discretionary
+  withdrawals by source, surplus). Both tables export to CSV. Backend `projection.py` already exposes
+  `rows[].account_balances{}`, `rows[].cashflow{}` and `legacy.post_death_rows[]`.
+  Verified by testing agent (iteration_7.json) — 8/8 frontend checks PASS. Cleaned up React key-prop
+  warning (Fragment keys) and the `0`-falsy cashflow cell render.

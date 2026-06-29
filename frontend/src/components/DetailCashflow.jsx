@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { Download, Wallet, Table2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -95,10 +95,10 @@ export const DetailCashflow = ({ scenario }) => {
               <tr className="border-b border-[#EBE8E0] text-[#5A5A5A]">
                 <th className="px-2 py-2 text-left font-semibold sticky left-0 bg-[#F9F8F6]">Year</th>
                 {groups.map((g) => (
-                  <>
+                  <Fragment key={g.type}>
                     {g.accts.map((a) => <th key={a.id} className={th}>{a.name}</th>)}
                     <th key={`${g.type}-sub`} className={`${th} text-[#4A6741] border-l border-[#EBE8E0]`}>{g.label} Σ</th>
-                  </>
+                  </Fragment>
                 ))}
                 <th className={`${th} text-[#1A1A1A] border-l-2 border-[#4A6741]`}>Net Worth</th>
               </tr>
@@ -108,10 +108,10 @@ export const DetailCashflow = ({ scenario }) => {
                 <tr key={r.year} className="border-b border-[#F0EEE8] hover:bg-[#F9F8F6]" data-testid={`acct-row-${r.year}`}>
                   <td className="px-2 py-1.5 text-left font-medium sticky left-0 bg-white">{r.year}</td>
                   {groups.map((g) => (
-                    <>
+                    <Fragment key={g.type}>
                       {g.accts.map((a) => <td key={a.id} className={td}>{num(r.account_balances?.[a.id])}</td>)}
                       <td key={`${g.type}-sub`} className={`${td} font-semibold text-[#4A6741] border-l border-[#EBE8E0]`}>{num(acctSubtotal(r, g))}</td>
-                    </>
+                    </Fragment>
                   ))}
                   <td className={`${td} font-bold border-l-2 border-[#4A6741]`}>{num(r.net_worth)}</td>
                 </tr>
@@ -122,10 +122,10 @@ export const DetailCashflow = ({ scenario }) => {
                     {lastYear + p.year_after_death}<span className="text-[10px]"> · +{p.year_after_death}</span>
                   </td>
                   {groups.map((g) => (
-                    <>
+                    <Fragment key={g.type}>
                       {g.accts.map((a) => <td key={a.id} className={`${td} text-muted-foreground`}>—</td>)}
                       <td key={`${g.type}-sub`} className={`${td} font-semibold text-[#4A6741] border-l border-[#EBE8E0]`}>{num(p[g.bucket])}</td>
-                    </>
+                    </Fragment>
                   ))}
                   <td className={`${td} font-bold border-l-2 border-[#4A6741]`}>{num(p.total_to_heirs)}</td>
                 </tr>
@@ -168,7 +168,7 @@ export const DetailCashflow = ({ scenario }) => {
                     const isSurplus = k === "surplus";
                     return (
                       <td key={k} className={`${td} ${k === "from_cash" ? "border-l border-[#EBE8E0]" : ""} ${isSurplus ? `border-l-2 border-[#4A6741] font-semibold ${v < 0 ? "text-[#C87941]" : "text-[#4A6741]"}` : ""}`}>
-                        {v ? num(v) : "—"}
+                        {v == null ? "—" : num(v)}
                       </td>
                     );
                   })}
