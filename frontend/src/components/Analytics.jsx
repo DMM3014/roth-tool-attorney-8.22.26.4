@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { runProjection } from "@/lib/api";
+import { Printer } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { runProjection, fmtUSD } from "@/lib/api";
 import {
   IncomeSourcesChart, BracketFillChart, SurplusChart, TaxCompositionChart,
   RmdBalanceChart, IrmaaChart, RateTrendChart, CumulativeTaxChart,
@@ -73,16 +75,79 @@ export const Analytics = ({ scenario }) => {
     return <div className="py-20 text-center text-muted-foreground animate-pulse label-cap">Running analytics…</div>;
   }
 
+  const h = scenario.household || {};
+  const household = h.spouse_name ? `${h.client_name} & ${h.spouse_name}` : (h.client_name || "Household");
+  const s = withRoth.summary || {};
+  const sn = noRoth?.summary || {};
+  const lg = withRoth.legacy || {};
+  const lgn = noRoth?.legacy || {};
+  const coverMetrics = [
+    { label: "Lifetime Taxes", withV: s.lifetime_taxes, noV: sn.lifetime_taxes },
+    { label: "Ending Net Worth", withV: s.ending_net_worth, noV: sn.ending_net_worth },
+    { label: "Total Converted to Roth", withV: s.total_roth_converted, noV: 0 },
+    { label: "Ending Roth (tax-free)", withV: s.ending_roth, noV: sn.ending_roth },
+    { label: "After-Tax Estate to Heirs", withV: lg.after_tax_estate_to_heirs, noV: lgn.after_tax_estate_to_heirs },
+  ];
+  const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="analytics-grid">
-      <IncomeSourcesChart data={incomeData} />
-      <BracketFillChart data={bracketData} brackets={BRACKET_LABELS} />
-      <SurplusChart data={surplusData} />
-      <TaxCompositionChart data={taxCompData} />
-      <RmdBalanceChart data={rmdData} />
-      <IrmaaChart data={irmaaData} />
-      <RateTrendChart data={rateData} />
-      <CumulativeTaxChart data={cumData} />
+    <div className="space-y-6">
+      <div className="no-print flex items-center justify-between rounded-xl border border-[#EBE8E0] bg-[#F9F8F6] px-5 py-4" data-testid="presentation-toolbar">
+        <div>
+          <p className="font-display text-sm font-bold tracking-tight">Client-ready presentation</p>
+          <p className="text-[11px] text-muted-foreground">Branded document · summary metrics + all 8 analytics charts. Use your browser's “Save as PDF” in the print dialog.</p>
+        </div>
+        <Button size="sm" onClick={() => window.print()} data-testid="export-presentation"
+          className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
+          <Printer className="h-4 w-4" /> Print / Export PDF
+        </Button>
+      </div>
+
+      <div id="analytics-print">
+        {/* Branded cover + summary — only visible when printing */}
+        <div className="print-only print-cover" data-testid="print-cover">
+          <div style={{ background: "#4A6741", color: "#fff", padding: "20px 24px", borderRadius: 8 }}>
+            <div style={{ fontFamily: "Outfit, sans-serif", fontWeight: 700, fontSize: 22 }}>Roth Conversion & Retirement Plan</div>
+            <div style={{ fontSize: 12, opacity: 0.9, marginTop: 4 }}>Strategy analytics & lifetime projection</div>
+          </div>
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontFamily: "Outfit, sans-serif", fontWeight: 700, fontSize: 15 }}>Prepared for {household}</div>
+            <div style={{ fontSize: 11, color: "#777", marginTop: 2 }}>Generated {today}</div>
+          </div>
+          <table style={{ width: "100%", marginTop: 22, borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ color: "#777", borderBottom: "2px solid #4A6741" }}>
+                <th style={{ textAlign: "left", padding: "6px 4px", fontWeight: 600 }}>STRATEGY METRIC</th>
+                <th style={{ textAlign: "right", padding: "6px 4px", fontWeight: 600 }}>WITH CONVERSIONS</th>
+                <th style={{ textAlign: "right", padding: "6px 4px", fontWeight: 600 }}>NO CONVERSIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {coverMetrics.map((m) => (
+                <tr key={m.label} style={{ borderBottom: "1px solid #EBE8E0" }}>
+                  <td style={{ textAlign: "left", padding: "8px 4px" }}>{m.label}</td>
+                  <td style={{ textAlign: "right", padding: "8px 4px", fontWeight: 700, color: "#4A6741" }}>{fmtUSD(m.withV)}</td>
+                  <td style={{ textAlign: "right", padding: "8px 4px", color: "#5A5A5A" }}>{fmtUSD(m.noV)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{ fontSize: 10, color: "#999", marginTop: 16, fontStyle: "italic" }}>
+            Educational model · LTCG/QDIV stacked at 0/15/20% · NIIT · IRMAA · indexed brackets. Verify against current IRS tables.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 analytics-grid" data-testid="analytics-grid">
+          <IncomeSourcesChart data={incomeData} />
+          <BracketFillChart data={bracketData} brackets={BRACKET_LABELS} />
+          <SurplusChart data={surplusData} />
+          <TaxCompositionChart data={taxCompData} />
+          <RmdBalanceChart data={rmdData} />
+          <IrmaaChart data={irmaaData} />
+          <RateTrendChart data={rateData} />
+          <CumulativeTaxChart data={cumData} />
+        </div>
+      </div>
     </div>
   );
 };

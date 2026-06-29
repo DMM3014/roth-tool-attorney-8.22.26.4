@@ -15,7 +15,7 @@ const pctAxis = (v) => `${(v * 100).toFixed(0)}%`;
 
 const SPAN = { 1: "lg:col-span-1", 2: "lg:col-span-2" };
 const Panel = ({ title, subtitle, testid, children, span = 2 }) => (
-  <Card className={`p-6 border-[#EBE8E0] shadow-none ${SPAN[span]}`} data-testid={testid}>
+  <Card className={`print-card p-6 border-[#EBE8E0] shadow-none ${SPAN[span]}`} data-testid={testid}>
     <h3 className="font-display text-base font-bold tracking-tight">{title}</h3>
     {subtitle && <p className="text-[11px] text-muted-foreground mt-1 mb-3 max-w-3xl">{subtitle}</p>}
     {!subtitle && <div className="mb-3" />}

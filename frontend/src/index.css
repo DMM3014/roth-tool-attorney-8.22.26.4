@@ -72,3 +72,27 @@ h1, h2, h3, h4, .font-display {
     background-image: radial-gradient(rgba(0,0,0,0.025) 1px, transparent 1px);
     background-size: 4px 4px;
 }
+
+/* ---- Presentation print layout (Analytics → Print / Export PDF) ---- */
+.print-only { display: none; }
+
+@media print {
+    @page { size: A4 portrait; margin: 12mm; }
+    html, body { background: #fff !important; }
+    body * { visibility: hidden; }
+    #analytics-print, #analytics-print * { visibility: visible; }
+    #analytics-print {
+        position: absolute; left: 0; top: 0; width: 100%;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+    /* stack charts one per row and keep each on a single page */
+    #analytics-print .analytics-grid { display: block !important; }
+    #analytics-print .print-card {
+        break-inside: avoid; page-break-inside: avoid;
+        margin: 0 0 14px 0 !important; box-shadow: none !important;
+        border: 1px solid #EBE8E0 !important;
+    }
+    #analytics-print .print-cover { page-break-after: always; }
+}

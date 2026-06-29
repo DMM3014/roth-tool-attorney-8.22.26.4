@@ -187,3 +187,13 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   (tax_engine.py). Tax math unchanged — 45/45 tests pass. Analytics runs the projection with + without
   conversions (debounced, short-circuits the 2nd call when conversions already off).
   Verified by testing agent (iteration_9.json) — 7/7 frontend checks PASS, 0 console errors.
+- **Print / Export presentation (DONE)**: "Print / Export PDF" button on the Analytics tab compiles a
+  branded, client-ready document — a green cover page with household name, date and a with/without-
+  conversions metrics table, followed by all 8 analytics charts (one per section). Implemented via a
+  print stylesheet (`index.css` `@media print` + `.print-only`/`.no-print`/`.print-card`) and
+  `window.print()` (same vector-quality, memory-safe pattern as the existing Projection print button) —
+  the user saves as PDF from the browser dialog. Verified by emulating print media + generating a real
+  4-page A4 PDF via Playwright (branded cover + charts render, toolbar hidden).
+  NOTE: an earlier jspdf+html2canvas approach was abandoned — html2canvas hung capturing the recharts
+  SVGs and spiked memory (caused a pod OOM); `jspdf`/`html2canvas` remain in package.json but are unused
+  (dead `lib/pdf.js`, not imported, tree-shaken out).
