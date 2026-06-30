@@ -283,3 +283,23 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
 - P1: Monte Carlo v2.1 — add inflation volatility (stochastic COLA / spending growth) to the simulation.
 - P2: api.js runMonteCarlo poll window is 42s (60×700ms); raise to ~60s or backoff for very large trials.
 - P2: enforce shock-years HTML max=5 in onChange (currently clamps min only).
+
+### Present-Value charts + spreadsheet verification + MC trials lock (DONE — 2026-06-30)
+- **Present Value (today's dollars) analytics on BOTH Analytics and Scenarios tabs**: new `pvSeries()` helper
+  (`lib/api.js`) discounts every projection year's net worth — and the net-to-family estate (delivered at
+  2nd-death + SECURE horizon, default 2072) — back to the plan start year at the plan inflation rate
+  (`projection.general_inflation`, ~3%), With vs Without conversions.
+  - `PvNetWorthChart` — PV of future net worth over time (With area vs No dashed line).
+  - `RothConversionsChart` — **planned Roth conversions by year** (bar; total label) — added to BOTH tabs.
+  - `PvNetToFamilyChart` — PV of after-tax estate to heirs, With vs No, split tax-free Roth vs other, with
+    a delta callout (default plan: With $36.03M PV vs No $32.37M PV → +$3.66M PV to family).
+- **Spreadsheet download verification**: `buildPvSheets()` builds a year-by-year sheet (conversion, nominal &
+  PV net worth With/No) + a net-to-family PV summary sheet. Both Analytics and Scenarios have **Download Excel
+  (.xlsx)** and **Download CSV** buttons (Analytics keeps Print/Export PDF too) so figures reconcile against
+  the source model.
+- **Scenarios tab** now runs the projection (with + no-conversion) on scenario change (300ms debounce) and
+  renders the 3 PV/conversion charts below the household & saved-scenarios cards.
+- **Monte Carlo trials locked to 500**: removed the 250/1000 dropdown (unsupported recalculations); `mc-trials`
+  is now a static "500 · fixed · validated" display; `TRIALS=500` constant drives the run.
+- Verified: frontend testing agent iteration_12.json — 5/5 review bullets PASS, 0 console/page errors,
+  4/4 downloads fire (retirement-pv-results.xlsx/csv, scenario-pv-results.xlsx/csv), save/load/delete intact.
