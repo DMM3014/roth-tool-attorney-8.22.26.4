@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from defaults import DEFAULT_SCENARIO
 from tax_engine import compute_year_tax, optimize_conversion
 from projection import run_projection, sweep_brackets
+from montecarlo import run_montecarlo
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GOLDEN = os.path.join(HERE, "_golden.json")
@@ -86,11 +87,35 @@ def _projection_cases():
     return out
 
 
+def _montecarlo_cases():
+    """Fixed-seed Monte Carlo runs: deterministic given the seed, so success rates,
+    percentile bands, sequence-risk and shock outputs are regression-guarded. All engine
+    outputs are pre-rounded (success 4dp, percentiles to whole $), so this is robust."""
+    cfg = copy.deepcopy(DEFAULT_SCENARIO)
+    base_assets = {
+        "stocks": {"weight": 0.6, "mean": 0.08, "vol": 0.18},
+        "bonds": {"weight": 0.3, "mean": 0.04, "vol": 0.06},
+        "cash": {"weight": 0.1, "mean": 0.03, "vol": 0.01},
+    }
+    stock_assets = {
+        "stocks": {"weight": 1.0, "mean": 0.07, "vol": 0.30},
+        "bonds": {"weight": 0.0, "mean": 0.04, "vol": 0.06},
+        "cash": {"weight": 0.0, "mean": 0.03, "vol": 0.01},
+    }
+    return {
+        "base_seed42": run_montecarlo(cfg, n_trials=500, assets=base_assets, seed=42),
+        "allstock_shock_seed7": run_montecarlo(
+            cfg, n_trials=500, assets=stock_assets,
+            shock={"enabled": True, "rate": -0.15, "years": 3}, seed=7),
+    }
+
+
 def build():
     return {
         "year_tax": _year_tax_cases(),
         "optimize": _optimize_cases(),
         "projection": _projection_cases(),
+        "montecarlo": _montecarlo_cases(),
     }
 
 
@@ -106,13 +131,13 @@ def main():
     with open(GOLDEN) as f:
         baseline = f.read()
     if baseline == payload:
-        print("GOLDEN MATCH: refactor preserved all tax-engine / projection outputs exactly.")
+        print("GOLDEN MATCH: refactor preserved all tax-engine / projection / Monte Carlo outputs exactly.")
         return
     # find first differing region for a helpful message
     base_obj = json.loads(baseline)
     cur_obj = json.loads(payload)
-    for k in ("year_tax", "optimize", "projection"):
-        if json.dumps(base_obj[k], sort_keys=True, default=str) != json.dumps(cur_obj[k], sort_keys=True, default=str):
+    for k in ("year_tax", "optimize", "projection", "montecarlo"):
+        if json.dumps(base_obj.get(k), sort_keys=True, default=str) != json.dumps(cur_obj.get(k), sort_keys=True, default=str):
             print(f"GOLDEN MISMATCH in section: {k}")
     sys.exit(1)
 

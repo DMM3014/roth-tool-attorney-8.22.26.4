@@ -401,3 +401,13 @@ Added 3 edge-case projection configs to `golden_snapshot.py` before building v2.
 - `high_state_tax`: state_rate 0.13 + heir_state_rate 0.10 -> stresses state_tax/effective-rate/heir blend.
 Coverage now: year_tax (MFJ/Single/all-preferential), optimize (24%/32%), projection (default, no_roth,
 capped_32, single_filer, early_widow, high_state_tax, sweep).
+
+### Monte Carlo golden guard (DONE — 2026-06-30)
+Extended `golden_snapshot.py` with a `montecarlo` section (fixed-seed, deterministic, offline) so the
+stochastic engine gets the same auto-regression protection as the tax engine. Baseline regenerated
+(_golden.json 352KB); `test_golden_snapshot` + full suite = 53 pytest pass. Verified MC is byte-identical
+across runs (numpy PCG64 + engine pre-rounding → robust). Cases:
+- `base_seed42`: 60/30/10 mix, seed 42 → success 0.93 / 0.89, sequence-risk cohort 0.64.
+- `allstock_shock_seed7`: 100% stock @30% vol + early −15%/3yr bear shock, seed 7 → base 0.444, shock 0.234/0.202.
+NOTE for v2.1: adding inflation volatility WILL intentionally change these seeded outputs — refresh the
+baseline (`python tests/golden_snapshot.py save`) and review the diff when implementing it.

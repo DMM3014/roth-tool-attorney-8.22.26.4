@@ -26,12 +26,12 @@ def test_golden_snapshot_matches_baseline():
 
     cur, base = json.loads(current), json.loads(baseline)
     drifted = [
-        section for section in ("year_tax", "optimize", "projection")
+        section for section in ("year_tax", "optimize", "projection", "montecarlo")
         if json.dumps(base.get(section), sort_keys=True, default=str)
         != json.dumps(cur.get(section), sort_keys=True, default=str)
     ]
     pytest.fail(
-        "Tax-engine / projection output drifted from the golden baseline in section(s): "
+        "Tax-engine / projection / Monte Carlo output drifted from the golden baseline in section(s): "
         + ", ".join(drifted)
         + ". If this change is intentional, refresh the baseline with "
         "`python tests/golden_snapshot.py save` and review the diff before committing."
