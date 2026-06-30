@@ -43,7 +43,7 @@ DEFAULT_SCENARIO = {
          "start_date": "2032-05-12", "stop_date": "2062-03-07", "start_year": 2032, "stop_year": 2062,
          "amount": 700, "frequency": "Monthly", "cola": 0.04,
          "tax_character": "Ordinary", "taxable_pct": 1.0, "survivor_pct": 0.5, "use": True},
-        {"id": "DIV03", "owner": "Joint", "type": "Dividend/LTCG", "description": "Other Dividends & Realized LTCG (manual)",
+        {"id": "DIV03", "owner": "Joint", "type": "Dividend/LTCG", "description": "Special Dividends & LTCG",
          "start_date": "2026-01-01", "stop_date": None, "start_year": 2026, "stop_year": None,
          "amount": 0, "frequency": "Annual", "cola": 0.03,
          "tax_character": "QDiv/LTCG", "taxable_pct": 1.0, "survivor_pct": 1.0, "use": False},
