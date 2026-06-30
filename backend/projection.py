@@ -129,8 +129,7 @@ def _aggregate_income(streams, year, client_alive, spouse_alive, both_alive, has
     return ordinary_non_ss, gross_ss, recurring_div
 
 
-def _total_rmd(ira_ids, owner_map, bal, client_alive, spouse_alive,
-               client_dob, spouse_dob, has_spouse, year):
+def _total_rmd(plan, status, owner_map, bal, year):
     """Per-account Required Minimum Distributions across tax-deferred accounts.
 
     Returns (total, {account_id: rmd}). `owner_map` gives the CURRENT owner of each
@@ -139,13 +138,13 @@ def _total_rmd(ira_ids, owner_map, bal, client_alive, spouse_alive,
     """
     rmd_by = {}
     rmd_total = 0.0
-    for aid in ira_ids:
+    for aid in plan.ira_ids:
         owner = owner_map.get(aid, "Client")
-        owner_alive = (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive)
+        owner_alive = (owner == "Client" and status.client_alive) or (owner == "Spouse" and status.spouse_alive)
         rmd_by[aid] = 0.0
         if not owner_alive:
             continue
-        dob = client_dob if owner == "Client" else (spouse_dob if has_spouse else client_dob)
+        dob = plan.client_dob if owner == "Client" else (plan.spouse_dob if plan.has_spouse else plan.client_dob)
         age = _age(dob, year)
         if age < rmd_start_age(dob):
             continue
@@ -312,12 +311,11 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
     }
 
 
-def _withdraw(shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
-              funding_order, ira_split, rmd_reserve_id, rmd_total):
-    """Withdraw `shortfall` (after cash) honoring the funding order.
+def _withdraw(plan, shortfall, bal, basis, rmd_total):
+    """Withdraw `shortfall` (after cash) honoring plan.funding_order.
 
     Cash is always spent before this; Roth is always last. The middle tier
-    (Taxable vs Traditional IRA) order/split is governed by `funding_order`.
+    (Taxable vs Traditional IRA) order/split is governed by plan.funding_order.
     Returns (withdrawals {id: amount}, realized_ltcg, ira_withdraw, roth_withdraw).
     """
     wd = {}
@@ -327,7 +325,7 @@ def _withdraw(shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
 
     def cap(aid, is_ira):
         taken = wd.get(aid, 0.0)
-        reserve = rmd_total if (is_ira and aid == rmd_reserve_id) else 0.0
+        reserve = rmd_total if (is_ira and aid == plan.rmd_reserve_id) else 0.0
         return max(0.0, bal[aid] - taken - reserve)
 
     def take_from(ids, amount, kind):
@@ -350,59 +348,72 @@ def _withdraw(shortfall, bal, basis, taxable_ids, ira_ids, roth_ids,
         return amount
 
     remaining = shortfall
-    if funding_order == "Split IRA & Taxable":
-        left = take_from(ira_ids, remaining * ira_split, "ira")
-        left += take_from(taxable_ids, remaining - remaining * ira_split, "taxable")
-        left = take_from(ira_ids, left, "ira")        # overflow if one bucket dry
-        remaining = take_from(taxable_ids, left, "taxable")
-    elif funding_order == "Cash → IRA → Taxable → Roth":
-        remaining = take_from(ira_ids, remaining, "ira")
-        remaining = take_from(taxable_ids, remaining, "taxable")
+    if plan.funding_order == "Split IRA & Taxable":
+        left = take_from(plan.ira_ids, remaining * plan.ira_split, "ira")
+        left += take_from(plan.taxable_ids, remaining - remaining * plan.ira_split, "taxable")
+        left = take_from(plan.ira_ids, left, "ira")        # overflow if one bucket dry
+        remaining = take_from(plan.taxable_ids, left, "taxable")
+    elif plan.funding_order == "Cash → IRA → Taxable → Roth":
+        remaining = take_from(plan.ira_ids, remaining, "ira")
+        remaining = take_from(plan.taxable_ids, remaining, "taxable")
     else:  # default: Cash → Taxable → IRA → Roth
-        remaining = take_from(taxable_ids, remaining, "taxable")
-        remaining = take_from(ira_ids, remaining, "ira")
-    take_from(roth_ids, remaining, "roth")            # Roth always last
+        remaining = take_from(plan.taxable_ids, remaining, "taxable")
+        remaining = take_from(plan.ira_ids, remaining, "ira")
+    take_from(plan.roth_ids, remaining, "roth")            # Roth always last
     return wd, realized_ltcg, ira_withdraw, roth_withdraw
 
 
-def _apply_year_flows(bal, basis, acct, cash_need, rmd_by, conv_and_wd, wd,
-                      roth_withdraw, conversion, surplus, surplus_sweep_to):
+@dataclass
+class YearFlows:
+    """Year-end cash flows applied to balances after growth (param object for
+    _apply_year_flows, which would otherwise take a long positional list)."""
+    cash_need: float
+    rmd_by: dict
+    ira_draw: float          # conversion + discretionary IRA withdrawal
+    wd: dict
+    roth_withdraw: float
+    conversion: float
+    surplus: float
+
+
+def _apply_year_flows(plan, bal, basis, flows):
     """Apply one year's flows AFTER growth (mirrors the sheet's EOY = BOY×(1+r) ± flows):
     cash spend, per-account RMD, conversion + discretionary IRA withdrawal (client IRA
     first), taxable/Roth withdrawals, conversion in, surplus sweep.
 
-    `cash_need` is the spending shortfall after fundable income; cash covers it first.
+    `flows.cash_need` is the spending shortfall after fundable income; cash covers it first.
     Withdrawal dollar amounts were sized on BOY balances by the circular solver.
     """
+    acct = plan.acct
     # cash covers the income-shortfall first (proportional across grown cash balances)
     cash_total = sum(bal[i] for i in acct["cash"])
-    spend_from_cash = min(cash_total, max(0.0, cash_need))
+    spend_from_cash = min(cash_total, max(0.0, flows.cash_need))
     for i in acct["cash"]:
         bal[i] = max(0.0, bal[i] - (spend_from_cash * (bal[i] / cash_total if cash_total else 0)))
     # each tax-deferred account satisfies its OWN RMD
     for iid in acct["ira"]:
-        bal[iid] = max(0.0, bal[iid] - rmd_by.get(iid, 0.0))
+        bal[iid] = max(0.0, bal[iid] - flows.rmd_by.get(iid, 0.0))
     # conversion + discretionary IRA withdrawal drawn in account order (client IRA first)
-    rem = conv_and_wd
+    rem = flows.ira_draw
     for iid in acct["ira"]:
         t = min(rem, bal[iid]); bal[iid] -= t; rem -= t
     # taxable discretionary withdrawals per converged waterfall
-    for aid, amt in wd.items():
+    for aid, amt in flows.wd.items():
         if aid in acct["taxable_set"]:
             bal[aid] = max(0.0, bal[aid] - amt)
     # roth withdrawals, then conversion lands in roth
-    rem = roth_withdraw
+    rem = flows.roth_withdraw
     for rid in acct["roth"]:
         t = min(rem, bal[rid]); bal[rid] -= t; rem -= t
-    if conversion > 0 and acct["roth"]:
-        bal[acct["roth"][0]] += conversion
+    if flows.conversion > 0 and acct["roth"]:
+        bal[acct["roth"][0]] += flows.conversion
     # reinvest surplus (after-tax) — default to taxable brokerage (gross return), add basis
-    if surplus > 0:
-        if surplus_sweep_to == "Taxable" and acct["taxable"]:
-            bal[acct["taxable"][0]] += surplus
-            basis[acct["taxable"][0]] += surplus
+    if flows.surplus > 0:
+        if plan.surplus_sweep_to == "Taxable" and acct["taxable"]:
+            bal[acct["taxable"][0]] += flows.surplus
+            basis[acct["taxable"][0]] += flows.surplus
         elif acct["cash"]:
-            bal[acct["cash"][0]] += surplus
+            bal[acct["cash"][0]] += flows.surplus
 
 
 def _grow_balances(bal, accounts, div_yield):
@@ -431,12 +442,7 @@ class _SolveCtx:
     cash_boy: float
     total_expense: float
     ira_balance: float
-    funding_order: str
-    ira_split: float
-    rmd_reserve_id: Any
-    taxable_ids: list
-    ira_ids: list
-    roth_ids: list
+    plan: "Plan"
 
 
 def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
@@ -472,8 +478,7 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
                           + ctx.tax_base["recurring_div_ltcg"] + ctx.rmd_total)
         shortfall = (ctx.total_expense + total_tax) - funding_income - ctx.cash_boy
         wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
-            shortfall, bal, basis, ctx.taxable_ids, ctx.ira_ids, ctx.roth_ids,
-            ctx.funding_order, ctx.ira_split, ctx.rmd_reserve_id, ctx.rmd_total + conversion)
+            ctx.plan, shortfall, bal, basis, ctx.rmd_total + conversion)
 
         if abs(conversion - prev_conv) < 1.0 and abs(ira_withdraw - prev_wd) < 1.0:
             break
@@ -752,9 +757,7 @@ def run_projection(cfg: dict) -> dict:
             status.both_alive, plan.has_spouse, status.survivor_owner)
 
         # --- RMDs ---
-        rmd_total, rmd_by = _total_rmd(plan.ira_ids, owner_map, bal, status.client_alive,
-                                       status.spouse_alive, plan.client_dob, plan.spouse_dob,
-                                       plan.has_spouse, year)
+        rmd_total, rmd_by = _total_rmd(plan, status, owner_map, bal, year)
 
         cash_boy = sum(bal[i] for i in plan.cash_ids)
         cash_interest = cash_boy * plan.cash_rate
@@ -793,9 +796,7 @@ def run_projection(cfg: dict) -> dict:
             irmaa_index_yplus2=irmaa_index_yplus2,
             irmaa_magi=magi_history.get(year - IRMAA_LOOKBACK_YEARS),  # 2-yr lookback
             rmd_total=rmd_total, cash_boy=cash_boy, total_expense=total_expense,
-            ira_balance=ira_balance, funding_order=plan.funding_order, ira_split=plan.ira_split,
-            rmd_reserve_id=plan.rmd_reserve_id, taxable_ids=plan.taxable_ids, ira_ids=plan.ira_ids,
-            roth_ids=plan.roth_ids)
+            ira_balance=ira_balance, plan=plan)
         conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw = \
             _solve_year_conversion(ctx, bal, basis)
         total_tax = tax_res["total_burden"]
@@ -810,8 +811,9 @@ def run_projection(cfg: dict) -> dict:
         # grow BOY balances first, then apply year-end flows (matches the sheet's
         # EOY = BOY×(1+r) ± flows convention; current-year flows do not compound)
         _grow_balances(bal, plan.accounts, plan.div_yield)
-        _apply_year_flows(bal, basis, plan.acct, cash_need, rmd_by, conversion + ira_withdraw, wd,
-                          roth_withdraw, conversion, surplus, plan.surplus_sweep_to)
+        flows = YearFlows(cash_need=cash_need, rmd_by=rmd_by, ira_draw=conversion + ira_withdraw,
+                          wd=wd, roth_withdraw=roth_withdraw, conversion=conversion, surplus=surplus)
+        _apply_year_flows(plan, bal, basis, flows)
 
         calc = YearCalc(
             tax_res=tax_res, bracket_index=bracket_index, irmaa_index=irmaa_index,

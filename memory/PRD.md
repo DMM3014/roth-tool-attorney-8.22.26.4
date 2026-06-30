@@ -347,3 +347,13 @@ verified GOLDEN MATCH + 52/52 pytest.
 Deferred (low value / higher risk, noted from the report): per-helper argument-count reductions
 (_apply_year_flows 11 args, _withdraw/_total_rmd) and the aiSummary 11-dependency useMemo — these are
 "Important" not "Critical" and the dependencies/args are genuinely needed.
+
+### Argument-count reduction via param objects (DONE — 2026-06-30)
+Behavior-identical (GOLDEN MATCH + 52/52 pytest). Reused the existing `Plan` dataclass + added `YearFlows`.
+- `_total_rmd`: 9 -> 5 args (plan, status, owner_map, bal, year).
+- `_withdraw`: 10 -> 5 args (plan, shortfall, bal, basis, rmd_total) — pulls funding_order/ira_split/
+  rmd_reserve_id/taxable_ids/ira_ids/roth_ids from `plan`.
+- `_apply_year_flows`: 11 -> 4 args (plan, bal, basis, flows) via new `YearFlows` dataclass
+  (cash_need, rmd_by, ira_draw, wd, roth_withdraw, conversion, surplus).
+- `_SolveCtx`: 18 -> 13 fields (dropped 6 account/funding fields, added one `plan` ref); `_withdraw`
+  call inside `_solve_year_conversion` now passes `ctx.plan`.
