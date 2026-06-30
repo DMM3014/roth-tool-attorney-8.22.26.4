@@ -17,6 +17,13 @@ const readStream = async (res, onToken) => {
   return acc;
 };
 
+const SUGGESTIONS = [
+  { label: "Why 24%?", q: "Why convert to the 24% bracket and not 32%?" },
+  { label: "IRMAA risk?", q: "What is my IRMAA exposure, and how do my conversions affect my Medicare surcharges?" },
+  { label: "Survivor impact?", q: "How does the death-of-spouse transition to single filing status affect this plan?" },
+  { label: "Net to family?", q: "How much more do my heirs receive with these conversions, and how much of it is tax-free?" },
+];
+
 export const AIInsights = ({ summary, testid }) => {
   const [messages, setMessages] = useState([]); // {role:'assistant'|'user', content}
   const [streaming, setStreaming] = useState(false);
@@ -48,8 +55,13 @@ export const AIInsights = ({ summary, testid }) => {
   const send = async () => {
     const q = input.trim();
     if (!q || streaming || !summary) return;
-    const history = messages;
     setInput("");
+    await sendMessage(q);
+  };
+
+  const sendMessage = async (q) => {
+    if (!q || streaming || !summary) return;
+    const history = messages;
     setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "" }]);
     setStreaming(true);
     try {
@@ -129,6 +141,23 @@ export const AIInsights = ({ summary, testid }) => {
           </div>
         ))}
       </div>
+
+      {!streaming && (
+        <div className="flex flex-wrap gap-2 mb-3" data-testid="ai-suggestions">
+          {SUGGESTIONS.map((s, i) => (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => sendMessage(s.q)}
+              disabled={!summary}
+              data-testid={`ai-suggestion-${i}`}
+              className="rounded-full border border-[#D9D4C8] bg-white px-3 py-1.5 text-xs font-medium text-[#4A6741] transition-colors duration-200 hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] disabled:opacity-50"
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <Input

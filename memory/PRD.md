@@ -313,3 +313,10 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   `.with_params(max_tokens=450)` cap (550 for `/insights/chat`). Initial response now streams in ~11s
   (was ~49s); follow-ups ~9s. Verified e2e: 5-message multi-turn thread (initial + 2 Q&A pairs) with the
   input re-enabling after each turn.
+
+### AI Insights suggested follow-up chips (DONE — 2026-06-30)
+- Added 4 one-click suggestion chips under the AI thread ("Why 24%?", "IRMAA risk?", "Survivor impact?",
+  "Net to family?") in `AIInsights.jsx`. Each chip sends a full follow-up question via a refactored
+  `sendMessage(q)` helper (`send()` now delegates to it). Chips render only when not streaming
+  (data-testid ai-suggestions / ai-suggestion-{i}). Verified e2e: clicking "IRMAA risk?" appended the Q&A
+  and the assistant answered on-topic; input re-enabled ~12s.
