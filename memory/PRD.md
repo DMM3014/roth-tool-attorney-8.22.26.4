@@ -381,3 +381,13 @@ Behavior-identical (GOLDEN MATCH + 52/52 pytest). Reused the existing `Plan` dat
 **Deliberately skipped (low value / would add noise):** hoisting tiny static Recharts config literals
 (margin/domain/tick) to module consts — negligible perf vs Recharts' own re-render cost; and `value={[state]}`
 slider arrays are dynamic (can't be hoisted; useMemo on a 1-element array is over-engineering).
+
+### Auto-guard + lint baseline (DONE — 2026-06-30)
+- Added `backend/tests/test_golden_snapshot.py`: compares live `golden_snapshot.build()` output to the
+  committed `_golden.json`; fails CI (pinpointing the drifted section) on any tax-engine/projection change.
+  Runs offline, deterministic, xdist-safe. Suite now 53 passed. Refresh intentionally via
+  `python tests/golden_snapshot.py save`.
+- Added `/app/LINT_BASELINE.md`: source-of-truth quality baseline (0-warning `yarn build` + pytest +
+  golden), documented recurring external-linter FALSE POSITIVES (PEP-8 `is None`; locals/module-vars/
+  stable-setters mis-flagged as hook deps; no console statements exist) and the intentional eslint-disable
+  locations, so future reports stop re-flagging idiomatic code.
