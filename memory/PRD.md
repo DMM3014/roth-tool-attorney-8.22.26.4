@@ -303,3 +303,13 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   is now a static "500 · fixed · validated" display; `TRIALS=500` constant drives the run.
 - Verified: frontend testing agent iteration_12.json — 5/5 review bullets PASS, 0 console/page errors,
   4/4 downloads fire (retirement-pv-results.xlsx/csv, scenario-pv-results.xlsx/csv), save/load/delete intact.
+
+### AI Insights "stops at one query" fix (DONE — 2026-06-30)
+- Root cause: not a multi-turn defect — the initial `/insights` generation streamed a long multi-section
+  essay with tables (~49s). The chat input stays disabled while `streaming` (correct), so the long stream
+  made it look frozen/finished, blocking follow-ups.
+- Fix (`server.py`): tightened the `/insights` system prompt to a concise format (one headline + 4-5
+  single-line bullets, no tables/headers, ~180 words, ends inviting a follow-up) and added a
+  `.with_params(max_tokens=450)` cap (550 for `/insights/chat`). Initial response now streams in ~11s
+  (was ~49s); follow-ups ~9s. Verified e2e: 5-message multi-turn thread (initial + 2 Q&A pairs) with the
+  input re-enabling after each turn.

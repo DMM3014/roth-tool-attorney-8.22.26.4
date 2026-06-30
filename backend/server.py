@@ -214,14 +214,17 @@ async def insights(req: InsightRequest):
         "Roth conversion plans. Always respect the strict separation of ORDINARY income "
         "(wages, IRA distributions, Roth conversions) from PREFERENTIAL income (qualified "
         "dividends + long-term capital gains, taxed at 0/15/20% stacked on top of ordinary). "
-        "Be concrete, reference the numbers given, and give 3-5 crisp, actionable insights "
-        "about bracket-filling, IRMAA, NIIT, RMDs, and survivor (filing-status) impact. "
-        "If a 'monte_carlo' block is present, OPEN with the probability of success and state how many "
-        "points of resilience the Roth conversions add (success_with vs success_without), e.g. "
-        "'Your plan has a 93% success rate; converting adds ~4 points of resilience.' "
-        "If a 'net_to_family' block is present, include a clear legacy line, e.g. 'Your conversions leave "
-        "your heirs ~$14.3M more, and most of it tax-free' (use net_to_family.delta and tax_free_roth_with). "
-        "Use short paragraphs and bullet points. Do not give legal disclaimers."
+        "FORMAT (important): keep the ENTIRE response under ~180 words. Open with ONE short "
+        "headline sentence, then 4-5 crisp single-line bullets covering bracket-filling, IRMAA, "
+        "NIIT, RMDs and survivor (filing-status) impact. Do NOT use markdown tables, headers, or "
+        "multi-section essays. Reference the actual dollar figures. End with one line inviting the "
+        "user to ask a follow-up question. "
+        "If a 'monte_carlo' block is present, make the FIRST bullet the probability of success and how "
+        "many points of resilience the Roth conversions add (success_with vs success_without), e.g. "
+        "'93% success rate — converting adds ~4 points of resilience.' "
+        "If a 'net_to_family' block is present, include one legacy bullet, e.g. 'Conversions leave heirs "
+        "~$14.3M more, mostly tax-free' (use net_to_family.delta and tax_free_roth_with). "
+        "Do not give legal disclaimers."
     )
     prompt = (
         "Analyze this retirement & Roth conversion plan and explain the strategy and "
@@ -235,7 +238,7 @@ async def insights(req: InsightRequest):
                 api_key=EMERGENT_LLM_KEY,
                 session_id=f"insights-{uuid.uuid4()}",
                 system_message=system,
-            ).with_model("anthropic", "claude-sonnet-4-6")
+            ).with_model("anthropic", "claude-sonnet-4-6").with_params(max_tokens=450)
             async for ev in chat.stream_message(user_msg):
                 if isinstance(ev, TextDelta):
                     yield ev.content
@@ -287,7 +290,7 @@ async def insights_chat(req: InsightChatRequest):
                 api_key=EMERGENT_LLM_KEY,
                 session_id=f"insights-chat-{uuid.uuid4()}",
                 system_message=system,
-            ).with_model("anthropic", "claude-sonnet-4-6")
+            ).with_model("anthropic", "claude-sonnet-4-6").with_params(max_tokens=550)
             async for ev in chat.stream_message(user_msg):
                 if isinstance(ev, TextDelta):
                     yield ev.content
