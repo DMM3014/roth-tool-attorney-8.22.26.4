@@ -60,6 +60,17 @@ class InsightRequest(BaseModel):
     summary: Dict[str, Any]
 
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
+class InsightChatRequest(BaseModel):
+    summary: Dict[str, Any]
+    history: List[ChatTurn] = []
+    message: str
+
+
 # ---------- Routes ----------
 @api_router.get("/")
 async def root():
@@ -163,6 +174,58 @@ async def insights(req: InsightRequest):
         except Exception as e:
             logging.exception("insight stream failed")
             yield f"\n[Error generating insights: {e}]"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/plain",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@api_router.post("/insights/chat")
+async def insights_chat(req: InsightChatRequest):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="LLM key not configured")
+
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
+
+    system = (
+        "You are a meticulous CFP-level retirement and tax strategist answering a client's "
+        "follow-up questions about THEIR specific Roth conversion plan. Respect the strict "
+        "separation of ORDINARY income (wages, IRA distributions, Roth conversions) from "
+        "PREFERENTIAL income (qualified dividends + long-term capital gains, taxed at 0/15/20% "
+        "stacked on top of ordinary). Always reference the actual numbers from the plan summary. "
+        "Be conversational, direct and concise — 2-4 short paragraphs or a few bullets. Stay on "
+        "the topic of this retirement plan. Do not give legal disclaimers."
+    )
+    transcript = ""
+    for t in req.history:
+        who = "Client" if t.role == "user" else "You (advisor)"
+        transcript += f"{who}: {t.content}\n\n"
+    prompt = (
+        "Client's retirement & Roth conversion plan summary (JSON):\n"
+        + json.dumps(req.summary, indent=2)
+        + "\n\n"
+        + (f"Earlier in this conversation:\n{transcript}\n" if transcript else "")
+        + "Client's question: " + req.message
+    )
+    user_msg = UserMessage(text=prompt)
+
+    async def gen():
+        try:
+            chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"insights-chat-{uuid.uuid4()}",
+                system_message=system,
+            ).with_model("anthropic", "claude-sonnet-4-6")
+            async for ev in chat.stream_message(user_msg):
+                if isinstance(ev, TextDelta):
+                    yield ev.content
+                elif isinstance(ev, StreamDone):
+                    break
+        except Exception as e:
+            logging.exception("insight chat stream failed")
+            yield f"\n[Error answering that: {e}]"
 
     return StreamingResponse(
         gen(),

@@ -197,3 +197,12 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   NOTE: an earlier jspdf+html2canvas approach was abandoned — html2canvas hung capturing the recharts
   SVGs and spiked memory (caused a pod OOM); `jspdf`/`html2canvas` remain in package.json but are unused
   (dead `lib/pdf.js`, not imported, tree-shaken out).
+- **AI Insights — continued dialog (DONE)**: after the AI generates the strategy summary, the client can
+  keep chatting with the model about their plan. `AIInsights.jsx` now renders a streaming chat thread
+  (assistant + client bubbles) with an input box, send, and "start over" (reset). New backend endpoint
+  `POST /api/insights/chat` (server.py) is STATELESS and streaming — the frontend keeps the transcript
+  (ephemeral) and sends `{summary, history, message}` each turn; the endpoint rebuilds context (plan
+  summary JSON + prior transcript + new question) and streams Claude Sonnet 4.6 (Emergent LLM key).
+  Both the Optimizer and Projection AI panels inherit it (shared component). Verified via curl (context-
+  aware streamed answer) + full e2e screenshot (generate summary → follow-up → 3 messages, correct
+  context). Ephemeral per user's choice; clears on reset/reload — no DB persistence.
