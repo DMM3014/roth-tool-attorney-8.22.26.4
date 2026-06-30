@@ -14,11 +14,11 @@ export const listScenarios = () => axios.get(`${API}/scenarios`).then((r) => r.d
 export const saveScenario = (name, config) => axios.post(`${API}/scenarios`, { name, config }).then((r) => r.data);
 export const deleteScenario = (id) => axios.delete(`${API}/scenarios/${id}`).then((r) => r.data);
 
-export const startMonteCarlo = (config, n_trials, volatility, mean_return = null, seed = null) =>
-  axios.post(`${API}/montecarlo`, { config, n_trials, volatility, mean_return, seed }).then((r) => r.data.job_id);
+export const startMonteCarlo = (config, opts) =>
+  axios.post(`${API}/montecarlo`, { config, ...opts }).then((r) => r.data.job_id);
 // poll until status is done/error (or timeout)
-export const runMonteCarlo = async (config, { n_trials = 500, volatility = 0.12, mean_return = null } = {}) => {
-  const jobId = await startMonteCarlo(config, n_trials, volatility, mean_return);
+export const runMonteCarlo = async (config, opts = {}) => {
+  const jobId = await startMonteCarlo(config, opts);
   for (let i = 0; i < 60; i++) {
     const job = await axios.get(`${API}/montecarlo/${jobId}`).then((r) => r.data);
     if (job.status === "done") return job.result;

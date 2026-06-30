@@ -1,25 +1,48 @@
 import { useState } from "react";
-import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3 } from "lucide-react";
+import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { runMonteCarlo, fmtUSD, fmtPct } from "@/lib/api";
 import { SuccessGauge, SuccessCompareChart, FanChart, EndingHistogram } from "@/components/MonteCarloCharts";
 
+const ASSET_ROWS = [
+  ["stocks", "Stocks"],
+  ["bonds", "Bonds"],
+  ["cash", "Cash"],
+];
+const DEFAULT_ASSETS = {
+  stocks: { weight: 0.6, mean: 0.08, vol: 0.18 },
+  bonds: { weight: 0.3, mean: 0.04, vol: 0.06 },
+  cash: { weight: 0.1, mean: 0.03, vol: 0.01 },
+};
+
 export const MonteCarlo = ({ scenario, onResult }) => {
   const [trials, setTrials] = useState("500");
-  const [vol, setVol] = useState(0.12);
+  const [assets, setAssets] = useState(DEFAULT_ASSETS);
+  const [shockOn, setShockOn] = useState(false);
+  const [shockRate, setShockRate] = useState(-0.15);
+  const [shockYears, setShockYears] = useState(2);
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
+
+  const weightSum = ASSET_ROWS.reduce((s, [k]) => s + (assets[k].weight || 0), 0);
+  const setAsset = (cls, field, v) =>
+    setAssets((p) => ({ ...p, [cls]: { ...p[cls], [field]: parseFloat(v) || 0 } }));
 
   const run = async () => {
     setRunning(true);
     setErr(null);
     try {
-      const out = await runMonteCarlo(scenario, { n_trials: +trials, volatility: vol });
+      const out = await runMonteCarlo(scenario, {
+        n_trials: +trials,
+        assets,
+        shock: { enabled: shockOn, rate: shockRate, years: shockYears },
+      });
       setRes(out);
       onResult?.(out);
     } catch (e) {
@@ -31,6 +54,8 @@ export const MonteCarlo = ({ scenario, onResult }) => {
 
   const wc = res?.with_conversions;
   const nc = res?.without_conversions;
+  const seq = res?.sequence_risk;
+  const shock = res?.shock;
 
   return (
     <div className="space-y-6">
@@ -41,34 +66,92 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           <h3 className="font-display text-lg font-bold tracking-tight">Monte Carlo Simulation</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5 max-w-3xl">
-          Locks your plan's conversion schedule and stress-tests it against {trials} random market paths. Success = the liquid
-          portfolio fully funds every year's spending and never runs out through the second death.
+          Locks your plan's conversion schedule and stress-tests it against {trials} random market paths built from your
+          stock / bond / cash mix. Success = the liquid portfolio fully funds every year's spending and never runs out
+          through the second death.
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
-          <div>
-            <Label className="text-xs text-muted-foreground">Trials</Label>
-            <Select value={trials} onValueChange={setTrials}>
-              <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="mc-trials"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {["250", "500", "1000"].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
-              </SelectContent>
-            </Select>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Asset allocation table */}
+          <div className="lg:col-span-2">
+            <Label className="text-xs text-muted-foreground">Global allocation & assumptions</Label>
+            <div className="mt-2 rounded-lg border border-[#EBE8E0] overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#F9F8F6] text-[11px] text-muted-foreground">
+                    <th className="text-left font-semibold px-3 py-2">Asset class</th>
+                    <th className="text-right font-semibold px-3 py-2">Allocation %</th>
+                    <th className="text-right font-semibold px-3 py-2">Mean return %</th>
+                    <th className="text-right font-semibold px-3 py-2">Volatility %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ASSET_ROWS.map(([k, label]) => (
+                    <tr key={k} className="border-t border-[#EBE8E0]">
+                      <td className="px-3 py-1.5 font-medium">{label}</td>
+                      <td className="px-2 py-1.5">
+                        <Input type="number" step={5} value={Math.round(assets[k].weight * 100)} data-testid={`mc-w-${k}`}
+                          onChange={(e) => setAsset(k, "weight", (parseFloat(e.target.value) || 0) / 100)}
+                          className="h-8 text-right bg-white" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <Input type="number" step={0.5} value={+(assets[k].mean * 100).toFixed(1)} data-testid={`mc-m-${k}`}
+                          onChange={(e) => setAsset(k, "mean", (parseFloat(e.target.value) || 0) / 100)}
+                          className="h-8 text-right bg-white" />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <Input type="number" step={0.5} value={+(assets[k].vol * 100).toFixed(1)} data-testid={`mc-v-${k}`}
+                          onChange={(e) => setAsset(k, "vol", (parseFloat(e.target.value) || 0) / 100)}
+                          className="h-8 text-right bg-white" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className={`text-[10px] mt-1 ${Math.abs(weightSum - 1) > 0.001 ? "text-[#C87941]" : "text-muted-foreground"}`} data-testid="mc-weight-note">
+              Allocation totals {Math.round(weightSum * 100)}% (auto-normalized on run).
+              {res && <> Blended portfolio · <span className="font-medium text-[#4A6741]">{fmtPct(res.portfolio_mean)} mean</span>, {fmtPct(res.portfolio_vol)} vol · liquid start {fmtUSD(res.liquid_start)}.</>}
+            </p>
           </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Portfolio Volatility (σ)</Label>
-            <Input type="number" step={0.01} value={vol} data-testid="mc-volatility"
-              onChange={(e) => setVol(parseFloat(e.target.value) || 0)} className="mt-1 bg-[#F9F8F6]" />
-            <p className="text-[10px] text-muted-foreground mt-1">{fmtPct(vol)} std-dev of annual returns</p>
+
+          {/* Run options */}
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs text-muted-foreground">Trials</Label>
+              <Select value={trials} onValueChange={setTrials}>
+                <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="mc-trials"><SelectValue /></SelectTrigger>
+                <SelectContent>{["250", "500", "1000"].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+
+            <div className="rounded-lg border border-[#EBE8E0] p-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs flex items-center gap-1.5"><CloudLightning className="h-3.5 w-3.5 text-[#C87941]" /> Early bear-market stress</Label>
+                <Switch checked={shockOn} onCheckedChange={setShockOn} data-testid="mc-shock-toggle" />
+              </div>
+              {shockOn && (
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Return/yr %</Label>
+                    <Input type="number" step={1} value={+(shockRate * 100).toFixed(0)} data-testid="mc-shock-rate"
+                      onChange={(e) => setShockRate((parseFloat(e.target.value) || 0) / 100)} className="h-8 text-right bg-white" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground"># Years</Label>
+                    <Input type="number" step={1} min={1} max={5} value={shockYears} data-testid="mc-shock-years"
+                      onChange={(e) => setShockYears(Math.max(1, parseInt(e.target.value) || 1))} className="h-8 text-right bg-white" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Button onClick={run} disabled={running} data-testid="mc-run"
+              className="w-full gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
+              {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              {running ? "Running…" : "Run Simulation"}
+            </Button>
           </div>
-          <div className="text-xs text-muted-foreground">
-            <p>Mean return is balance-weighted from your accounts{res && <span className="font-medium text-[#4A6741]"> · {fmtPct(res.mean_return)}</span>}.</p>
-            <p className="mt-1">Liquid start{res && <span className="font-medium"> · {fmtUSD(res.liquid_start)}</span>}</p>
-          </div>
-          <Button onClick={run} disabled={running} data-testid="mc-run"
-            className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
-            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {running ? "Running…" : "Run Simulation"}
-          </Button>
         </div>
         {err && <p className="text-sm text-[#C87941] mt-3" data-testid="mc-error">{err}</p>}
       </Card>
@@ -76,7 +159,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
       {!res && !running && (
         <Card className="p-12 border-dashed border-[#EBE8E0] shadow-none text-center" data-testid="mc-empty">
           <Dices className="h-8 w-8 text-[#7A9B76] mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Run the simulation to see your probability of success, the percentile fan chart, and how conversions affect resilience.</p>
+          <p className="text-sm text-muted-foreground">Run the simulation to see your probability of success, the percentile fan chart, sequence-of-returns risk, and how conversions affect resilience.</p>
         </Card>
       )}
 
@@ -106,6 +189,40 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                 </span>{" "}({fmtPct(nc.success)} → {fmtPct(wc.success)}).
               </p>
             </Card>
+          </div>
+
+          {/* Sequence-of-returns risk + optional shock */}
+          <div className={`grid grid-cols-1 ${shock ? "lg:grid-cols-2" : ""} gap-6`}>
+            <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-seq-card">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="h-4 w-4 text-[#C87941]" />
+                <h3 className="font-display text-base font-bold tracking-tight">Sequence-of-Returns Risk</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                If your <span className="font-medium text-[#1A1A1A]">first {seq.early_years} years</span> land in the worst 5% of markets,
+                your success rate falls from{" "}
+                <span className="font-bold text-[#4A6741]">{fmtPct(seq.base_success)}</span> to{" "}
+                <span className="font-bold text-[#C87941]" data-testid="mc-seq-success">{fmtPct(seq.success)}</span>
+                {seq.median_ending != null && <> — with a median ending portfolio of {fmtUSD(seq.median_ending)}.</>}
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-2">A bad start early in retirement is far more damaging than the same losses later — this measures that exposure automatically.</p>
+            </Card>
+
+            {shock && (
+              <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-shock-card">
+                <div className="flex items-center gap-2 mb-1">
+                  <CloudLightning className="h-4 w-4 text-[#C87941]" />
+                  <h3 className="font-display text-base font-bold tracking-tight">Bear-Market Stress Test</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Forcing a <span className="font-medium text-[#1A1A1A]">{fmtPct(shock.rate)}/yr</span> market for the first{" "}
+                  <span className="font-medium text-[#1A1A1A]">{shock.years} {shock.years === 1 ? "year" : "years"}</span> drops your success rate from{" "}
+                  <span className="font-bold text-[#4A6741]">{fmtPct(shock.base_success_with)}</span> to{" "}
+                  <span className="font-bold text-[#C87941]" data-testid="mc-shock-success">{fmtPct(shock.success_with)}</span>.
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-2">Even under this shock, converting keeps you ahead: {fmtPct(shock.success_with)} vs {fmtPct(shock.success_without)} without conversions.</p>
+              </Card>
+            )}
           </div>
 
           {/* Fan chart */}

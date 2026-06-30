@@ -73,11 +73,23 @@ class InsightChatRequest(BaseModel):
     message: str
 
 
+class AssetClass(BaseModel):
+    mean: float
+    vol: float
+    weight: float
+
+
+class ShockSpec(BaseModel):
+    enabled: bool = False
+    rate: float = -0.15
+    years: int = 2
+
+
 class MonteCarloRequest(BaseModel):
     config: Dict[str, Any]
     n_trials: int = 500
-    volatility: float = 0.12
-    mean_return: Optional[float] = None
+    assets: Optional[Dict[str, AssetClass]] = None
+    shock: Optional[ShockSpec] = None
     seed: Optional[int] = None
 
 
@@ -120,26 +132,36 @@ async def sweep(req: ProjectionRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-MC_JOBS: Dict[str, Dict[str, Any]] = {}
+MC_TTL_SECONDS = 3600
+
+
+@app.on_event("startup")
+async def _mc_indexes():
+    try:
+        await db.mc_jobs.create_index("created_at", expireAfterSeconds=MC_TTL_SECONDS)
+        await db.mc_jobs.create_index("job_id", unique=True)
+    except Exception:
+        logging.exception("failed creating mc_jobs indexes")
 
 
 @api_router.post("/montecarlo")
 async def start_montecarlo(req: MonteCarloRequest):
     job_id = str(uuid.uuid4())
-    MC_JOBS[job_id] = {"status": "running", "result": None, "error": None}
-    if len(MC_JOBS) > 50:  # trim oldest jobs
-        for k in list(MC_JOBS.keys())[:-50]:
-            MC_JOBS.pop(k, None)
+    await db.mc_jobs.insert_one({
+        "job_id": job_id, "status": "running", "result": None, "error": None,
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    assets = {k: v.model_dump() for k, v in req.assets.items()} if req.assets else None
+    shock = req.shock.model_dump() if req.shock else None
 
     async def worker():
         try:
-            res = await asyncio.to_thread(
-                run_montecarlo, req.config, req.n_trials, req.volatility, req.mean_return, req.seed
-            )
-            MC_JOBS[job_id] = {"status": "done", "result": res, "error": None}
+            res = await asyncio.to_thread(run_montecarlo, req.config, req.n_trials, assets, shock, req.seed)
+            await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "done", "result": res}})
         except Exception as e:
             logging.exception("montecarlo failed")
-            MC_JOBS[job_id] = {"status": "error", "result": None, "error": str(e)}
+            await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "error", "error": str(e)}})
 
     asyncio.create_task(worker())
     return {"job_id": job_id, "status": "running"}
@@ -147,7 +169,7 @@ async def start_montecarlo(req: MonteCarloRequest):
 
 @api_router.get("/montecarlo/{job_id}")
 async def montecarlo_status(job_id: str):
-    job = MC_JOBS.get(job_id)
+    job = await db.mc_jobs.find_one({"job_id": job_id}, {"_id": 0, "created_at": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Monte Carlo job not found")
     return job
