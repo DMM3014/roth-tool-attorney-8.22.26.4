@@ -357,3 +357,27 @@ Behavior-identical (GOLDEN MATCH + 52/52 pytest). Reused the existing `Plan` dat
   (cash_need, rmd_by, ira_draw, wd, roth_withdraw, conversion, surplus).
 - `_SolveCtx`: 18 -> 13 fields (dropped 6 account/funding fields, added one `plan` ref); `_withdraw`
   call inside `_solve_year_conversion` now passes `ctx.plan`.
+
+### Code-review round 3 — false positives flagged + genuine complexity cuts (DONE — 2026-06-30)
+**Verified as FALSE POSITIVES (NOT changed — applying them would break the app):**
+- "Missing hook deps" (use-toast.js, Scenarios, Projection, Planner, Optimizer, DetailCashflow, Compare):
+  the flagged names are LOCAL vars inside callbacks (i, keys, a, b, row, net_worth, ending), module-level
+  vars (listeners), or stable setters (setState, setScenario, setMcResult). The real react-hooks/exhaustive
+  -deps rule does NOT require these; the actual webpack build is 0 warnings. use-toast.js is the unmodified
+  canonical shadcn file.
+- Backend `is` comparisons (projection.py 91/212/467/574/639, tax_engine.py 160/256, 3 tests): all are
+  `is None`/`is not None`/`is True` — correct PEP-8 (`==`/`is` for None must stay `is`).
+- "1 console statement": none exist anywhere in frontend/src.
+
+**Genuine complexity reductions applied (GOLDEN MATCH + 52/52 pytest, behavior-identical):**
+- `_aggregate_income` (cx 23): extracted `_income_from_stream` (per-stream classification); main fn now a
+  simple sum loop.
+- `_year_demographics` (cx 24): extracted `_apply_spousal_rollover` + `_medicare_headcount`.
+- `_post_death_horizon` (66 lines): converted the mutating year loop into a `_HeirSleeves` dataclass with a
+  `.step()` method + `_init_heir_sleeves` builder; the fn is now ~6 lines (setup -> loop -> aggregate).
+- Frontend: moved the 40-line 11-dependency `aiSummary` useMemo out of Projection.jsx into a focused
+  `src/hooks/useAiSummary.js` custom hook (addresses "extract into custom hook" + component complexity).
+
+**Deliberately skipped (low value / would add noise):** hoisting tiny static Recharts config literals
+(margin/domain/tick) to module consts — negligible perf vs Recharts' own re-render cost; and `value={[state]}`
+slider arrays are dynamic (can't be hoisted; useMemo on a 1-element array is over-engineering).

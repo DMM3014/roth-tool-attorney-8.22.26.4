@@ -95,30 +95,36 @@ def _stream_amount(s: dict, year: int, both_alive: bool, survivor_owner: str | N
     return annual, char
 
 
+def _income_from_stream(s, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner):
+    """Classify one income stream into (ordinary_non_ss, gross_ss, recurring_div) for a year."""
+    owner = s.get("owner", "Joint")
+    owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
+                   or (owner == "Spouse" and spouse_alive))
+    if not owner_alive and s.get("tax_character") != "SS" and owner != "Joint":
+        return 0.0, 0.0, 0.0
+    amt, char = _stream_amount(s, year, both_alive, survivor_owner)
+    if char == "SS":
+        # after first death, only the surviving owner's own SS benefit continues
+        if not both_alive and has_spouse and not (
+                (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive)):
+            return 0.0, 0.0, 0.0
+        return 0.0, amt, 0.0
+    if char == "QDiv/LTCG":
+        return 0.0, 0.0, amt
+    if char == "Annuity":
+        return amt * s.get("taxable_pct", 1.0), 0.0, 0.0
+    return amt, 0.0, 0.0
+
+
 def _aggregate_income(streams, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner):
     """Sum income streams into (ordinary_non_ss, gross_ss, recurring_div) for a year."""
-    ordinary_non_ss = 0.0
-    gross_ss = 0.0
-    recurring_div = 0.0
+    ordinary_non_ss = gross_ss = recurring_div = 0.0
     for s in streams:
-        owner = s.get("owner", "Joint")
-        owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
-                       or (owner == "Spouse" and spouse_alive))
-        if not owner_alive and s.get("tax_character") != "SS" and owner != "Joint":
-            continue
-        amt, char = _stream_amount(s, year, both_alive, survivor_owner)
-        if char == "SS":
-            if not both_alive and has_spouse:
-                if (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive):
-                    gross_ss += amt
-            else:
-                gross_ss += amt
-        elif char == "QDiv/LTCG":
-            recurring_div += amt
-        elif char == "Annuity":
-            ordinary_non_ss += amt * s.get("taxable_pct", 1.0)
-        else:
-            ordinary_non_ss += amt
+        o, ss, d = _income_from_stream(s, year, client_alive, spouse_alive,
+                                       both_alive, has_spouse, survivor_owner)
+        ordinary_non_ss += o
+        gross_ss += ss
+        recurring_div += d
 
     # survivor SS = higher of the two benefits (approximate)
     if not both_alive and has_spouse and gross_ss == 0:
@@ -192,73 +198,96 @@ def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
     return total
 
 
+@dataclass
+class _HeirSleeves:
+    """Mutable inherited-account balances + heir growth rates for the post-death horizon."""
+    roth: float
+    trad: float
+    taxable: float
+    reinvest: float
+    cash: float
+    re: float
+    taxable0: float
+    home0: float
+    reinvest_basis: float
+    roth_r: float
+    trad_r: float
+    tax_r: float
+    cash_r: float
+    re_r: float
+    heir_rate: float
+    heir_ltcg_rate: float
+    cum_ira_tax: float = 0.0
+
+    def step(self, y, years):
+        """Advance one post-death year: deplete the inherited IRA, compound sleeves, build the row."""
+        wd = self.trad / (years - y + 1)     # deplete remaining over remaining years
+        self.trad -= wd
+        tax = wd * self.heir_rate
+        self.cum_ira_tax += tax
+        self.reinvest += wd - tax            # after-tax proceeds reinvested
+        self.reinvest_basis += wd - tax
+        self.roth *= (1 + self.roth_r)       # tax-free compounding
+        self.trad *= (1 + self.trad_r)
+        self.taxable *= (1 + self.tax_r)
+        self.reinvest *= (1 + self.tax_r)
+        self.cash *= (1 + self.cash_r)
+        self.re *= (1 + self.re_r)
+        # heirs owe LTCG on post-death appreciation of the taxable/reinvest/home sleeves
+        accrued_ltcg = self.heir_ltcg_rate * (max(0.0, self.taxable - self.taxable0)
+                                              + max(0.0, self.reinvest - self.reinvest_basis)
+                                              + max(0.0, self.re - self.home0))
+        return {
+            "year_after_death": y,
+            "inherited_roth": round(self.roth, 2),
+            "inherited_traditional": round(self.trad, 2),
+            "ira_tax_paid": round(tax, 2),
+            "taxable_and_reinvested": round(self.taxable + self.reinvest, 2),
+            "cash": round(self.cash, 2),
+            "real_estate": round(self.re, 2),
+            "total_to_heirs": round(self.roth + self.trad + self.taxable + self.reinvest
+                                    + self.cash + self.re - accrued_ltcg, 2),
+        }
+
+
+def _init_heir_sleeves(final, accounts, heir_rate, settlement_pct, heir_return, heir_ltcg_rate, div_yield):
+    """Resolve heir growth rates and the settlement-haircut initial balances."""
+    def ret(tax_type, default):
+        return next((a["return"] for a in accounts if a["tax_type"] == tax_type), default)
+
+    override = heir_return is not None
+    base_tax_r = heir_return if override else ret("Taxable", 0.07)
+    tax_r = base_tax_r if override else (base_tax_r - div_yield * heir_ltcg_rate)  # dividend drag
+    hc = 1 - settlement_pct  # settlement haircut at death (not applied to the inherited IRA)
+    taxable0 = final.get("taxable", 0) * hc
+    home0 = final.get("real_estate", 0) * hc
+    return _HeirSleeves(
+        roth=final.get("roth", 0) * hc,
+        trad=final.get("traditional", 0),        # full balance — heirs pay income tax on it
+        taxable=taxable0, reinvest=0.0, cash=final.get("cash", 0) * hc, re=home0,
+        taxable0=taxable0, home0=home0, reinvest_basis=0.0,
+        roth_r=heir_return if override else ret("Tax-Free", 0.07),
+        trad_r=heir_return if override else ret("Tax-Deferred", 0.07),
+        tax_r=tax_r, cash_r=ret("Cash", 0.03), re_r=ret("Real Estate", 0.035),
+        heir_rate=heir_rate, heir_ltcg_rate=heir_ltcg_rate)
+
+
 def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10,
                         heir_return=None, heir_ltcg_rate=0.2345, div_yield=0.02):
     """SECURE Act post-death inherited-account horizon after the 2nd death (matches V9).
 
     - Inherited Roth keeps compounding TAX-FREE (settlement haircut applied at death).
     - Inherited Traditional IRA is depleted over the horizon at the heirs' ordinary rate;
-      the after-tax proceeds are reinvested in a taxable sleeve. (No settlement haircut on
-      the IRA — heirs owe income tax on the full inherited balance.)
-    - Taxable & real estate received a basis step-up at death, then keep compounding;
-      the taxable/reinvest sleeves grow NET of the annual qualified-dividend tax drag
-      (return − div_yield × heir LTCG rate). Heirs owe LTCG on POST-death appreciation.
-    `heir_return`, if provided, overrides the growth rate on Roth / Traditional / taxable /
-    reinvested sleeves (used as-is, no dividend drag).
+      after-tax proceeds reinvested in a taxable sleeve (no settlement haircut on the IRA).
+    - Taxable & real estate received a basis step-up at death, then compound NET of the
+      annual qualified-dividend tax drag; heirs owe LTCG on POST-death appreciation.
+    `heir_return`, if provided, overrides the Roth/Traditional/taxable/reinvest growth rate.
     """
-    def ret(tax_type, default):
-        return next((a["return"] for a in accounts if a["tax_type"] == tax_type), default)
-
-    override = heir_return is not None
-    roth_r = heir_return if override else ret("Tax-Free", 0.07)
-    trad_r = heir_return if override else ret("Tax-Deferred", 0.07)
-    base_tax_r = heir_return if override else ret("Taxable", 0.07)
-    tax_r = base_tax_r if override else (base_tax_r - div_yield * heir_ltcg_rate)  # dividend drag
-    cash_r = ret("Cash", 0.03)
-    re_r = ret("Real Estate", 0.035)
-
-    hc = 1 - settlement_pct  # settlement haircut at death (not applied to the inherited IRA)
-    roth = final.get("roth", 0) * hc
-    trad = final.get("traditional", 0)           # full balance — heirs pay income tax on it
-    taxable0 = final.get("taxable", 0) * hc
-    home0 = final.get("real_estate", 0) * hc
-    taxable = taxable0
-    cash = final.get("cash", 0) * hc
-    re = home0
-    reinvest = 0.0
-    reinvest_basis = 0.0
-    cum_ira_tax = 0.0
-
-    rows = []
-    for y in range(1, years + 1):
-        wd = trad / (years - y + 1)          # deplete remaining over remaining years
-        trad -= wd
-        tax = wd * heir_rate
-        cum_ira_tax += tax
-        reinvest += wd - tax                 # after-tax proceeds reinvested
-        reinvest_basis += wd - tax
-        roth *= (1 + roth_r)                 # tax-free compounding
-        trad *= (1 + trad_r)
-        taxable *= (1 + tax_r)
-        reinvest *= (1 + tax_r)
-        cash *= (1 + cash_r)
-        re *= (1 + re_r)
-        # heirs owe LTCG on post-death appreciation of the taxable/reinvest/home sleeves
-        accrued_ltcg = heir_ltcg_rate * (max(0.0, taxable - taxable0)
-                                         + max(0.0, reinvest - reinvest_basis)
-                                         + max(0.0, re - home0))
-        rows.append({
-            "year_after_death": y,
-            "inherited_roth": round(roth, 2),
-            "inherited_traditional": round(trad, 2),
-            "ira_tax_paid": round(tax, 2),
-            "taxable_and_reinvested": round(taxable + reinvest, 2),
-            "cash": round(cash, 2),
-            "real_estate": round(re, 2),
-            "total_to_heirs": round(roth + trad + taxable + reinvest + cash + re - accrued_ltcg, 2),
-        })
+    sleeves = _init_heir_sleeves(final, accounts, heir_rate, settlement_pct,
+                                 heir_return, heir_ltcg_rate, div_yield)
+    rows = [sleeves.step(y, years) for y in range(1, years + 1)]
     total = rows[-1]["total_to_heirs"] if rows else 0.0
-    return rows, round(total, 2), round(cum_ira_tax, 2)
+    return rows, round(total, 2), round(sleeves.cum_ira_tax, 2)
 
 
 def _compute_legacy(cfg: dict, final: dict) -> dict:
@@ -611,6 +640,27 @@ class YearStatus:
     med_count: int
 
 
+def _apply_spousal_rollover(plan, owner_map, client_alive, spouse_alive,
+                            client_alive_prev, spouse_alive_prev):
+    """The year AFTER first death, transfer the decedent's accounts to the survivor (in place)."""
+    if not plan.has_spouse:
+        return
+    if (not client_alive) and client_alive_prev and spouse_alive:
+        owner_map.update({k: ("Spouse" if v == "Client" else v) for k, v in owner_map.items()})
+    elif (not spouse_alive) and spouse_alive_prev and client_alive:
+        owner_map.update({k: ("Client" if v == "Spouse" else v) for k, v in owner_map.items()})
+
+
+def _medicare_headcount(plan, client_alive, spouse_alive, year):
+    """Count living spouses aged 65+ (Medicare-eligible)."""
+    count = 0
+    for alive, dob in ((client_alive, plan.client_dob),
+                       (spouse_alive, plan.spouse_dob if plan.has_spouse else None)):
+        if alive and dob is not None and _age(dob, year) >= 65:
+            count += 1
+    return count
+
+
 def _year_demographics(plan: Plan, owner_map: dict, year: int,
                        client_alive_prev: bool, spouse_alive_prev: bool) -> YearStatus:
     """Resolve who is alive, the filing status, the spousal account rollover and the
@@ -619,29 +669,15 @@ def _year_demographics(plan: Plan, owner_map: dict, year: int,
     spouse_alive = plan.has_spouse and _alive(plan.spouse_dob, plan.spouse_death, year)
     both_alive = client_alive and spouse_alive
     filing = "MFJ" if both_alive else plan.survivor_status
+    survivor_owner = (None if both_alive or not plan.has_spouse
+                      else ("Client" if client_alive else "Spouse"))
 
-    survivor_owner = None
-    if not both_alive and plan.has_spouse:
-        survivor_owner = "Client" if client_alive else "Spouse"
-
-    # Spousal rollover the year AFTER first death: the decedent's accounts transfer to
-    # the survivor, so RMDs continue on the survivor's age.
-    if plan.has_spouse:
-        if (not client_alive) and client_alive_prev and spouse_alive:
-            owner_map.update({k: ("Spouse" if v == "Client" else v) for k, v in owner_map.items()})
-        elif (not spouse_alive) and spouse_alive_prev and client_alive:
-            owner_map.update({k: ("Client" if v == "Spouse" else v) for k, v in owner_map.items()})
-
-    num65 = 0
-    med_count = 0
-    for alive, dob in ((client_alive, plan.client_dob),
-                       (spouse_alive, plan.spouse_dob if plan.has_spouse else None)):
-        if alive and dob is not None and _age(dob, year) >= 65:
-            num65 += 1
-            med_count += 1
+    _apply_spousal_rollover(plan, owner_map, client_alive, spouse_alive,
+                            client_alive_prev, spouse_alive_prev)
+    count65 = _medicare_headcount(plan, client_alive, spouse_alive, year)
 
     return YearStatus(client_alive, spouse_alive, both_alive, client_alive or spouse_alive,
-                      filing, filing == "MFJ", survivor_owner, num65, med_count)
+                      filing, filing == "MFJ", survivor_owner, count65, count65)
 
 
 @dataclass
