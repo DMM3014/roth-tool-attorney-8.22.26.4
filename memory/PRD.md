@@ -248,3 +248,7 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   result auto-clears whenever the scenario changes (so it never goes stale). Verified e2e: run MC (92%) →
   Projection → Generate Insights opens with "92% probability of success … converting adds 2.8 points of
   resilience (92.0% vs 89.2%)…".
+- **Projection AI panel hint (DONE)**: when no Monte Carlo has been run yet, the Projection AI panel shows
+  a dismissible-by-action tip (`data-testid="mc-hint"`) nudging the user to run the Monte Carlo tab first
+  for a success-rate-aware summary. It auto-hides once `mcResult` exists. Verified: visible before MC,
+  hidden after a run.

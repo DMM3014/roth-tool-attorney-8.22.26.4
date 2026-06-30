@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Wallet, Landmark, Receipt, Sparkles, Wand2, Award, Download, Printer, Gift } from "lucide-react";
+import { Wallet, Landmark, Receipt, Sparkles, Wand2, Award, Download, Printer, Gift, Dices } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -402,6 +402,14 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
           <Sparkles className="h-4 w-4 text-[#C87941]" />
           <h3 className="font-display text-lg font-bold tracking-tight">AI Strategy Insights</h3>
         </div>
+        {!mcResult && (
+          <div className="flex items-center gap-3 rounded-lg border border-[#4A6741]/25 bg-[#E8F3E5]/70 px-4 py-2.5 mb-4" data-testid="mc-hint">
+            <Dices className="h-4 w-4 text-[#4A6741] shrink-0" />
+            <p className="text-xs text-[#2C4A2D]">
+              <span className="font-semibold">Tip:</span> run the <span className="font-semibold">Monte Carlo</span> tab first — the summary will then lead with your probability of success and how much resilience the conversions add.
+            </p>
+          </div>
+        )}
         <AIInsights summary={aiSummary} testid="ai-insights-proj" />
       </Card>
     </div>
