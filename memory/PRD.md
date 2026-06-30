@@ -391,3 +391,13 @@ slider arrays are dynamic (can't be hoisted; useMemo on a 1-element array is ove
   golden), documented recurring external-linter FALSE POSITIVES (PEP-8 `is None`; locals/module-vars/
   stable-setters mis-flagged as hook deps; no console statements exist) and the intentional eslint-disable
   locations, so future reports stop re-flagging idiomatic code.
+
+### Widened golden safety net (DONE — 2026-06-30)
+Added 3 edge-case projection configs to `golden_snapshot.py` before building v2.1, baseline regenerated
+(_golden.json now 340KB) and `test_golden_snapshot` re-verified (53 pytest pass):
+- `single_filer`: no-spouse household, Single brackets/deduction, spouse streams+accounts removed (25 yrs).
+- `early_widow`: client dies ~2035 -> exercises spousal rollover + survivor Single filing/SS/spending
+  (confirmed MFJ->Single transition at 2036).
+- `high_state_tax`: state_rate 0.13 + heir_state_rate 0.10 -> stresses state_tax/effective-rate/heir blend.
+Coverage now: year_tax (MFJ/Single/all-preferential), optimize (24%/32%), projection (default, no_roth,
+capped_32, single_filer, early_widow, high_state_tax, sweep).

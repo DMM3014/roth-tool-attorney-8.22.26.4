@@ -58,6 +58,30 @@ def _projection_cases():
     cap["roth"]["target_bracket"] = 0.32
     out["capped_32"] = run_projection(cap)
 
+    # --- edge cases (widen the safety net) ---
+    # 1. Single filer / no spouse: single brackets + deduction, no rollover, spouse items removed.
+    single = copy.deepcopy(DEFAULT_SCENARIO)
+    single["household"] = {
+        "client_name": "Single Client", "client_dob_year": 1960,
+        "client_life_expectancy": 90, "filing_status": "Single",
+    }
+    single["income_streams"] = [s for s in single["income_streams"] if s.get("owner") != "Spouse"]
+    single["expenses"] = [e for e in single["expenses"] if e.get("owner") != "Spouse"]
+    single["accounts"] = [a for a in single["accounts"] if a["id"] not in ("TAXS", "IRAS", "ROTS")]
+    single["tax"]["survivor_filing_status"] = "Single"
+    out["single_filer"] = run_projection(single)
+
+    # 2. Early widow: client dies 2035 -> spousal rollover, survivor Single filing, survivor SS/spending.
+    widow = copy.deepcopy(DEFAULT_SCENARIO)
+    widow["household"]["client_life_expectancy"] = 70   # dob 1965 -> dies ~2035
+    out["early_widow"] = run_projection(widow)
+
+    # 3. High state tax: stresses state_tax, effective rate and heir blended rate.
+    high_tax = copy.deepcopy(DEFAULT_SCENARIO)
+    high_tax["tax"]["state_rate"] = 0.13
+    high_tax["legacy"]["heir_state_rate"] = 0.10
+    out["high_state_tax"] = run_projection(high_tax)
+
     out["sweep"] = sweep_brackets(copy.deepcopy(DEFAULT_SCENARIO))
     return out
 
