@@ -8,7 +8,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { runMonteCarlo, fmtUSD, fmtPct } from "@/lib/api";
 import { SuccessGauge, SuccessCompareChart, FanChart, EndingHistogram } from "@/components/MonteCarloCharts";
 
-export const MonteCarlo = ({ scenario }) => {
+export const MonteCarlo = ({ scenario, onResult }) => {
   const [trials, setTrials] = useState("500");
   const [vol, setVol] = useState(0.12);
   const [running, setRunning] = useState(false);
@@ -21,6 +21,7 @@ export const MonteCarlo = ({ scenario }) => {
     try {
       const out = await runMonteCarlo(scenario, { n_trials: +trials, volatility: vol });
       setRes(out);
+      onResult?.(out);
     } catch (e) {
       setErr("Simulation failed. Please try again.");
     } finally {

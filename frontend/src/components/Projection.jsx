@@ -19,7 +19,7 @@ const metricColor = (accent, warn) => {
   return "text-[#1A1A1A]";
 };
 
-export const Projection = ({ scenario, setScenario }) => {
+export const Projection = ({ scenario, setScenario, mcResult }) => {
   const [withRoth, setWithRoth] = useState(null);
   const [noRoth, setNoRoth] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -113,12 +113,25 @@ export const Projection = ({ scenario, setScenario }) => {
       bracket_sweep_ranked: sweep?.ranked,
       lifetime_tax_savings: taxDelta,
       ending_networth_difference: nwDelta,
+      monte_carlo: mcResult && {
+        trials: mcResult.n_trials,
+        volatility: mcResult.volatility,
+        mean_return: mcResult.mean_return,
+        success_with_conversions: mcResult.with_conversions?.success,
+        success_without_conversions: mcResult.without_conversions?.success,
+        resilience_delta_points: mcResult.with_conversions && mcResult.without_conversions
+          ? Math.round((mcResult.with_conversions.success - mcResult.without_conversions.success) * 1000) / 10
+          : null,
+        median_ending_portfolio: mcResult.with_conversions?.ending?.p50,
+        downside_ending_p10: mcResult.with_conversions?.ending?.p10,
+        depleted_pct: mcResult.with_conversions?.ending?.depleted_pct,
+      },
       sample_years: withRoth.rows.filter((_, i) => i % 5 === 0).map((x) => ({
         year: x.year, conversion: x.roth_conversion, tax: x.total_tax,
         traditional: x.traditional, roth: x.roth, marginal_rate: x.marginal_rate,
       })),
     },
-    [s, sn, taxDelta, nwDelta, withRoth, scenario, sweep, legacy]
+    [s, sn, taxDelta, nwDelta, withRoth, scenario, sweep, legacy, mcResult]
   );
 
   return (

@@ -194,6 +194,9 @@ async def insights(req: InsightRequest):
         "dividends + long-term capital gains, taxed at 0/15/20% stacked on top of ordinary). "
         "Be concrete, reference the numbers given, and give 3-5 crisp, actionable insights "
         "about bracket-filling, IRMAA, NIIT, RMDs, and survivor (filing-status) impact. "
+        "If a 'monte_carlo' block is present, OPEN with the probability of success and state how many "
+        "points of resilience the Roth conversions add (success_with vs success_without), e.g. "
+        "'Your plan has a 93% success rate; converting adds ~4 points of resilience.' "
         "Use short paragraphs and bullet points. Do not give legal disclaimers."
     )
     prompt = (

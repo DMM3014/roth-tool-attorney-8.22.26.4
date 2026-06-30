@@ -13,10 +13,14 @@ import { MonteCarlo } from "@/components/MonteCarlo";
 
 export const Planner = () => {
   const [scenario, setScenario] = useState(null);
+  const [mcResult, setMcResult] = useState(null);
 
   useEffect(() => {
     fetchDefaults().then(setScenario);
   }, []);
+
+  // a scenario edit invalidates a prior Monte Carlo run
+  useEffect(() => { setMcResult(null); }, [scenario && JSON.stringify(scenario)]);
 
   if (!scenario) {
     return (
@@ -76,7 +80,7 @@ export const Planner = () => {
             <Optimizer scenario={scenario} />
           </TabsContent>
           <TabsContent value="projection">
-            <Projection scenario={scenario} setScenario={setScenario} />
+            <Projection scenario={scenario} setScenario={setScenario} mcResult={mcResult} />
           </TabsContent>
           <TabsContent value="cashflow">
             <DetailCashflow scenario={scenario} />
@@ -85,7 +89,7 @@ export const Planner = () => {
             <Analytics scenario={scenario} />
           </TabsContent>
           <TabsContent value="montecarlo">
-            <MonteCarlo scenario={scenario} />
+            <MonteCarlo scenario={scenario} onResult={setMcResult} />
           </TabsContent>
           <TabsContent value="inputs">
             <PlanInputs scenario={scenario} setScenario={setScenario} />

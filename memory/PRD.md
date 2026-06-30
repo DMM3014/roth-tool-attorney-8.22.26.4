@@ -241,3 +241,10 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   Trials 250/500/1000 (default 500), editable volatility (default 12%). Verified by testing agent
   (iteration_10.json): backend 6/6, frontend 100%, 0 console errors, 8-tab regression all PASS.
   Methodology note: aggregate approximation (taxes locked from deterministic run); numpy is in requirements.txt.
+- **Monte Carlo → AI Insights bridge (DONE)**: the MC result is lifted to Planner state (`mcResult`),
+  passed to the Projection tab, and injected as a `monte_carlo` block into the AI summary (success with/
+  without, resilience delta points, median & P10 ending, depleted %). The `/insights` system prompt now
+  instructs the AI to OPEN with the probability of success and the resilience the conversions add. The
+  result auto-clears whenever the scenario changes (so it never goes stale). Verified e2e: run MC (92%) →
+  Projection → Generate Insights opens with "92% probability of success … converting adds 2.8 points of
+  resilience (92.0% vs 89.2%)…".
