@@ -197,6 +197,8 @@ async def insights(req: InsightRequest):
         "If a 'monte_carlo' block is present, OPEN with the probability of success and state how many "
         "points of resilience the Roth conversions add (success_with vs success_without), e.g. "
         "'Your plan has a 93% success rate; converting adds ~4 points of resilience.' "
+        "If a 'net_to_family' block is present, include a clear legacy line, e.g. 'Your conversions leave "
+        "your heirs ~$14.3M more, and most of it tax-free' (use net_to_family.delta and tax_free_roth_with). "
         "Use short paragraphs and bullet points. Do not give legal disclaimers."
     )
     prompt = (

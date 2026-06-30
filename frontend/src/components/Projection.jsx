@@ -113,6 +113,16 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
       bracket_sweep_ranked: sweep?.ranked,
       lifetime_tax_savings: taxDelta,
       ending_networth_difference: nwDelta,
+      net_to_family: legacy && legacyNo && {
+        horizon_years: legacy.horizon_years,
+        with_conversions: legacy.after_tax_estate_to_heirs,
+        without_conversions: legacyNo.after_tax_estate_to_heirs,
+        delta: heirDelta,
+        tax_free_roth_with: legacy.tax_free_roth_to_heirs,
+        tax_free_roth_without: legacyNo.tax_free_roth_to_heirs,
+        heir_ira_tax_with: legacy.inherited_ira_tax,
+        heir_ira_tax_without: legacyNo.inherited_ira_tax,
+      },
       monte_carlo: mcResult && {
         trials: mcResult.n_trials,
         volatility: mcResult.volatility,
@@ -131,7 +141,7 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
         traditional: x.traditional, roth: x.roth, marginal_rate: x.marginal_rate,
       })),
     },
-    [s, sn, taxDelta, nwDelta, withRoth, scenario, sweep, legacy, mcResult]
+    [s, sn, taxDelta, nwDelta, withRoth, scenario, sweep, legacy, legacyNo, heirDelta, mcResult]
   );
 
   return (
