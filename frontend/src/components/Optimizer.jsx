@@ -30,27 +30,62 @@ export const Optimizer = ({ scenario }) => {
   const divRate = scenario.dividend_yield ?? 0.02;
   const divFromRate = Math.round(divRate * taxableTotal);
 
-  const [inp, setInp] = useState({
-    filing_status: "MFJ",
-    year: scenario.projection.start_year,
-    bracket_index: 1.0,
-    irmaa_index: 1.0,
-    num_65plus: 0,
-    medicare_count: 0,
-    ordinary_non_ss: wages ? wages.amount : 200000,
-    ira_distributions: 0,
-    cash_interest: 3000,
-    gross_ss: 0,
-    recurring_div_ltcg: divFromRate,
-    realized_ltcg: 0,
-    state_rate: scenario.tax.state_rate,
-    include_irmaa: true,
+  const proj = scenario.projection;
+  const startYear = proj.start_year;
+  const endYear = proj.end_year;
+  const bracketRate = proj.bracket_indexing ?? 0.03;
+  const irmaaRate = proj.irmaa_indexing ?? 0.03;
+  const clientDob = scenario.household?.client_dob_year;
+  const spouseDob = scenario.household?.spouse_dob_year;
+  const YEARS = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
+
+  const idxFor = (year) => ({
+    bracket_index: Math.pow(1 + bracketRate, year - startYear),
+    irmaa_index: Math.pow(1 + irmaaRate, year - startYear),
+  });
+  const ageCountFor = (year, filing) => {
+    const ca = clientDob ? year - clientDob : -1;
+    const sa = spouseDob ? year - spouseDob : -1;
+    if (filing === "Single") return ca >= 65 ? 1 : 0;
+    return (ca >= 65 ? 1 : 0) + (sa >= 65 ? 1 : 0);
+  };
+
+  const [inp, setInp] = useState(() => {
+    const c = ageCountFor(startYear, "MFJ");
+    return {
+      filing_status: "MFJ",
+      year: startYear,
+      ...idxFor(startYear),
+      num_65plus: c,
+      medicare_count: c,
+      ordinary_non_ss: wages ? wages.amount : 200000,
+      ira_distributions: 0,
+      cash_interest: 3000,
+      gross_ss: 0,
+      recurring_div_ltcg: divFromRate,
+      realized_ltcg: 0,
+      state_rate: scenario.tax.state_rate,
+      include_irmaa: true,
+    };
   });
   const [targetIdx, setTargetIdx] = useState(3); // index into BRACKETS -> 0.24
   const [result, setResult] = useState(null);
 
   const set = (k) => (v) => setInp((p) => ({ ...p, [k]: v }));
   const targetRate = BRACKETS[targetIdx];
+
+  const setYear = (y) => {
+    const year = +y;
+    const c = ageCountFor(year, inp.filing_status);
+    setInp((p) => ({ ...p, year, ...idxFor(year), num_65plus: c, medicare_count: c }));
+  };
+  const setFiling = (v) => {
+    const c = ageCountFor(inp.year, v);
+    setInp((p) => ({ ...p, filing_status: v, num_65plus: c, medicare_count: c }));
+  };
+
+  const clientAge = clientDob ? inp.year - clientDob : null;
+  const spouseAge = spouseDob ? inp.year - spouseDob : null;
 
   const recalc = useCallback(() => {
     optimizeConversion(inp, targetRate, 0).then(setResult);
@@ -65,8 +100,8 @@ export const Optimizer = ({ scenario }) => {
   const after = result?.after;
 
   const aiSummary = useMemo(
-    () => result && { mode: "single_year", filing_status: inp.filing_status, target_bracket: targetRate, ...result },
-    [result, inp.filing_status, targetRate]
+    () => result && { mode: "single_year", year: inp.year, filing_status: inp.filing_status, target_bracket: targetRate, ...result },
+    [result, inp.year, inp.filing_status, targetRate]
   );
 
   return (
@@ -79,13 +114,28 @@ export const Optimizer = ({ scenario }) => {
         <div className="space-y-4">
           <div>
             <Label className="text-xs text-muted-foreground">Filing Status</Label>
-            <Select value={inp.filing_status} onValueChange={set("filing_status")}>
+            <Select value={inp.filing_status} onValueChange={setFiling}>
               <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="filing-status-select"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="MFJ">Married Filing Jointly</SelectItem>
                 <SelectItem value="Single">Single (Survivor)</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs text-muted-foreground">Tax Year</Label>
+            <Select value={String(inp.year)} onValueChange={setYear}>
+              <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="tax-year-select"><SelectValue /></SelectTrigger>
+              <SelectContent className="max-h-72">
+                {YEARS.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-muted-foreground mt-1" data-testid="year-indexing-note">
+              Brackets & IRMAA indexed ×{inp.bracket_index.toFixed(2)} ({fmtPct(bracketRate)}/yr from {startYear})
+              {clientAge != null && ` · ${scenario.household.client_name?.split(" ")[0] || "Client"} age ${clientAge}`}
+              {spouseAge != null && inp.filing_status === "MFJ" && ` · ${scenario.household.spouse_name?.split(" ")[0] || "Spouse"} age ${spouseAge}`}
+            </p>
           </div>
 
           <div className="pt-2">
@@ -118,6 +168,7 @@ export const Optimizer = ({ scenario }) => {
                 <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="age65-select"><SelectValue /></SelectTrigger>
                 <SelectContent>{[0, 1, 2].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
               </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">Auto from birth years · editable</p>
             </div>
             <NumField label="State Tax Rate" value={inp.state_rate} onChange={set("state_rate")} testid="in-state" step={0.001} />
           </div>

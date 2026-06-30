@@ -213,3 +213,11 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   `rate × taxable balances` (was a static 60k / income-stream value), with a derivation note; still
   editable. Reactive across tabs (verified: 2% → $120,000, 3% → $180,000). No backend/core-math change —
   the multi-year engine already computes dividends as `dividend_yield × taxable balances`.
+- **Single-Year Optimizer — Tax Year selector (DONE)**: added a "Tax Year" dropdown (projection range
+  2026–2062). Previously the optimizer was hardwired to the start year with no indexing
+  (`bracket_index`/`irmaa_index` = 1.0). Now selecting a year computes `bracket_index`/`irmaa_index =
+  (1+rate)^(year−start)` from the projection's indexing rates, and AUTO-DERIVES "# Age 65+" / Medicare
+  count from the household birth years + selected year + filing status (still editable). Shows an
+  indexing/ages note. Frontend-only (Optimizer.jsx) — the `/api/tax/optimize` endpoint already accepted
+  year + indices. Verified: 2026 → ×1.00 (ages 61/60, conv $82,750); 2035 → ×1.30 (ages 70/69, Medicare
+  + senior deduction apply, 24% ceiling widens to $526,541, conv $219,861).
