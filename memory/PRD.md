@@ -259,3 +259,27 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   the existing dual `withRoth.legacy`/`noRoth.legacy` runs; included in the print/PDF export via `print-card`.
   Verified: With $140.35M vs No $126.09M (+$14.26M to family; conversions also shift a large slice into the
   tax-free Roth bucket).
+
+### Monte Carlo v2 (DONE — 2026-06-30)
+- **Per-asset-class global allocation**: `montecarlo.py` `_portfolio_factors` blends independent
+  per-class lognormal draws (stocks/bonds/cash, each with its own mean + vol) into a single portfolio
+  gross-return factor weighted by allocation; allocations auto-normalize on run. Reports blended
+  `portfolio_mean` / `portfolio_vol`. Frontend `MonteCarlo.jsx` exposes an editable Allocation %/Mean %/Vol %
+  table (defaults 60/30/10 · 8/4/3 · 18/6/1) with a live "totals X%" warning when ≠100%.
+- **Sequence-of-returns risk** (automatic): cohort = worst 5% of paths by cumulative return over the first
+  3 years; reports base vs cohort success rate and the cohort median ending portfolio (`mc-seq-card`).
+- **Early bear-market stress** (toggle): forces a fixed negative return (default −15%/yr) for the first
+  N years (1–5) as a separate run on the same draws; shows shocked success with/without conversions
+  (`mc-shock-card`, conditional).
+- **Persistence**: MC jobs stored in MongoDB `mc_jobs` with a TTL index (`created_at` expireAfterSeconds=3600)
+  + unique `job_id` index; `POST /api/montecarlo` writes job then runs in a background asyncio task,
+  `GET /api/montecarlo/{job_id}` polls. AssetClass{mean,vol,weight} + ShockSpec{enabled,rate,years} models.
+- **UI polish**: SuccessCompareChart bars switched from fixed barSize to maxBarSize/minPointSize so they
+  render thick at any container width.
+- Verified: backend e2e via curl (allocation + sequence_risk + shock all returned), frontend testing agent
+  iteration_11.json — 6/6 review bullets PASS, 0 console/page errors, Plan-Inputs→Monte-Carlo invalidation OK.
+
+## Backlog / Next (updated 2026-06-30)
+- P1: Monte Carlo v2.1 — add inflation volatility (stochastic COLA / spending growth) to the simulation.
+- P2: api.js runMonteCarlo poll window is 42s (60×700ms); raise to ~60s or backoff for very large trials.
+- P2: enforce shock-years HTML max=5 in onChange (currently clamps min only).
