@@ -14,6 +14,20 @@ export const listScenarios = () => axios.get(`${API}/scenarios`).then((r) => r.d
 export const saveScenario = (name, config) => axios.post(`${API}/scenarios`, { name, config }).then((r) => r.data);
 export const deleteScenario = (id) => axios.delete(`${API}/scenarios/${id}`).then((r) => r.data);
 
+export const startMonteCarlo = (config, n_trials, volatility, mean_return = null, seed = null) =>
+  axios.post(`${API}/montecarlo`, { config, n_trials, volatility, mean_return, seed }).then((r) => r.data.job_id);
+// poll until status is done/error (or timeout)
+export const runMonteCarlo = async (config, { n_trials = 500, volatility = 0.12, mean_return = null } = {}) => {
+  const jobId = await startMonteCarlo(config, n_trials, volatility, mean_return);
+  for (let i = 0; i < 60; i++) {
+    const job = await axios.get(`${API}/montecarlo/${jobId}`).then((r) => r.data);
+    if (job.status === "done") return job.result;
+    if (job.status === "error") throw new Error(job.error || "Monte Carlo failed");
+    await new Promise((res) => setTimeout(res, 700));
+  }
+  throw new Error("Monte Carlo timed out");
+};
+
 export const fmtUSD = (v) =>
   v == null ? "—" : v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 export const fmtPct = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);

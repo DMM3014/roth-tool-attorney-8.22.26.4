@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3 } from "lucide-react";
+import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchDefaults } from "@/lib/api";
 import { Optimizer } from "@/components/Optimizer";
@@ -9,6 +9,7 @@ import { PlanInputs } from "@/components/PlanInputs";
 import { DetailCashflow } from "@/components/DetailCashflow";
 import { Compare } from "@/components/Compare";
 import { Analytics } from "@/components/Analytics";
+import { MonteCarlo } from "@/components/MonteCarlo";
 
 export const Planner = () => {
   const [scenario, setScenario] = useState(null);
@@ -57,6 +58,9 @@ export const Planner = () => {
             <TabsTrigger value="analytics" data-testid="tab-analytics" className="gap-2 data-[state=active]:bg-white">
               <BarChart3 className="h-4 w-4" /> Analytics
             </TabsTrigger>
+            <TabsTrigger value="montecarlo" data-testid="tab-montecarlo" className="gap-2 data-[state=active]:bg-white">
+              <Dices className="h-4 w-4" /> Monte Carlo
+            </TabsTrigger>
             <TabsTrigger value="inputs" data-testid="tab-inputs" className="gap-2 data-[state=active]:bg-white">
               <Table2 className="h-4 w-4" /> Plan Inputs
             </TabsTrigger>
@@ -79,6 +83,9 @@ export const Planner = () => {
           </TabsContent>
           <TabsContent value="analytics">
             <Analytics scenario={scenario} />
+          </TabsContent>
+          <TabsContent value="montecarlo">
+            <MonteCarlo scenario={scenario} />
           </TabsContent>
           <TabsContent value="inputs">
             <PlanInputs scenario={scenario} setScenario={setScenario} />

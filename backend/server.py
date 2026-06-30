@@ -14,7 +14,9 @@ from datetime import datetime, timezone
 
 from tax_engine import compute_year_tax, optimize_conversion
 from projection import run_projection, sweep_brackets
+from montecarlo import run_montecarlo
 from defaults import DEFAULT_SCENARIO
+import asyncio
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -71,6 +73,14 @@ class InsightChatRequest(BaseModel):
     message: str
 
 
+class MonteCarloRequest(BaseModel):
+    config: Dict[str, Any]
+    n_trials: int = 500
+    volatility: float = 0.12
+    mean_return: Optional[float] = None
+    seed: Optional[int] = None
+
+
 # ---------- Routes ----------
 @api_router.get("/")
 async def root():
@@ -108,6 +118,39 @@ async def sweep(req: ProjectionRequest):
     except Exception as e:
         logging.exception("sweep failed")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+MC_JOBS: Dict[str, Dict[str, Any]] = {}
+
+
+@api_router.post("/montecarlo")
+async def start_montecarlo(req: MonteCarloRequest):
+    job_id = str(uuid.uuid4())
+    MC_JOBS[job_id] = {"status": "running", "result": None, "error": None}
+    if len(MC_JOBS) > 50:  # trim oldest jobs
+        for k in list(MC_JOBS.keys())[:-50]:
+            MC_JOBS.pop(k, None)
+
+    async def worker():
+        try:
+            res = await asyncio.to_thread(
+                run_montecarlo, req.config, req.n_trials, req.volatility, req.mean_return, req.seed
+            )
+            MC_JOBS[job_id] = {"status": "done", "result": res, "error": None}
+        except Exception as e:
+            logging.exception("montecarlo failed")
+            MC_JOBS[job_id] = {"status": "error", "result": None, "error": str(e)}
+
+    asyncio.create_task(worker())
+    return {"job_id": job_id, "status": "running"}
+
+
+@api_router.get("/montecarlo/{job_id}")
+async def montecarlo_status(job_id: str):
+    job = MC_JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Monte Carlo job not found")
+    return job
 
 
 @api_router.post("/scenarios", response_model=Scenario)

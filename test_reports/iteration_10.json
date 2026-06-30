@@ -1,0 +1,44 @@
+{
+  "summary": "Full backend+frontend verification of new Monte Carlo v1 feature plus 8-tab regression. Backend: 6/6 pytest checks pass on POST /api/montecarlo job+poll flow against the live public URL. Frontend: end-to-end Playwright run through the Monte Carlo tab succeeds with 0 console errors. All 7 review-request bullets PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_checklist": {
+    "post_montecarlo_starts_job_and_get_polls_to_done": "PASS — POST returns {job_id, status:'running'}; GET eventually returns status:'done' with result containing years[], n_trials, mean_return, liquid_start, with_conversions{success, percentiles{p10..p90}, ending{p10,p50,p90,depleted,depleted_pct,pct_positive}, histogram{counts,edges}}, without_conversions{...}. No raw trial array leaked (asserted 'trials'/'paths'/'all_paths'/'raw' absent).",
+    "success_equals_one_minus_depleted_pct": "PASS — for both with_ and without_conversions, |success - (1 - depleted_pct)| <= 0.001 (rounding noise only) at n_trials=400, vol=0.15, seed=11.",
+    "higher_volatility_lowers_success": "PASS — vol=0.12 success=0.92 vs vol=0.22 success=0.59 (paired seed=42, n=400). UI repro: vol=0.12 → 93% / vol=0.20 → 64%.",
+    "fixed_seed_reproducibility": "PASS — two POSTs with seed=2026, n=300, vol=0.18 produced byte-identical success, ending.p50 and percentiles.p50 arrays.",
+    "unknown_job_id_returns_404": "PASS — GET /api/montecarlo/does-not-exist-xyz -> 404.",
+    "frontend_controls_and_empty_state": "PASS — [data-testid=tab-montecarlo] visible; clicking opens [mc-controls] with [mc-trials] select, [mc-volatility] input, [mc-run] button, and [mc-empty] before first run.",
+    "frontend_results_render_after_run": "PASS — after [mc-run] click all four cards appear: [mc-gauge-card] with [mc-gauge-value]='93%', [mc-compare-card] with [mc-delta]='Roth conversions change the success rate by +3.8 pts (89.0% → 92.8%).', [mc-fan-card] (median+P10–P90 band), [mc-hist-card] (note: '36 of 500 trials (7.2%) deplete to $0').",
+    "gauge_equals_100_minus_depleted": "PASS — gauge=93% vs 100-depleted_pct=92.8% (gauge is integer-rounded, diff=0.2pt as expected). At vol=0.20: gauge=64% vs 100-35.6=64.4% (diff=0.4pt, within integer-rounding tolerance).",
+    "ui_volatility_change_lowers_success_no_console_errors": "PASS — re-running with vol=0.20 dropped success 93% -> 64%. 0 console errors and 0 page errors during the full flow.",
+    "regression_8_tabs": "PASS — all 8 tabs (optimizer, projection, cashflow, analytics, montecarlo, inputs, scenarios, compare) reach data-state=active on click. Optimizer still has [pull-from-plan] + 'Tax Year' label. Detail/Cashflow still has [export-full-plan]. Compare still has [compare-selectors]."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_montecarlo.py",
+    "/app/test_reports/pytest/montecarlo_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py MC_JOBS is an in-process dict: ok for single-worker dev preview, but it will not survive a backend restart and is not shared across workers. Acceptable for v1, but a future enhancement should persist jobs in Mongo (a 'mc_jobs' collection keyed by job_id, with TTL index).",
+    "server.py trims MC_JOBS to last 50 by slicing 'list(MC_JOBS.keys())[:-50]'. With Python dicts insertion-ordered, this trims the OLDEST when len>50, which is correct, but the bound (50) is silent and there are no metrics. Minor.",
+    "montecarlo.py uses np.percentile per axis but with default linear interpolation — that's fine. The success metric is the path-wide 'ever depleted', which is more conservative than 'ending<=0' (both happen to coincide because depleted paths are locked at 0); the code returns both 'success' and 'success_funded' as the same value — consider removing the duplicate field or computing 'success_funded' independently from cashflow shortfalls so the two metrics can diverge meaningfully in a future version.",
+    "MonteCarlo.jsx fan-chart legend reads 'P10–P90 outcome band' but the band area is built from a transparent p10 stack + spread; ensure the legend (in MonteCarloCharts.jsx) doesn't accidentally show the helper invisible series — out of scope for this run, just a polish flag.",
+    "api.js runMonteCarlo polls every 700ms for 60 iterations (~42s). Backend is <1s for n_trials<=1000; this is plenty, but consider exponential backoff so the first poll fires after ~200ms for a snappier UX.",
+    "MonteCarlo.jsx gauge displays integer % while the delta text shows 1 decimal — visible 0.2pt discrepancy between gauge and 'with conversions' value in delta. Consider showing 1 decimal in the gauge (e.g., '92.8%') for consistency with the comparison numbers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_montecarlo.py (new)"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (all review-request UI checks pass; 0 console errors)"},
+  "test_credentials": "n/a — open calculator, no auth",
+  "seed_data_creation": "None — uses GET /api/defaults as the config payload.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Monte Carlo v1 is fully wired end-to-end. Backend: POST /api/montecarlo {config, n_trials(250/500/1000), volatility, mean_return?, seed?} -> {job_id,'running'}; GET /api/montecarlo/{job_id} -> {status,result,error}. MC_JOBS is in-memory dict in server.py (trimmed to 50). Worker uses asyncio.to_thread(run_montecarlo,...). run_montecarlo() in montecarlo.py runs run_projection twice (with+without conversions, paired draws using identical g matrix for fair comparison), marches L_{t+1}=L_t*g+net_flow on liquid-tax-types only (Cash, Taxable, Tax-Deferred, Tax-Free), locks depleted paths at 0, returns percentiles {p10,p25,p50,p75,p90}, ending {p10,p50,p90,mean,min,pct_positive,depleted,depleted_pct} and 20-bin histogram clipped at P90. Frontend MonteCarlo.jsx polls via lib/api.js runMonteCarlo (700ms x 60). The tab bar now has 8 tabs in order: optimizer, projection, cashflow, analytics, montecarlo, inputs, scenarios, compare. Test report XML at /app/test_reports/pytest/montecarlo_results.xml.",
+  "rca of the issue": "n/a — no defects found."
+}
