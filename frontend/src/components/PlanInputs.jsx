@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { fmtUSD } from "@/lib/api";
 
 const Cell = ({ children, w }) => <td className={`px-2 py-1.5 ${w || ""}`}>{children}</td>;
 
@@ -58,6 +59,11 @@ export const PlanInputs = ({ scenario, setScenario }) => {
   };
   const addRow = (key, template) => setScenario((p) => ({ ...p, [key]: [...p[key], template] }));
   const delRow = (key, idx) => setScenario((p) => ({ ...p, [key]: p[key].filter((_, i) => i !== idx) }));
+
+  const taxableTotal = scenario.accounts
+    .filter((a) => a.tax_type === "Taxable")
+    .reduce((sum, a) => sum + (a.beginning_balance || 0), 0);
+  const divDollars = (scenario.dividend_yield ?? 0.02) * taxableTotal;
 
   return (
     <div className="space-y-6">
@@ -162,12 +168,15 @@ export const PlanInputs = ({ scenario, setScenario }) => {
           <span className="font-medium"> appreciation rate = gross return − dividend yield</span> (so set the return gross; appreciation is computed net of dividends automatically).
           Tax-deferred, Roth, cash and real-estate accounts grow at their full return.
         </p>
-        <div className="mb-4 max-w-xs">
-          <Label className="text-xs text-muted-foreground">Taxable Dividend Yield</Label>
+        <div className="mb-4 max-w-sm">
+          <Label className="text-xs text-muted-foreground">Other Dividends Realized — Rate (% of taxable)</Label>
           <Input type="number" step={0.005} value={scenario.dividend_yield ?? 0.02} data-testid="dividend-yield"
             onChange={(e) => setScenario((p) => ({ ...p, dividend_yield: parseFloat(e.target.value) || 0 }))}
             className="mt-1 bg-[#F9F8F6]" />
-          <p className="text-[10px] text-muted-foreground mt-1">Paid to cash as qualified dividends (taxed at LTCG rates). 0 = pure appreciation, makes taxable behave like a Roth via step-up.</p>
+          <p className="text-[10px] text-muted-foreground mt-1" data-testid="dividend-derivation">
+            Default 2% (0.02). ≈ <span className="font-medium text-[#4A6741]">{fmtUSD(divDollars)}/yr</span> on {fmtUSD(taxableTotal)} taxable balances — this is the
+            <span className="font-medium"> Qualified Dividends + Recurring LTCG</span> used by the Single-Year Optimizer. Paid to cash as qualified dividends (taxed at LTCG rates).
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">

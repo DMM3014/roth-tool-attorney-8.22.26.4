@@ -206,3 +206,10 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   Both the Optimizer and Projection AI panels inherit it (shared component). Verified via curl (context-
   aware streamed answer) + full e2e screenshot (generate summary → follow-up → 3 messages, correct
   context). Ephemeral per user's choice; clears on reset/reload — no DB persistence.
+- **Dividends rate → Optimizer link (DONE)**: On Plan Inputs the dividend field is now labeled
+  "Other Dividends Realized — Rate (% of taxable)" (the existing `dividend_yield`, default 2%/0.02,
+  user-editable) and shows the derived annual dollars (rate × sum of Taxable account balances). The
+  Single-Year Optimizer's "Qualified Dividends + Recurring LTCG" now auto-defaults to that same
+  `rate × taxable balances` (was a static 60k / income-stream value), with a derivation note; still
+  editable. Reactive across tabs (verified: 2% → $120,000, 3% → $180,000). No backend/core-math change —
+  the multi-year engine already computes dividends as `dividend_yield × taxable balances`.

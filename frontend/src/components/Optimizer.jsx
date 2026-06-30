@@ -23,7 +23,12 @@ const NumField = ({ label, value, onChange, testid, step = 1000 }) => (
 
 export const Optimizer = ({ scenario }) => {
   const wages = scenario.income_streams.find((s) => s.type === "Wages");
-  const div = scenario.income_streams.find((s) => s.tax_character === "QDiv/LTCG");
+  // "Other Dividends Realized" = dividend rate × taxable account balances (mirrors the multi-year engine)
+  const taxableTotal = scenario.accounts
+    .filter((a) => a.tax_type === "Taxable")
+    .reduce((sum, a) => sum + (a.beginning_balance || 0), 0);
+  const divRate = scenario.dividend_yield ?? 0.02;
+  const divFromRate = Math.round(divRate * taxableTotal);
 
   const [inp, setInp] = useState({
     filing_status: "MFJ",
@@ -36,7 +41,7 @@ export const Optimizer = ({ scenario }) => {
     ira_distributions: 0,
     cash_interest: 3000,
     gross_ss: 0,
-    recurring_div_ltcg: div ? div.amount : 60000,
+    recurring_div_ltcg: divFromRate,
     realized_ltcg: 0,
     state_rate: scenario.tax.state_rate,
     include_irmaa: true,
@@ -96,7 +101,12 @@ export const Optimizer = ({ scenario }) => {
           <div className="pt-2">
             <p className="label-cap text-[#C87941] mb-2">Preferential Income (LTCG / Qual. Div)</p>
             <div className="space-y-3">
-              <NumField label="Qualified Dividends + Recurring LTCG" value={inp.recurring_div_ltcg} onChange={set("recurring_div_ltcg")} testid="in-div" />
+              <div>
+                <NumField label="Qualified Dividends + Recurring LTCG" value={inp.recurring_div_ltcg} onChange={set("recurring_div_ltcg")} testid="in-div" />
+                <p className="text-[10px] text-muted-foreground mt-1" data-testid="div-derivation">
+                  Auto = {fmtPct(divRate)} dividend rate × {fmtUSD(taxableTotal)} taxable balances. Editable; change the rate on Plan Inputs.
+                </p>
+              </div>
               <NumField label="Realized LTCG (sales)" value={inp.realized_ltcg} onChange={set("realized_ltcg")} testid="in-realized" />
             </div>
           </div>
