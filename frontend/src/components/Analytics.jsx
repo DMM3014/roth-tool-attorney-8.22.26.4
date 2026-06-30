@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { runProjection, fmtUSD } from "@/lib/api";
 import {
   IncomeSourcesChart, BracketFillChart, SurplusChart, TaxCompositionChart,
-  RmdBalanceChart, IrmaaChart, RateTrendChart, CumulativeTaxChart,
+  RmdBalanceChart, IrmaaChart, RateTrendChart, CumulativeTaxChart, HeirLegacyCompareChart,
 } from "@/components/AnalyticsCharts";
 
 const BRACKET_LABELS = ["10%", "12%", "22%", "24%", "32%", "35%", "37%"];
@@ -146,6 +146,7 @@ export const Analytics = ({ scenario }) => {
           <IrmaaChart data={irmaaData} />
           <RateTrendChart data={rateData} />
           <CumulativeTaxChart data={cumData} />
+          <HeirLegacyCompareChart withLegacy={withRoth.legacy} noLegacy={noRoth?.legacy} />
         </div>
       </div>
     </div>

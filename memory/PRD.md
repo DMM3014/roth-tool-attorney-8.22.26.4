@@ -252,3 +252,10 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   a dismissible-by-action tip (`data-testid="mc-hint"`) nudging the user to run the Monte Carlo tab first
   for a success-rate-aware summary. It auto-hides once `mcResult` exists. Verified: visible before MC,
   hidden after a run.
+- **Analytics — "Net to Family at Second Death + 10 Years" chart (DONE)**: new `HeirLegacyCompareChart`
+  (AnalyticsCharts.jsx, wired into Analytics grid) contrasts the after-tax estate delivered to heirs after
+  the 10-year SECURE inherited-account drawdown, WITH vs WITHOUT conversions. Stacked horizontal bars split
+  tax-free inherited Roth (green) from other after-tax (sand), with total labels and a delta callout. Uses
+  the existing dual `withRoth.legacy`/`noRoth.legacy` runs; included in the print/PDF export via `print-card`.
+  Verified: With $140.35M vs No $126.09M (+$14.26M to family; conversions also shift a large slice into the
+  tax-free Roth bucket).

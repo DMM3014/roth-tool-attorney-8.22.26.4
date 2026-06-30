@@ -1,6 +1,6 @@
 import {
   Area, AreaChart, Bar, BarChart, Line, ComposedChart, Cell,
-  CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, ReferenceLine,
+  CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, ReferenceLine, LabelList,
 } from "recharts";
 import { Card } from "@/components/ui/card";
 import { fmtUSD, fmtPct } from "@/lib/api";
@@ -196,3 +196,33 @@ export const CumulativeTaxChart = ({ data }) => (
     </ResponsiveContainer>
   </Panel>
 );
+
+// ---- 9. Net to family at second death + horizon: convert vs no-convert ----
+export const HeirLegacyCompareChart = ({ withLegacy, noLegacy }) => {
+  const mk = (name, lg) => {
+    const total = lg?.after_tax_estate_to_heirs || 0;
+    const roth = lg?.tax_free_roth_to_heirs || 0;
+    return { name, roth, other: Math.max(0, total - roth), total };
+  };
+  const data = [mk("With Conversions", withLegacy), mk("No Conversions", noLegacy)];
+  const delta = (withLegacy?.after_tax_estate_to_heirs || 0) - (noLegacy?.after_tax_estate_to_heirs || 0);
+  const horizon = withLegacy?.horizon_years || 10;
+  return (
+    <Panel testid="chart-heir-legacy" title={`Net to Family at Second Death + ${horizon} Years`}
+      subtitle={`After-tax value delivered to heirs once the ${horizon}-year SECURE inherited-account drawdown is complete. Green = tax-free inherited Roth; sand = other after-tax (after the heirs' inherited-IRA tax & LTCG). Converting changes the family's net inheritance by ${delta >= 0 ? "+" : ""}${fmtUSD(delta)}.`}>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} layout="vertical" margin={{ left: 30, right: 90 }}>
+          <CartesianGrid strokeOpacity={0.1} horizontal={false} />
+          <XAxis type="number" tickFormatter={mAxis} tick={AXIS} />
+          <YAxis type="category" dataKey="name" width={120} tick={AXIS} />
+          <Tooltip formatter={usd} />
+          <Legend />
+          <Bar dataKey="roth" name="Tax-free inherited Roth" stackId="s" fill={C.green} />
+          <Bar dataKey="other" name="Other after-tax" stackId="s" fill={C.sand} radius={[0, 4, 4, 0]}>
+            <LabelList dataKey="total" position="right" formatter={(v) => fmtUSD(v)} style={{ fontSize: 12, fontWeight: 700, fill: "#1A1A1A" }} />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </Panel>
+  );
+};
