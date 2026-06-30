@@ -320,3 +320,30 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   `sendMessage(q)` helper (`send()` now delegates to it). Chips render only when not streaming
   (data-testid ai-suggestions / ai-suggestion-{i}). Verified e2e: clicking "IRMAA risk?" appended the Q&A
   and the assistant answered on-topic; input re-enabled ~12s.
+
+### Code-quality refactor pass (DONE — 2026-06-30)
+Regression guard added: `backend/tests/golden_snapshot.py` (save/check) snapshots compute_year_tax,
+optimize_conversion, run_projection & sweep across several configs -> `_golden.json`. All refactors below
+verified GOLDEN MATCH + 52/52 pytest.
+- **Backend run_projection** (223 lines / cyclomatic 56 -> ~70 lines): extracted `Plan` dataclass +
+  `_parse_plan`, `YearStatus` + `_year_demographics` (alive/filing/rollover/65+ counts), `YearCalc` +
+  `_build_year_row`. Output byte-identical.
+- **Backend compute_year_tax**: extracted `_TaxBase` + `_resolve_taxable_income` (income->AGI/MAGI->
+  deductions->ordinary/preferential split); main fn now orchestrates the (already-separate) bracket helpers.
+- **Backend run_montecarlo**: extracted `_deterministic_flows`, `_sequence_risk`, `_shock_run`.
+- **Fixed 2 outdated Monte Carlo tests** (used removed v1 `volatility`/`mean_return`) -> v2 `assets`/
+  `portfolio_vol`; the "higher vol lowers success" test is now a robust dispersion test; added a shock test.
+- **Frontend Projection.jsx split** 406 -> 191 lines (orchestrator) + new `ProjectionPanels.jsx`
+  (ProjectionControls / SweepPanel / YearTable / LegacyPanels). Imports cut 36 -> 7. Memoized the
+  in-JSX key-accounts filter. Fixed AI-summary mcResult v1->v2 keys (portfolio_vol/portfolio_mean).
+- **Index-as-key fixes**: MonteCarloCharts compare Cell (key=d.name), AnalyticsCharts SurplusChart Cell
+  (key=d.year), AIInsights messages now carry a stable `id` (history strips id when POSTed). Fixed the
+  last Planner.jsx exhaustive-deps warning -> build is now 0 warnings.
+- **Correctly NOT changed (linter false positives)**: `is None`/`is not None`/`is True` are PEP-8 idiom
+  (==would be a regression); the "missing hook deps i/keys/next/res/a/b" are LOCAL vars inside the
+  callbacks, not deps (build shows 0 exhaustive-deps warnings for those files).
+- Verified: frontend testing agent iteration_13.json — 6/6 PASS, 0 console errors, 0 key warnings.
+
+Deferred (low value / higher risk, noted from the report): per-helper argument-count reductions
+(_apply_year_flows 11 args, _withdraw/_total_rmd) and the aiSummary 11-dependency useMemo — these are
+"Important" not "Critical" and the dependencies/args are genuinely needed.
