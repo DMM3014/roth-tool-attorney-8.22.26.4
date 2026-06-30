@@ -229,3 +229,15 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   Medicare derived from the row's client/spouse ages (handles survivor years). Frontend-only (Optimizer.jsx,
   sonner toast). Verified: 2040 pull → wages $11,496, IRA dist $153,320, SS $112,842, div+LTCG $239,757,
   ages 75/74, then recommends $403,371 conversion to the indexed 24% ceiling ($610,406).
+- **Monte Carlo v1 (DONE)**: new "Monte Carlo" tab. Backend `montecarlo.py` + `POST /api/montecarlo`
+  (background job + `GET /api/montecarlo/{job_id}` poll; in-memory MC_JOBS dict trimmed to 50). Locks the
+  deterministic conversion schedule, runs the projection with AND without conversions (paired identical
+  random draws), and marches an aggregate liquid-wealth recursion `L_{t+1}=L_t·g+net_flow` on liquid
+  accounts only (numpy-vectorized N×T lognormal returns; balance-weighted mean return; depleted trials
+  locked at $0). Returns ONLY summary stats: per-year percentiles P10/P25/P50/P75/P90, ending dist
+  (p10/p50/p90/mean/min/pct_positive/depleted), 20-bin histogram clipped at P90 — never raw trials.
+  Success = liquid never depletes through 2nd death (= fully funds every year). Frontend: probability-of-
+  success gauge, with-vs-without resilience comparison, percentile fan chart, ending-portfolio histogram.
+  Trials 250/500/1000 (default 500), editable volatility (default 12%). Verified by testing agent
+  (iteration_10.json): backend 6/6, frontend 100%, 0 console errors, 8-tab regression all PASS.
+  Methodology note: aggregate approximation (taxes locked from deterministic run); numpy is in requirements.txt.

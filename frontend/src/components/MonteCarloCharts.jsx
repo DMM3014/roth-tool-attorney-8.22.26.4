@@ -13,8 +13,8 @@ const successColor = (p) => (p >= 0.9 ? C.green : p >= 0.75 ? "#B8860B" : C.terr
 
 // ---- Probability of Success gauge ----
 export const SuccessGauge = ({ value, label, testid }) => {
-  const pct = Math.round((value || 0) * 100);
-  const data = [{ name: "success", value: pct, fill: successColor(value) }];
+  const v = value || 0;
+  const data = [{ name: "success", value: v * 100, fill: successColor(v) }];
   return (
     <div className="flex flex-col items-center" data-testid={testid}>
       <div className="relative h-44 w-44">
@@ -25,7 +25,7 @@ export const SuccessGauge = ({ value, label, testid }) => {
           </RadialBarChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display text-4xl font-bold" style={{ color: successColor(value) }} data-testid={`${testid}-value`}>{pct}%</span>
+          <span className="font-display text-4xl font-bold" style={{ color: successColor(v) }} data-testid={`${testid}-value`}>{(v * 100).toFixed(1)}%</span>
           <span className="text-[10px] text-muted-foreground">success</span>
         </div>
       </div>
