@@ -221,3 +221,11 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   indexing/ages note. Frontend-only (Optimizer.jsx) — the `/api/tax/optimize` endpoint already accepted
   year + indices. Verified: 2026 → ×1.00 (ages 61/60, conv $82,750); 2035 → ×1.30 (ages 70/69, Medicare
   + senior deduction apply, 24% ceiling widens to $526,541, conv $219,861).
+- **Optimizer — "Use values from my plan" drill-down (DONE)**: a button under the Tax Year selector
+  pulls the selected year's BEFORE-CONVERSION income from the multi-year projection into the optimizer
+  fields, so it then recommends the Roth conversion on top. Maps from `runProjection(scenario)` row's
+  cashflow: wages_pension→ordinary, rmd+from_ira→IRA distributions (excl. conversion), interest, gross_ss,
+  dividends→recurring div/LTCG, (preferential_income − dividends)→realized LTCG; filing status + #65+ /
+  Medicare derived from the row's client/spouse ages (handles survivor years). Frontend-only (Optimizer.jsx,
+  sonner toast). Verified: 2040 pull → wages $11,496, IRA dist $153,320, SS $112,842, div+LTCG $239,757,
+  ages 75/74, then recommends $403,371 conversion to the indexed 24% ceiling ($610,406).

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { ArrowRight, Target, Sparkles } from "lucide-react";
+import { ArrowRight, Target, Sparkles, DownloadCloud, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { optimizeConversion, fmtUSD, fmtPct } from "@/lib/api";
+import { optimizeConversion, runProjection, fmtUSD, fmtPct } from "@/lib/api";
+import { toast } from "sonner";
 import { AIInsights } from "@/components/AIInsights";
 
 const BRACKETS = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
@@ -70,6 +72,7 @@ export const Optimizer = ({ scenario }) => {
   });
   const [targetIdx, setTargetIdx] = useState(3); // index into BRACKETS -> 0.24
   const [result, setResult] = useState(null);
+  const [pulling, setPulling] = useState(false);
 
   const set = (k) => (v) => setInp((p) => ({ ...p, [k]: v }));
   const targetRate = BRACKETS[targetIdx];
@@ -86,6 +89,40 @@ export const Optimizer = ({ scenario }) => {
 
   const clientAge = clientDob ? inp.year - clientDob : null;
   const spouseAge = spouseDob ? inp.year - spouseDob : null;
+
+  const pullFromPlan = async () => {
+    setPulling(true);
+    try {
+      const data = await runProjection(scenario);
+      const row = (data.rows || []).find((r) => r.year === inp.year);
+      if (!row) {
+        toast.error(`No projected data for ${inp.year} (outside the plan horizon).`);
+        return;
+      }
+      const cf = row.cashflow || {};
+      const realized = Math.max(0, (row.preferential_income || 0) - (cf.dividends || 0));
+      const ages = [row.client_age, row.spouse_age].filter((a) => a != null);
+      const count65 = ages.filter((a) => a >= 65).length;
+      const filing = row.filing_status === "Single" ? "Single" : "MFJ";
+      setInp((p) => ({
+        ...p,
+        filing_status: filing,
+        ordinary_non_ss: Math.round(cf.wages_pension || 0),
+        ira_distributions: Math.round((cf.rmd || 0) + (cf.from_ira || 0)),
+        cash_interest: Math.round(cf.interest || 0),
+        gross_ss: Math.round(cf.gross_ss || 0),
+        recurring_div_ltcg: Math.round(cf.dividends || 0),
+        realized_ltcg: Math.round(realized),
+        num_65plus: count65,
+        medicare_count: count65,
+      }));
+      toast.success(`Loaded ${inp.year} income from your plan — before any Roth conversion. The optimizer now recommends a conversion on top.`);
+    } catch (e) {
+      toast.error("Couldn't load values from your plan. Please try again.");
+    } finally {
+      setPulling(false);
+    }
+  };
 
   const recalc = useCallback(() => {
     optimizeConversion(inp, targetRate, 0).then(setResult);
@@ -136,6 +173,11 @@ export const Optimizer = ({ scenario }) => {
               {clientAge != null && ` · ${scenario.household.client_name?.split(" ")[0] || "Client"} age ${clientAge}`}
               {spouseAge != null && inp.filing_status === "MFJ" && ` · ${scenario.household.spouse_name?.split(" ")[0] || "Spouse"} age ${spouseAge}`}
             </p>
+            <Button variant="outline" size="sm" onClick={pullFromPlan} disabled={pulling} data-testid="pull-from-plan"
+              className="mt-2 w-full gap-2 border-[#4A6741] text-[#4A6741] hover:bg-[#E8F3E5] rounded-full">
+              {pulling ? <Loader2 className="h-4 w-4 animate-spin" /> : <DownloadCloud className="h-4 w-4" />}
+              {pulling ? "Loading…" : `Use ${inp.year} values from my plan`}
+            </Button>
           </div>
 
           <div className="pt-2">
