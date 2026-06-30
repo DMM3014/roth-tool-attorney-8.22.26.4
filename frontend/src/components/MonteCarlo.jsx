@@ -5,7 +5,6 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { runMonteCarlo, fmtUSD, fmtPct } from "@/lib/api";
 import { SuccessGauge, SuccessCompareChart, FanChart, EndingHistogram } from "@/components/MonteCarloCharts";
 
@@ -14,6 +13,7 @@ const ASSET_ROWS = [
   ["bonds", "Bonds"],
   ["cash", "Cash"],
 ];
+const TRIALS = 500;
 const DEFAULT_ASSETS = {
   stocks: { weight: 0.6, mean: 0.08, vol: 0.18 },
   bonds: { weight: 0.3, mean: 0.04, vol: 0.06 },
@@ -21,7 +21,6 @@ const DEFAULT_ASSETS = {
 };
 
 export const MonteCarlo = ({ scenario, onResult }) => {
-  const [trials, setTrials] = useState("500");
   const [assets, setAssets] = useState(DEFAULT_ASSETS);
   const [shockOn, setShockOn] = useState(false);
   const [shockRate, setShockRate] = useState(-0.15);
@@ -39,7 +38,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
     setErr(null);
     try {
       const out = await runMonteCarlo(scenario, {
-        n_trials: +trials,
+        n_trials: TRIALS,
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
       });
@@ -66,7 +65,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           <h3 className="font-display text-lg font-bold tracking-tight">Monte Carlo Simulation</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5 max-w-3xl">
-          Locks your plan's conversion schedule and stress-tests it against {trials} random market paths built from your
+          Locks your plan's conversion schedule and stress-tests it against {TRIALS} random market paths built from your
           stock / bond / cash mix. Success = the liquid portfolio fully funds every year's spending and never runs out
           through the second death.
         </p>
@@ -119,10 +118,11 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           <div className="space-y-4">
             <div>
               <Label className="text-xs text-muted-foreground">Trials</Label>
-              <Select value={trials} onValueChange={setTrials}>
-                <SelectTrigger className="mt-1 bg-[#F9F8F6]" data-testid="mc-trials"><SelectValue /></SelectTrigger>
-                <SelectContent>{["250", "500", "1000"].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}</SelectContent>
-              </Select>
+              <div className="mt-1 flex h-10 items-center justify-between rounded-md border border-[#EBE8E0] bg-[#F9F8F6] px-3" data-testid="mc-trials">
+                <span className="text-sm font-medium">500</span>
+                <span className="text-[10px] text-muted-foreground">fixed · validated</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Locked to 500 trials — the validated setting for this model.</p>
             </div>
 
             <div className="rounded-lg border border-[#EBE8E0] p-3">

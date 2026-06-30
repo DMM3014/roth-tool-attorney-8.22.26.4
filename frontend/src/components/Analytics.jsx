@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Printer } from "lucide-react";
+import { Printer, FileSpreadsheet, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { runProjection, fmtUSD } from "@/lib/api";
+import { runProjection, fmtUSD, pvSeries, buildPvSheets, downloadWorkbook, downloadCSV } from "@/lib/api";
 import {
   IncomeSourcesChart, BracketFillChart, SurplusChart, TaxCompositionChart,
   RmdBalanceChart, IrmaaChart, RateTrendChart, CumulativeTaxChart, HeirLegacyCompareChart,
+  PvNetWorthChart, RothConversionsChart, PvNetToFamilyChart,
 } from "@/components/AnalyticsCharts";
 
 const BRACKET_LABELS = ["10%", "12%", "22%", "24%", "32%", "35%", "37%"];
@@ -71,6 +72,20 @@ export const Analytics = ({ scenario }) => {
     });
   }, [rows, noRoth]);
 
+  const pv = useMemo(() => pvSeries(withRoth, noRoth, scenario), [withRoth, noRoth, scenario]);
+
+  const downloadData = (fmt) => {
+    const { yearly, summary } = buildPvSheets(pv.series, pv.ntf);
+    if (fmt === "xlsx") {
+      downloadWorkbook([
+        { name: "PV Net Worth & Conversions", rows: yearly },
+        { name: "Net to Family (PV)", rows: summary },
+      ], "retirement-pv-results.xlsx");
+    } else {
+      downloadCSV(yearly, "retirement-pv-results.csv");
+    }
+  };
+
   if (!withRoth) {
     return <div className="py-20 text-center text-muted-foreground animate-pulse label-cap">Running analytics…</div>;
   }
@@ -92,15 +107,25 @@ export const Analytics = ({ scenario }) => {
 
   return (
     <div className="space-y-6">
-      <div className="no-print flex items-center justify-between rounded-xl border border-[#EBE8E0] bg-[#F9F8F6] px-5 py-4" data-testid="presentation-toolbar">
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#EBE8E0] bg-[#F9F8F6] px-5 py-4" data-testid="presentation-toolbar">
         <div>
           <p className="font-display text-sm font-bold tracking-tight">Client-ready presentation</p>
-          <p className="text-[11px] text-muted-foreground">Branded document · summary metrics + all 8 analytics charts. Use your browser's “Save as PDF” in the print dialog.</p>
+          <p className="text-[11px] text-muted-foreground">Branded document · summary metrics + all analytics charts. Download the underlying data to reconcile against your source spreadsheet.</p>
         </div>
-        <Button size="sm" onClick={() => window.print()} data-testid="export-presentation"
-          className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
-          <Printer className="h-4 w-4" /> Print / Export PDF
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => downloadData("xlsx")} data-testid="download-xlsx"
+            className="gap-2 rounded-full border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/5">
+            <FileSpreadsheet className="h-4 w-4" /> Download Excel
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => downloadData("csv")} data-testid="download-csv"
+            className="gap-2 rounded-full border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/5">
+            <FileDown className="h-4 w-4" /> Download CSV
+          </Button>
+          <Button size="sm" onClick={() => window.print()} data-testid="export-presentation"
+            className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
+            <Printer className="h-4 w-4" /> Print / Export PDF
+          </Button>
+        </div>
       </div>
 
       <div id="analytics-print">
@@ -138,6 +163,9 @@ export const Analytics = ({ scenario }) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 analytics-grid" data-testid="analytics-grid">
+          <PvNetWorthChart data={pv.series} />
+          <RothConversionsChart data={pv.series} span={1} />
+          <PvNetToFamilyChart ntf={pv.ntf} span={1} />
           <IncomeSourcesChart data={incomeData} />
           <BracketFillChart data={bracketData} brackets={BRACKET_LABELS} />
           <SurplusChart data={surplusData} />

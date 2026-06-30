@@ -197,7 +197,75 @@ export const CumulativeTaxChart = ({ data }) => (
   </Panel>
 );
 
-// ---- 9. Net to family at second death + horizon: convert vs no-convert ----
+// ---- 10. Present value of net worth over time (With vs No conversions) ----
+export const PvNetWorthChart = ({ data }) => (
+  <Panel testid="chart-pv-networth" title="Present Value of Future Net Worth"
+    subtitle="Each year's projected net worth discounted back to today's dollars at the plan's inflation rate — With vs. Without Roth conversions. Strips out the inflation that flatters nominal balances so you compare real purchasing power.">
+    <ResponsiveContainer width="100%" height={300}>
+      <ComposedChart data={data}>
+        <defs>
+          <linearGradient id="gPvWith" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={C.green} stopOpacity={0.28} />
+            <stop offset="100%" stopColor={C.green} stopOpacity={0.03} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeOpacity={0.1} vertical={false} />
+        <XAxis dataKey="year" tick={AXIS} />
+        <YAxis tickFormatter={mAxis} tick={AXIS} width={50} />
+        <Tooltip formatter={usd} />
+        <Legend />
+        <Area type="monotone" dataKey="pvWith" name="With Conversions (PV)" stroke={C.green} strokeWidth={2.5} fill="url(#gPvWith)" />
+        <Line type="monotone" dataKey="pvNo" name="No Conversions (PV)" stroke={C.terra} strokeWidth={2} strokeDasharray="5 3" dot={false} />
+      </ComposedChart>
+    </ResponsiveContainer>
+  </Panel>
+);
+
+// ---- 11. Planned Roth conversions by year ----
+export const RothConversionsChart = ({ data, span = 1 }) => {
+  const total = data.reduce((s, d) => s + (d.conversion || 0), 0);
+  return (
+    <Panel testid="chart-roth-conversions" span={span} title="Planned Roth Conversions by Year"
+      subtitle={`Annual Roth conversion sized by the fill-the-bracket strategy. Total converted over the plan: ${fmtUSD(total)}.`}>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={data}>
+          <CartesianGrid strokeOpacity={0.1} vertical={false} />
+          <XAxis dataKey="year" tick={AXIS} />
+          <YAxis tickFormatter={kAxis} tick={AXIS} width={52} />
+          <Tooltip formatter={usd} />
+          <Bar dataKey="conversion" name="Roth Conversion" fill={C.plum} radius={R} />
+        </BarChart>
+      </ResponsiveContainer>
+    </Panel>
+  );
+};
+
+// ---- 12. Net to family — present value (With vs No conversions) ----
+export const PvNetToFamilyChart = ({ ntf, span = 2 }) => {
+  const data = [
+    { name: "With Conversions", roth: ntf.pvRothWith, other: Math.max(0, ntf.pvWith - ntf.pvRothWith), total: ntf.pvWith },
+    { name: "No Conversions", roth: ntf.pvRothNo, other: Math.max(0, ntf.pvNo - ntf.pvRothNo), total: ntf.pvNo },
+  ];
+  const delta = ntf.pvWith - ntf.pvNo;
+  return (
+    <Panel testid="chart-pv-net-to-family" span={span} title="Net to Family — Present Value"
+      subtitle={`After-tax estate delivered to heirs (year ${ntf.deliverYear}, once the ${ntf.horizon}-year SECURE drawdown is complete) discounted to today at ${fmtPct(ntf.discountRate)}. Green = tax-free inherited Roth. Converting changes the present value of the family's inheritance by ${delta >= 0 ? "+" : ""}${fmtUSD(delta)}.`}>
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} layout="vertical" margin={{ left: 30, right: 90 }}>
+          <CartesianGrid strokeOpacity={0.1} horizontal={false} />
+          <XAxis type="number" tickFormatter={mAxis} tick={AXIS} />
+          <YAxis type="category" dataKey="name" width={120} tick={AXIS} />
+          <Tooltip formatter={usd} />
+          <Legend />
+          <Bar dataKey="roth" name="Tax-free inherited Roth (PV)" stackId="s" fill={C.green} />
+          <Bar dataKey="other" name="Other after-tax (PV)" stackId="s" fill={C.sand} radius={[0, 4, 4, 0]}>
+            <LabelList dataKey="total" position="right" formatter={(v) => fmtUSD(v)} style={{ fontSize: 12, fontWeight: 700, fill: "#1A1A1A" }} />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </Panel>
+  );
+};
 export const HeirLegacyCompareChart = ({ withLegacy, noLegacy }) => {
   const mk = (name, lg) => {
     const total = lg?.after_tax_estate_to_heirs || 0;

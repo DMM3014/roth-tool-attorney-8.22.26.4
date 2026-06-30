@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
-import { Save, Trash2, FolderInput, Users } from "lucide-react";
+import { Save, Trash2, FolderInput, Users, FileSpreadsheet, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { listScenarios, saveScenario, deleteScenario, fmtUSD } from "@/lib/api";
+import {
+  listScenarios, saveScenario, deleteScenario, fmtUSD,
+  runProjection, pvSeries, buildPvSheets, downloadWorkbook, downloadCSV,
+} from "@/lib/api";
+import { PvNetWorthChart, RothConversionsChart, PvNetToFamilyChart } from "@/components/AnalyticsCharts";
 
 export const Scenarios = ({ scenario, setScenario }) => {
   const [items, setItems] = useState([]);
   const [name, setName] = useState("");
+  const [pv, setPv] = useState(null);
   const h = scenario.household;
 
   const refresh = () => listScenarios().then(setItems);
@@ -17,6 +22,37 @@ export const Scenarios = ({ scenario, setScenario }) => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const sig = JSON.stringify(scenario);
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => {
+      const tasks = [runProjection(scenario)];
+      if (scenario.roth?.enabled) {
+        const noCfg = JSON.parse(JSON.stringify(scenario));
+        noCfg.roth.enabled = false;
+        tasks.push(runProjection(noCfg));
+      }
+      Promise.all(tasks).then(([a, b]) => {
+        if (alive) setPv(pvSeries(a, b || a, scenario));
+      });
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
+
+  const downloadData = (fmt) => {
+    if (!pv) return;
+    const { yearly, summary } = buildPvSheets(pv.series, pv.ntf);
+    if (fmt === "xlsx") {
+      downloadWorkbook([
+        { name: "PV Net Worth & Conversions", rows: yearly },
+        { name: "Net to Family (PV)", rows: summary },
+      ], "scenario-pv-results.xlsx");
+    } else {
+      downloadCSV(yearly, "scenario-pv-results.csv");
+    }
+  };
 
   const updH = (k, v) => setScenario((p) => ({ ...p, household: { ...p.household, [k]: v } }));
 
@@ -31,8 +67,9 @@ export const Scenarios = ({ scenario, setScenario }) => {
   const del = async (id) => { await deleteScenario(id); toast.success("Deleted"); refresh(); };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="household-card">
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="household-card">
         <div className="flex items-center gap-2 mb-4">
           <Users className="h-4 w-4 text-[#4A6741]" />
           <h3 className="font-display text-lg font-bold tracking-tight">Household & Longevity</h3>
@@ -82,6 +119,33 @@ export const Scenarios = ({ scenario, setScenario }) => {
           ))}
         </div>
       </Card>
+      </div>
+
+      {pv && (
+        <>
+          <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#EBE8E0] bg-[#F9F8F6] px-5 py-4" data-testid="scenario-pv-toolbar">
+            <div>
+              <p className="font-display text-sm font-bold tracking-tight">Present-value results for this scenario</p>
+              <p className="text-[11px] text-muted-foreground">Future net worth, planned conversions & net-to-family in today's dollars. Download the data to reconcile against your source spreadsheet.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => downloadData("xlsx")} data-testid="scenario-download-xlsx"
+                className="gap-2 rounded-full border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/5">
+                <FileSpreadsheet className="h-4 w-4" /> Download Excel
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => downloadData("csv")} data-testid="scenario-download-csv"
+                className="gap-2 rounded-full border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/5">
+                <FileDown className="h-4 w-4" /> Download CSV
+              </Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-testid="scenario-pv-grid">
+            <PvNetWorthChart data={pv.series} />
+            <RothConversionsChart data={pv.series} span={1} />
+            <PvNetToFamilyChart ntf={pv.ntf} span={1} />
+          </div>
+        </>
+      )}
     </div>
   );
 };

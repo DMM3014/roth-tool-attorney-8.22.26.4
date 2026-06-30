@@ -55,3 +55,66 @@ export const downloadWorkbook = (sheets, filename) => {
   });
   XLSX.writeFile(wb, filename);
 };
+
+// ---- Present-value analytics ----
+// Discount future nominal dollars to the plan's start year at the plan inflation rate.
+export const pvDiscountRate = (scenario) => scenario?.projection?.general_inflation ?? 0.03;
+
+export const pvSeries = (withRoth, noRoth, scenario) => {
+  const start = scenario?.projection?.start_year ?? (withRoth?.rows?.[0]?.year || 0);
+  const r = pvDiscountRate(scenario);
+  const factor = (year) => 1 / Math.pow(1 + r, Math.max(0, year - start));
+  const rows = withRoth?.rows || [];
+  const series = rows.map((row, i) => {
+    const nwNo = noRoth?.rows?.[i]?.net_worth;
+    const f = factor(row.year);
+    return {
+      year: row.year,
+      conversion: Math.round(row.roth_conversion || 0),
+      nominalWith: Math.round(row.net_worth || 0),
+      pvWith: Math.round((row.net_worth || 0) * f),
+      pvNo: nwNo != null ? Math.round(nwNo * f) : null,
+    };
+  });
+  const finalYear = rows.length ? rows[rows.length - 1].year : start;
+  const horizon = withRoth?.legacy?.horizon_years || 10;
+  const deliverYear = finalYear + horizon;
+  const ff = factor(deliverYear);
+  const lw = withRoth?.legacy || {};
+  const ln = noRoth?.legacy || {};
+  const ntf = {
+    deliverYear,
+    horizon,
+    discountRate: r,
+    nominalWith: Math.round(lw.after_tax_estate_to_heirs || 0),
+    nominalNo: Math.round(ln.after_tax_estate_to_heirs || 0),
+    pvWith: Math.round((lw.after_tax_estate_to_heirs || 0) * ff),
+    pvNo: Math.round((ln.after_tax_estate_to_heirs || 0) * ff),
+    pvRothWith: Math.round((lw.tax_free_roth_to_heirs || 0) * ff),
+    pvRothNo: Math.round((ln.tax_free_roth_to_heirs || 0) * ff),
+  };
+  return { series, ntf };
+};
+
+// Build verification spreadsheet rows from the PV series + net-to-family summary.
+export const buildPvSheets = (series, ntf) => {
+  const yearly = series.map((d) => ({
+    Year: d.year,
+    "Roth Conversion": d.conversion,
+    "Net Worth (Nominal, With Conv)": d.nominalWith,
+    "Net Worth PV (With Conv)": d.pvWith,
+    "Net Worth PV (No Conv)": d.pvNo,
+  }));
+  const summary = [
+    { Metric: "Discount rate (plan inflation)", Value: ntf.discountRate },
+    { Metric: "Delivery year (2nd death + SECURE horizon)", Value: ntf.deliverYear },
+    { Metric: "Net to family — nominal (With Conv)", Value: ntf.nominalWith },
+    { Metric: "Net to family — nominal (No Conv)", Value: ntf.nominalNo },
+    { Metric: "Net to family — PV (With Conv)", Value: ntf.pvWith },
+    { Metric: "Net to family — PV (No Conv)", Value: ntf.pvNo },
+    { Metric: "Net to family — PV delta (With − No)", Value: ntf.pvWith - ntf.pvNo },
+    { Metric: "Tax-free inherited Roth — PV (With Conv)", Value: ntf.pvRothWith },
+    { Metric: "Tax-free inherited Roth — PV (No Conv)", Value: ntf.pvRothNo },
+  ];
+  return { yearly, summary };
+};
