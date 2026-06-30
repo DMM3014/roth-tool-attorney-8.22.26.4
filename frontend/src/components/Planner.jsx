@@ -20,7 +20,8 @@ export const Planner = () => {
   }, []);
 
   // a scenario edit invalidates a prior Monte Carlo run
-  useEffect(() => { setMcResult(null); }, [scenario && JSON.stringify(scenario)]);
+  const scenarioSig = scenario && JSON.stringify(scenario);
+  useEffect(() => { setMcResult(null); }, [scenarioSig]);
 
   if (!scenario) {
     return (

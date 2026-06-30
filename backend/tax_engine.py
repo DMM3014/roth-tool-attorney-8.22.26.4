@@ -6,6 +6,8 @@ ordinary taxable income at the 0/15/20% band tops. NIIT, state, IRMAA included.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 # ---- TaxTables sheet constants (2026 base-year $) ------------------------
 BRACKET_RATES = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]
 BRACKET_DELTA = [0.10, 0.02, 0.10, 0.02, 0.08, 0.03, 0.02]
@@ -189,11 +191,42 @@ def medicare_premiums(magi: float, mfj: bool, irmaa_idx: float, medicare_count: 
     return tier, medicare_count * (part_b + part_d)
 
 
-def compute_year_tax(inp: dict) -> dict:
-    """Single-year tax computation. `inp` keys mirror the Tax sheet rows.
+@dataclass
+class _TaxBase:
+    """Income, AGI, deductions and the ordinary/preferential taxable split for one year."""
+    mfj: bool
+    idx: float
+    irmaa_idx: float
+    num65: int
+    medicare_count: int
+    year: int
+    ordinary_non_ss: float
+    ira_distributions: float
+    cash_interest: float
+    gross_ss: float
+    recurring_div_ltcg: float
+    realized_ltcg: float
+    state_rate: float
+    include_irmaa: bool
+    part_b_base: float
+    part_d_base: float
+    total_pref: float
+    ordinary_before_ss: float
+    provisional: float
+    taxable_ss: float
+    agi: float
+    magi: float
+    magi_for_irmaa: float
+    std: float
+    senior: float
+    taxable_income: float
+    pref_within: float
+    ordinary_taxable: float
 
-    Returns the full breakdown preserving ordinary vs preferential separation.
-    """
+
+def _resolve_taxable_income(inp: dict) -> _TaxBase:
+    """Parse the raw Tax-sheet inputs and resolve provisional SS, AGI/MAGI, the
+    standard + senior deductions, and the ordinary-vs-preferential taxable split."""
     mfj = inp.get("filing_status", "MFJ") == "MFJ"
     idx = inp.get("bracket_index", 1.0)
     irmaa_idx = inp.get("irmaa_index", 1.0)
@@ -207,9 +240,6 @@ def compute_year_tax(inp: dict) -> dict:
     gross_ss = inp.get("gross_ss", 0.0)                    # R10
     recurring_div_ltcg = inp.get("recurring_div_ltcg", 0.0)  # R11
     realized_ltcg = inp.get("realized_ltcg", 0.0)          # R12
-
-    state_rate = inp.get("state_rate", 0.0)
-    include_irmaa = inp.get("include_irmaa", True)
 
     total_pref = recurring_div_ltcg + realized_ltcg                 # R13
     ordinary_before_ss = ordinary_non_ss + ira_distributions + cash_interest  # R14
@@ -232,38 +262,58 @@ def compute_year_tax(inp: dict) -> dict:
     pref_within = min(total_pref, taxable_income)                    # R26
     ordinary_taxable = taxable_income - pref_within                  # R27
 
-    fed_ordinary = federal_ordinary_tax(ordinary_taxable, mfj, idx)  # R30
-    fed_ltcg = federal_ltcg_tax(ordinary_taxable, pref_within, mfj, idx)  # R31
-    niit = niit_tax(total_pref, cash_interest, magi, mfj)            # R32
-    state_tax = max(0.0, state_rate * taxable_income)                # R35
+    return _TaxBase(
+        mfj=mfj, idx=idx, irmaa_idx=irmaa_idx, num65=num65, medicare_count=medicare_count,
+        year=year, ordinary_non_ss=ordinary_non_ss, ira_distributions=ira_distributions,
+        cash_interest=cash_interest, gross_ss=gross_ss, recurring_div_ltcg=recurring_div_ltcg,
+        realized_ltcg=realized_ltcg, state_rate=inp.get("state_rate", 0.0),
+        include_irmaa=inp.get("include_irmaa", True), part_b_base=inp.get("part_b_base", 2435.0),
+        part_d_base=inp.get("part_d_base", 600.0),
+        total_pref=total_pref, ordinary_before_ss=ordinary_before_ss, provisional=provisional,
+        taxable_ss=taxable_ss, agi=agi, magi=magi, magi_for_irmaa=magi_for_irmaa,
+        std=std, senior=senior, taxable_income=taxable_income, pref_within=pref_within,
+        ordinary_taxable=ordinary_taxable)
+
+
+def compute_year_tax(inp: dict) -> dict:
+    """Single-year tax computation. `inp` keys mirror the Tax sheet rows.
+
+    Returns the full breakdown preserving ordinary vs preferential separation.
+    """
+    b = _resolve_taxable_income(inp)
+
+    fed_ordinary = federal_ordinary_tax(b.ordinary_taxable, b.mfj, b.idx)  # R30
+    fed_ltcg = federal_ltcg_tax(b.ordinary_taxable, b.pref_within, b.mfj, b.idx)  # R31
+    niit = niit_tax(b.total_pref, b.cash_interest, b.magi, b.mfj)         # R32
+    state_tax = max(0.0, b.state_rate * b.taxable_income)                # R35
 
     tier, medicare = medicare_premiums(
-        magi_for_irmaa, mfj, irmaa_idx, medicare_count, include_irmaa,
-        inp.get("part_b_base", 2435.0), inp.get("part_d_base", 600.0))  # R39-R42
+        b.magi_for_irmaa, b.mfj, b.irmaa_idx, b.medicare_count, b.include_irmaa,
+        b.part_b_base, b.part_d_base)  # R39-R42
 
-    total_tax = fed_ordinary + fed_ltcg + niit + state_tax           # R45
-    eff_rate = total_tax / agi if agi > 0 else 0.0                   # R46
-    marg = marginal_ordinary_rate(ordinary_taxable, mfj, idx)        # R47
+    total_tax = fed_ordinary + fed_ltcg + niit + state_tax               # R45
+    eff_rate = total_tax / b.agi if b.agi > 0 else 0.0                   # R46
+    marg = marginal_ordinary_rate(b.ordinary_taxable, b.mfj, b.idx)      # R47
 
     return {
-        "ordinary_non_ss": round(ordinary_non_ss, 2),
-        "ira_distributions": round(ira_distributions, 2),
-        "cash_interest": round(cash_interest, 2),
-        "gross_ss": round(gross_ss, 2),
-        "taxable_ss": round(taxable_ss, 2),
-        "recurring_div_ltcg": round(recurring_div_ltcg, 2),
-        "realized_ltcg": round(realized_ltcg, 2),
-        "total_preferential": round(total_pref, 2),
-        "ordinary_before_ss": round(ordinary_before_ss, 2),
-        "provisional_income": round(provisional, 2),
-        "agi": round(agi, 2),
-        "magi": round(magi, 2),
-        "irmaa_magi": round(magi_for_irmaa, 2),
-        "standard_deduction": round(std, 2),
-        "senior_bonus": round(senior, 2),
-        "taxable_income": round(taxable_income, 2),
-        "preferential_within_taxable": round(pref_within, 2),
-        "ordinary_taxable_income": round(ordinary_taxable, 2),
+        "ordinary_non_ss": round(b.ordinary_non_ss, 2),
+        "ira_distributions": round(b.ira_distributions, 2),
+        "cash_interest": round(b.cash_interest, 2),
+        "gross_ss": round(b.gross_ss, 2),
+        "taxable_ss": round(b.taxable_ss, 2),
+        "recurring_div_ltcg": round(b.recurring_div_ltcg, 2),
+        "realized_ltcg": round(b.realized_ltcg, 2),
+        "total_preferential": round(b.total_pref, 2),
+        "ordinary_before_ss": round(b.ordinary_before_ss, 2),
+        "provisional_income": round(b.provisional, 2),
+        "agi": round(b.agi, 2),
+        "magi": round(b.magi, 2),
+        "irmaa_magi": round(b.magi_for_irmaa, 2),
+        "standard_deduction": round(b.std, 2),
+        "senior_bonus": round(b.senior, 2),
+        "taxable_income": round(b.taxable_income, 2),
+        "preferential_within_taxable": round(b.pref_within, 2),
+        "ordinary_taxable_income": round(b.ordinary_taxable, 2),
         "federal_ordinary_tax": round(fed_ordinary, 2),
         "federal_ltcg_tax": round(fed_ltcg, 2),
         "niit": round(niit, 2),

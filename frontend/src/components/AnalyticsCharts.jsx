@@ -81,7 +81,7 @@ export const SurplusChart = ({ data }) => (
         <Tooltip formatter={usd} />
         <ReferenceLine y={0} stroke="#9A9A9A" />
         <Bar dataKey="surplus" name="Surplus / (Shortfall)" radius={R}>
-          {data.map((d, i) => <Cell key={i} fill={d.surplus >= 0 ? C.green : C.terra} />)}
+          {data.map((d) => <Cell key={d.year} fill={d.surplus >= 0 ? C.green : C.terra} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

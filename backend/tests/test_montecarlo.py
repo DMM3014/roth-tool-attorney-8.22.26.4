@@ -1,4 +1,8 @@
-"""Backend tests for Monte Carlo v1 (POST /api/montecarlo + GET poll)."""
+"""Backend tests for Monte Carlo v2 (POST /api/montecarlo + GET poll).
+
+v2 uses a per-asset-class allocation (stocks/bonds/cash) instead of a single
+`volatility` scalar, and reports the blended `portfolio_mean` / `portfolio_vol`.
+"""
 
 import os
 import time
@@ -25,6 +29,15 @@ def defaults():
     return r.json()
 
 
+def _assets(stock_vol):
+    """All-stock allocation with a tunable volatility (isolates the vol mechanic)."""
+    return {
+        "stocks": {"weight": 1.0, "mean": 0.07, "vol": stock_vol},
+        "bonds": {"weight": 0.0, "mean": 0.04, "vol": 0.06},
+        "cash": {"weight": 0.0, "mean": 0.03, "vol": 0.01},
+    }
+
+
 def _poll(job_id, timeout=45):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -38,7 +51,7 @@ def _poll(job_id, timeout=45):
 
 
 def _start(config, **kwargs):
-    payload = {"config": config, "n_trials": 250, "volatility": 0.12}
+    payload = {"config": config, "n_trials": 250}
     payload.update(kwargs)
     r = requests.post(f"{BASE_URL}/api/montecarlo", json=payload, timeout=30)
     assert r.status_code == 200, r.text
@@ -50,13 +63,13 @@ def _start(config, **kwargs):
 # ------------ shape / success path ------------
 
 def test_montecarlo_shape_and_success(defaults):
-    job_id = _start(defaults, n_trials=300, volatility=0.12, seed=7)
+    job_id = _start(defaults, n_trials=300, seed=7)
     body = _poll(job_id)
     assert body["status"] == "done", body
     res = body["result"]
     # top level
-    for k in ("years", "n_trials", "volatility", "mean_return", "liquid_start",
-             "with_conversions", "without_conversions"):
+    for k in ("years", "n_trials", "portfolio_mean", "portfolio_vol", "allocation",
+              "liquid_start", "with_conversions", "without_conversions", "sequence_risk"):
         assert k in res, f"missing top-level key {k}"
     assert isinstance(res["years"], list) and len(res["years"]) > 5
     assert res["n_trials"] == 300
@@ -80,7 +93,7 @@ def test_montecarlo_shape_and_success(defaults):
 # ------------ success == 1 - depleted_pct (depleted trials lock at 0) ------------
 
 def test_success_equals_one_minus_depleted(defaults):
-    job_id = _start(defaults, n_trials=400, volatility=0.15, seed=11)
+    job_id = _start(defaults, n_trials=400, seed=11)
     res = _poll(job_id)["result"]
     for branch_name in ("with_conversions", "without_conversions"):
         b = res[branch_name]
@@ -90,28 +103,41 @@ def test_success_equals_one_minus_depleted(defaults):
         )
 
 
-# ------------ higher volatility -> lower success ------------
+# ------------ higher volatility widens the outcome dispersion ------------
 
-def test_higher_volatility_lowers_success(defaults):
-    low_job = _start(defaults, n_trials=400, volatility=0.12, seed=42)
-    hi_job = _start(defaults, n_trials=400, volatility=0.22, seed=42)
-    low = _poll(low_job)["result"]
-    hi = _poll(hi_job)["result"]
-    s_lo = low["with_conversions"]["success"]
-    s_hi = hi["with_conversions"]["success"]
-    assert s_hi < s_lo, f"expected higher vol to lower success: low(0.12)={s_lo} hi(0.22)={s_hi}"
+def test_higher_volatility_widens_dispersion(defaults):
+    lo = _poll(_start(defaults, n_trials=500, assets=_assets(0.08), seed=42))["result"]
+    hi = _poll(_start(defaults, n_trials=500, assets=_assets(0.30), seed=42))["result"]
+    assert hi["portfolio_vol"] > lo["portfolio_vol"]
+    lo_end = lo["with_conversions"]["ending"]
+    hi_end = hi["with_conversions"]["ending"]
+    # same mean + seed, higher vol -> wider P10..P90 band (worse downside, fatter upside)
+    assert hi_end["p10"] < lo_end["p10"]
+    assert hi_end["p90"] > lo_end["p90"]
+    # added risk must not improve the probability of success
+    assert hi["with_conversions"]["success"] <= lo["with_conversions"]["success"] + 1e-9
 
 
 # ------------ reproducibility with fixed seed ------------
 
 def test_seed_reproducibility(defaults):
-    j1 = _start(defaults, n_trials=300, volatility=0.18, seed=2026)
+    j1 = _start(defaults, n_trials=300, assets=_assets(0.18), seed=2026)
     r1 = _poll(j1)["result"]
-    j2 = _start(defaults, n_trials=300, volatility=0.18, seed=2026)
+    j2 = _start(defaults, n_trials=300, assets=_assets(0.18), seed=2026)
     r2 = _poll(j2)["result"]
     assert r1["with_conversions"]["success"] == r2["with_conversions"]["success"]
     assert r1["with_conversions"]["ending"]["p50"] == r2["with_conversions"]["ending"]["p50"]
     assert r1["with_conversions"]["percentiles"]["p50"] == r2["with_conversions"]["percentiles"]["p50"]
+
+
+# ------------ early bear-market shock lowers success ------------
+
+def test_shock_lowers_success(defaults):
+    res = _poll(_start(defaults, n_trials=400, seed=5,
+                       shock={"enabled": True, "rate": -0.15, "years": 3}))["result"]
+    shock = res["shock"]
+    assert shock is not None
+    assert shock["success_with"] <= res["with_conversions"]["success"] + 1e-9
 
 
 # ------------ unknown job_id -> 404 ------------
@@ -124,7 +150,7 @@ def test_unknown_job_returns_404():
 # ------------ no raw N trials leaked (paths array would be N x T) ------------
 
 def test_no_raw_trial_array(defaults):
-    job_id = _start(defaults, n_trials=250, volatility=0.12, seed=1)
+    job_id = _start(defaults, n_trials=250, seed=1)
     res = _poll(job_id)["result"]
     for key in ("trials", "paths", "all_paths", "raw"):
         assert key not in res["with_conversions"], f"raw trial data leaked under {key}"

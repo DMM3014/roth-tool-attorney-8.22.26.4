@@ -97,17 +97,54 @@ def _summarize(paths, ever_dep):
     }
 
 
+def _deterministic_flows(config):
+    """Run the locked with/without-conversion projections; return their row lists."""
+    det_with = run_projection(config)
+    cfg_without = copy.deepcopy(config)
+    cfg_without.setdefault("roth", {})["enabled"] = False
+    det_without = run_projection(cfg_without)
+    return det_with["rows"], det_without["rows"]
+
+
+def _sequence_risk(g, paths_w, dep_w, T):
+    """Automatic sequence-of-returns report: outcomes among the worst 5% of early paths."""
+    K = min(EARLY_YEARS, T)
+    early_cum = np.prod(g[:, :K], axis=1)
+    thresh = np.percentile(early_cum, 5)
+    cohort = early_cum <= thresh
+    return {
+        "early_years": K,
+        "worst_pct": 5,
+        "base_success": round(float(np.mean(~dep_w)), 4),
+        "success": round(float(np.mean(~dep_w[cohort])), 4) if cohort.any() else None,
+        "median_ending": round(float(np.median(paths_w[cohort, -1])), 0) if cohort.any() else None,
+    }
+
+
+def _shock_run(shock, g, liquid0, flow_w, flow_n, T, base_success_with):
+    """Optional early bear-market stress: force a fixed negative return for the first N years."""
+    rate = float(shock.get("rate", -0.15))
+    yrs = int(max(1, min(shock.get("years", 2), T)))
+    g_shock = g.copy()
+    g_shock[:, :yrs] = 1.0 + rate
+    sp_w, sd_w = _simulate(liquid0, flow_w, g_shock)
+    sp_n, sd_n = _simulate(liquid0, flow_n, g_shock)
+    return {
+        "rate": round(rate, 4),
+        "years": yrs,
+        "success_with": round(float(np.mean(~sd_w)), 4),
+        "success_without": round(float(np.mean(~sd_n)), 4),
+        "base_success_with": base_success_with,
+        "median_ending_with": round(float(np.median(sp_w[:, -1])), 0),
+    }
+
+
 def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None):
     n = int(max(50, min(n_trials, 2000)))
     assets = assets or DEFAULT_ASSETS
 
     # deterministic runs lock the conversion schedule + taxes + cashflows
-    det_with = run_projection(config)
-    cfg_without = copy.deepcopy(config)
-    cfg_without.setdefault("roth", {})["enabled"] = False
-    det_without = run_projection(cfg_without)
-
-    rows_w, rows_n = det_with["rows"], det_without["rows"]
+    rows_w, rows_n = _deterministic_flows(config)
     years = [r["year"] for r in rows_w]
     T = len(rows_w)
 
@@ -120,19 +157,6 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None):
     paths_w, dep_w = _simulate(liquid0, flow_w, g)
     paths_n, dep_n = _simulate(liquid0, flow_n, g)
 
-    # ---- automatic sequence-of-returns risk: worst 5% of early-return paths ----
-    K = min(EARLY_YEARS, T)
-    early_cum = np.prod(g[:, :K], axis=1)
-    thresh = np.percentile(early_cum, 5)
-    cohort = early_cum <= thresh
-    seq = {
-        "early_years": K,
-        "worst_pct": 5,
-        "base_success": round(float(np.mean(~dep_w)), 4),
-        "success": round(float(np.mean(~dep_w[cohort])), 4) if cohort.any() else None,
-        "median_ending": round(float(np.median(paths_w[cohort, -1])), 0) if cohort.any() else None,
-    }
-
     result = {
         "years": years,
         "n_trials": n,
@@ -143,25 +167,12 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None):
         "liquid_start": round(liquid0, 0),
         "with_conversions": _summarize(paths_w, dep_w),
         "without_conversions": _summarize(paths_n, dep_n),
-        "sequence_risk": seq,
+        "sequence_risk": _sequence_risk(g, paths_w, dep_w, T),
         "shock": None,
     }
 
-    # ---- optional early bear-market stress test (separate run, same draws) ----
     if shock and shock.get("enabled"):
-        rate = float(shock.get("rate", -0.15))
-        yrs = int(max(1, min(shock.get("years", 2), T)))
-        g_shock = g.copy()
-        g_shock[:, :yrs] = 1.0 + rate
-        sp_w, sd_w = _simulate(liquid0, flow_w, g_shock)
-        sp_n, sd_n = _simulate(liquid0, flow_n, g_shock)
-        result["shock"] = {
-            "rate": round(rate, 4),
-            "years": yrs,
-            "success_with": round(float(np.mean(~sd_w)), 4),
-            "success_without": round(float(np.mean(~sd_n)), 4),
-            "base_success_with": result["with_conversions"]["success"],
-            "median_ending_with": round(float(np.median(sp_w[:, -1])), 0),
-        }
+        result["shock"] = _shock_run(shock, g, liquid0, flow_w, flow_n, T,
+                                     result["with_conversions"]["success"])
 
     return result

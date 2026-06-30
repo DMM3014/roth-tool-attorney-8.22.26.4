@@ -48,7 +48,7 @@ export const SuccessCompareChart = ({ withV, withoutV }) => {
         <YAxis type="category" dataKey="name" width={120} tick={AXIS} />
         <Tooltip formatter={(v) => `${v}%`} />
         <Bar dataKey="success" radius={[0, 6, 6, 0]} minPointSize={4} maxBarSize={56} isAnimationActive={false} label={{ position: "right", formatter: (v) => `${v}%`, fontSize: 13, fontWeight: 700 }}>
-          {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+          {data.map((d) => <Cell key={d.name} fill={d.fill} />)}
         </Bar>
       </BarChart>
     </ResponsiveContainer>

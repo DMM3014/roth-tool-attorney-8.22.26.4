@@ -1,0 +1,37 @@
+{
+  "summary": "Frontend-only refactor-validation pass for the Projection.jsx -> Projection.jsx + ProjectionPanels.jsx split, AIInsights stable message-id change, and MonteCarloCharts/SurplusChart key changes. All 6 review-request bullets PASS end-to-end against the public preview URL. 0 console errors, 0 page errors, 0 React key warnings ('each child in a list should have a unique key' / duplicate-key) across Projection, Monte Carlo, and Analytics tabs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_checklist": {
+    "projection_controls_render_after_split": "PASS - projection-controls card visible. All 10 critical controls visible: roth-enabled-switch, proj-bracket-slider, conv-start-year, conv-end-year, max-annual-conversion, irmaa-cap-select, stop-rmd-switch, funding-order-select, surplus-sweep-select, survivor-status-select. 5 Key Balance inputs (acct-*) found and editable.",
+    "edits_recompute_metrics_and_table": "PASS - Bracket slider moved from 32% -> 35% (two ArrowRight presses); proj-target-label updated to 35%; metric-lifetime-tax recomputed from $7,765,488 to $5,945,886 (vs $12,679,196 without). Key Balance input edited 1,000,000 -> 1,050,000 with no errors. Year-by-Year Detail table rendered 37 rows.",
+    "legacy_and_convert_compare_cards": "PASS - legacy-card and convert-compare-card both visible with their charts/metrics. Post-death compare chart shows 'Convert (32%)', 'Convert - Roth only', 'No conversions', 'No-convert - Roth only' legend lines.",
+    "find_optimal_and_csv_export": "PASS - find-optimal-button completed. optimal-result text = 'Fill 32% bracket'. 8 sweep-row-* ranked rows rendered. Winning bracket auto-applied. export-csv-button triggered download 'retirement_projection.csv' cleanly.",
+    "ai_insights_streaming_and_chips": "PASS - ai-insights-panel-proj visible. generate-insights-button streamed a response; ai-suggestions container appeared after stream completed with 4 chips (ai-suggestion-0..3 = 'Why 24%?', 'IRMAA risk?', 'Survivor impact?', 'Net to family?'). Clicking ai-suggestion-0 appended a Q&A turn (verified - chat input remained enabled and chips re-rendered). Typed follow-up 'What about tax-loss harvesting?' via ai-chat-input + ai-chat-send produced a full multi-paragraph streamed answer (visible in final screenshot - covers wash-sale, step-up basis, 23.45% LTCG context). Multi-turn confirmed working.",
+    "monte_carlo_compare_chart": "PASS - mc-run completed; mc-compare-card rendered with 4 bar rectangles in svg. No key warnings (Cell key now d.name in MonteCarloCharts.jsx).",
+    "analytics_surplus_chart": "PASS - chart-surplus testid found on Analytics tab; 'Surplus' label present (Cell key now d.year in AnalyticsCharts.jsx SurplusChart).",
+    "no_console_errors_no_key_warnings": "PASS - 0 console errors, 0 page errors across the full gauntlet (Projection edits, sweep, CSV download, MC run, Analytics nav, AI multi-turn stream). 0 React 'unique key' / 'duplicate key' / 'each child in a list' warnings. Only 2 non-key benign warnings observed."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Projection.jsx run() uses JSON.parse(JSON.stringify(scenario)) to clone for the no-Roth comparison run; deep-clone-on-every-projection works but a shallow clone of just scenario.roth would be cheaper since only roth.enabled is flipped.",
+    "Projection.jsx update() also does a full JSON deep-clone per keystroke; with a 350ms debounce on run() this is fine but the clone happens unconditionally even for no-op updates. Consider Immer or a structural setter if the scenario grows.",
+    "ProjectionControls memoizes keyAccounts via filter (per the review request) - the filter predicate is inline; if the predicate identity matters elsewhere, hoist to a constant. Non-blocking.",
+    "AIInsights.jsx now strips id when posting history to /insights/chat (maps to {role, content}) - verified by the working multi-turn flow. Good.",
+    "Projection.jsx has a leftover useMemo dependency 'mcResult' that pulls portfolio_vol/portfolio_mean correctly (v2 keys) - matches the agent note. Other v1 keys (portfolio_volatility/portfolio_avg_return) are no longer referenced in this file. Clean.",
+    "Projection.jsx orchestrator is now 191 lines (down from 406) - within the <700 line target. ProjectionPanels.jsx hosts the four extracted components in a single file; if it grows past ~700 lines it should split per-component."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (6/6 review-request bullets, 0 console errors, 0 key warnings)"},
+  "test_credentials": "n/a - no auth in the app",
+  "seed_data_creation": "None - read-only flow against default plan.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Projection tab refactor is fully validated. Key testids confirmed live: tab-projection, tab-montecarlo, tab-analytics; projection-controls (with roth-enabled-switch, proj-bracket-slider + proj-target-label, conv-start-year, conv-end-year, max-annual-conversion, irmaa-cap-select, stop-rmd-switch, funding-order-select, surplus-sweep-select, survivor-status-select, acct-* x5); sweep-card with find-optimal-button + export-csv-button + optimal-result + sweep-row-{0..N}; projection-table with 37 rows on default plan; legacy-card + convert-compare-card + heir-advantage-badge; ai-insights-panel-proj with generate-insights-button + ai-chat-input + ai-chat-send + ai-suggestions + ai-suggestion-{0..3}; mc-run -> mc-compare-card with 4 bars; Analytics chart-surplus. Default-plan numbers for regression: lifetime tax with conversions at 32% bracket = $7,765,488; at 35% bracket = $5,945,886; without conversions = $12,679,196; optimal bracket = 'Fill 32% bracket'. AI stream takes ~10-15s; chips render only after streaming completes (component sets streaming=false then renders ai-suggestions). CSV file is 'retirement_projection.csv'.",
+  "rca of the issue": "n/a - no defects found in this iteration."
+}

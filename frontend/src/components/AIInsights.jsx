@@ -17,6 +17,9 @@ const readStream = async (res, onToken) => {
   return acc;
 };
 
+let _msgId = 0;
+const nextMsgId = () => (_msgId += 1);
+
 const SUGGESTIONS = [
   { label: "Why 24%?", q: "Why convert to the 24% bracket and not 32%?" },
   { label: "IRMAA risk?", q: "What is my IRMAA exposure, and how do my conversions affect my Medicare surcharges?" },
@@ -36,7 +39,8 @@ export const AIInsights = ({ summary, testid }) => {
 
   const generate = async () => {
     if (!summary || streaming) return;
-    setMessages([{ role: "assistant", content: "" }]);
+    const id = nextMsgId();
+    setMessages([{ id, role: "assistant", content: "" }]);
     setStreaming(true);
     try {
       const res = await fetch(`${API}/insights`, {
@@ -44,9 +48,9 @@ export const AIInsights = ({ summary, testid }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ summary }),
       });
-      await readStream(res, (acc) => setMessages([{ role: "assistant", content: acc }]));
+      await readStream(res, (acc) => setMessages([{ id, role: "assistant", content: acc }]));
     } catch (e) {
-      setMessages([{ role: "assistant", content: "Could not generate insights right now. Please try again." }]);
+      setMessages([{ id, role: "assistant", content: "Could not generate insights right now. Please try again." }]);
     } finally {
       setStreaming(false);
     }
@@ -61,8 +65,9 @@ export const AIInsights = ({ summary, testid }) => {
 
   const sendMessage = async (q) => {
     if (!q || streaming || !summary) return;
-    const history = messages;
-    setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "" }]);
+    const history = messages.map(({ role, content }) => ({ role, content }));
+    const aid = nextMsgId();
+    setMessages((m) => [...m, { id: nextMsgId(), role: "user", content: q }, { id: aid, role: "assistant", content: "" }]);
     setStreaming(true);
     try {
       const res = await fetch(`${API}/insights/chat`, {
@@ -73,14 +78,14 @@ export const AIInsights = ({ summary, testid }) => {
       await readStream(res, (acc) =>
         setMessages((m) => {
           const c = m.slice();
-          c[c.length - 1] = { role: "assistant", content: acc };
+          c[c.length - 1] = { id: aid, role: "assistant", content: acc };
           return c;
         })
       );
     } catch (e) {
       setMessages((m) => {
         const c = m.slice();
-        c[c.length - 1] = { role: "assistant", content: "Sorry — I couldn't answer that just now. Please try again." };
+        c[c.length - 1] = { id: aid, role: "assistant", content: "Sorry — I couldn't answer that just now. Please try again." };
         return c;
       });
     } finally {
@@ -120,7 +125,7 @@ export const AIInsights = ({ summary, testid }) => {
     <div data-testid={testid}>
       <div ref={threadRef} className="space-y-4 max-h-[460px] overflow-y-auto pr-1 mb-4" data-testid="ai-chat-thread">
         {messages.map((m, i) => (
-          <div key={i} className={`flex gap-2.5 ${m.role === "user" ? "justify-end" : "justify-start"}`} data-testid={`ai-msg-${i}`}>
+          <div key={m.id} className={`flex gap-2.5 ${m.role === "user" ? "justify-end" : "justify-start"}`} data-testid={`ai-msg-${i}`}>
             {m.role === "assistant" && (
               <div className="h-7 w-7 shrink-0 rounded-full bg-[#4A6741] flex items-center justify-center mt-0.5">
                 <Sparkles className="h-3.5 w-3.5 text-white" />

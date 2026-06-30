@@ -500,151 +500,302 @@ def _aggregate_results(cfg: dict, rows: list) -> dict:
     }
 
 
-def run_projection(cfg: dict) -> dict:
+@dataclass
+class Plan:
+    """Parsed, immutable plan configuration + account partitions."""
+    cfg: dict
+    start_year: int
+    end_year: int
+    bracket_index_rate: float
+    irmaa_index_rate: float
+    client_dob: int
+    spouse_dob: Any
+    client_death: int
+    spouse_death: int
+    has_spouse: bool
+    state_rate: float
+    include_irmaa: bool
+    survivor_status: str
+    roth_enabled: bool
+    conv_start: int
+    conv_end: int
+    target_rate: float
+    max_annual: float
+    stop_at_rmd: bool
+    irmaa_cap: Any
+    streams: list
+    expenses: list
+    accounts: list
+    div_yield: float
+    cash_rate: float
+    funding_order: str
+    ira_split: float
+    surplus_sweep_to: str
+    survivor_spending_reduction: float
+    cash_ids: list
+    taxable_ids: list
+    ira_ids: list
+    roth_ids: list
+    other_ids: list
+    taxable_set: set
+    rmd_reserve_id: Any
+    acct: dict
+
+
+def _parse_plan(cfg: dict) -> Plan:
+    """Pull every scalar/list the projection loop needs out of the raw config once."""
     h = cfg["household"]
     p = cfg["projection"]
-    start_year = p["start_year"]
-    end_year = p["end_year"]
-    bracket_index_rate = p.get("bracket_indexing", 0.03)
-    irmaa_index_rate = p.get("irmaa_indexing", 0.03)
-
-    client_dob = h["client_dob_year"]
-    spouse_dob = h.get("spouse_dob_year")
-    client_death = h["client_life_expectancy"]
-    spouse_death = h.get("spouse_life_expectancy", 200)
-    has_spouse = spouse_dob is not None
-
-    state_rate = cfg["tax"]["state_rate"]
-    include_irmaa = cfg["tax"].get("include_irmaa", True)
-    survivor_status = cfg["tax"].get("survivor_filing_status", "Single")
-
     roth = cfg["roth"]
-    roth_enabled = roth.get("enabled", True)
-    conv_start = roth.get("start_year", start_year)
-    conv_end = roth.get("end_year", end_year)
-    target_rate = roth.get("target_bracket", 0.24)
-    max_annual = roth.get("max_annual", 0.0)
-    stop_at_rmd = roth.get("stop_at_rmd_age", True)
     irmaa_cap = roth.get("irmaa_tier_cap")  # None = no cap; int tier (0=base/no surcharge)
     if irmaa_cap in ("", "None", "none"):
         irmaa_cap = None
-
-    streams = cfg["income_streams"]
-    expenses = cfg["expenses"]
     accounts = cfg["accounts"]
-    div_yield = cfg.get("dividend_yield", 0.02)
-    cash_rate = next((a["return"] for a in accounts if a["tax_type"] == "Cash"), 0.03)
-
-    wd_cfg = cfg.get("withdrawal", {})
-    funding_order = wd_cfg.get("funding_order", "Cash → Taxable → IRA → Roth")
-    ira_split = wd_cfg.get("ira_split", 0.5)
-    surplus_sweep_to = wd_cfg.get("surplus_sweep_to", "Taxable")
-
-    # mutable balances
-    bal = {a["id"]: a["beginning_balance"] for a in accounts}
-    basis = {a["id"]: a.get("cost_basis", 0.0) for a in accounts}
-    owner_map = {a["id"]: a.get("owner", "Client") for a in accounts}  # reassigned at first death
-
     cash_ids = [a["id"] for a in accounts if a["tax_type"] == "Cash"]
     taxable_ids = [a["id"] for a in accounts if a["tax_type"] == "Taxable"]
     ira_ids = [a["id"] for a in accounts if a["tax_type"] == "Tax-Deferred"]
     roth_ids = [a["id"] for a in accounts if a["tax_type"] == "Tax-Free"]
     other_ids = [a["id"] for a in accounts if a["tax_type"] in ("Real Estate",)]
     taxable_set = set(taxable_ids)
-    rmd_reserve_id = ira_ids[0] if ira_ids else None
-    acct = {"cash": cash_ids, "taxable": taxable_ids, "ira": ira_ids,
-            "roth": roth_ids, "other": other_ids, "taxable_set": taxable_set}
+    wd_cfg = cfg.get("withdrawal", {})
+    return Plan(
+        cfg=cfg,
+        start_year=p["start_year"], end_year=p["end_year"],
+        bracket_index_rate=p.get("bracket_indexing", 0.03),
+        irmaa_index_rate=p.get("irmaa_indexing", 0.03),
+        client_dob=h["client_dob_year"], spouse_dob=h.get("spouse_dob_year"),
+        client_death=h["client_life_expectancy"],
+        spouse_death=h.get("spouse_life_expectancy", 200),
+        has_spouse=h.get("spouse_dob_year") is not None,
+        state_rate=cfg["tax"]["state_rate"],
+        include_irmaa=cfg["tax"].get("include_irmaa", True),
+        survivor_status=cfg["tax"].get("survivor_filing_status", "Single"),
+        roth_enabled=roth.get("enabled", True),
+        conv_start=roth.get("start_year", p["start_year"]),
+        conv_end=roth.get("end_year", p["end_year"]),
+        target_rate=roth.get("target_bracket", 0.24),
+        max_annual=roth.get("max_annual", 0.0),
+        stop_at_rmd=roth.get("stop_at_rmd_age", True),
+        irmaa_cap=irmaa_cap,
+        streams=cfg["income_streams"], expenses=cfg["expenses"], accounts=accounts,
+        div_yield=cfg.get("dividend_yield", 0.02),
+        cash_rate=next((a["return"] for a in accounts if a["tax_type"] == "Cash"), 0.03),
+        funding_order=wd_cfg.get("funding_order", "Cash → Taxable → IRA → Roth"),
+        ira_split=wd_cfg.get("ira_split", 0.5),
+        surplus_sweep_to=wd_cfg.get("surplus_sweep_to", "Taxable"),
+        survivor_spending_reduction=cfg["tax"].get("survivor_spending_reduction", 0.2),
+        cash_ids=cash_ids, taxable_ids=taxable_ids, ira_ids=ira_ids, roth_ids=roth_ids,
+        other_ids=other_ids, taxable_set=taxable_set,
+        rmd_reserve_id=(ira_ids[0] if ira_ids else None),
+        acct={"cash": cash_ids, "taxable": taxable_ids, "ira": ira_ids,
+              "roth": roth_ids, "other": other_ids, "taxable_set": taxable_set},
+    )
+
+
+@dataclass
+class YearStatus:
+    """Per-year demographic / filing state."""
+    client_alive: bool
+    spouse_alive: bool
+    both_alive: bool
+    anyone_alive: bool
+    filing: str
+    mfj: bool
+    survivor_owner: Any
+    num65: int
+    med_count: int
+
+
+def _year_demographics(plan: Plan, owner_map: dict, year: int,
+                       client_alive_prev: bool, spouse_alive_prev: bool) -> YearStatus:
+    """Resolve who is alive, the filing status, the spousal account rollover and the
+    65+/Medicare head-counts for one year. Mutates `owner_map` in place on first death."""
+    client_alive = _alive(plan.client_dob, plan.client_death, year)
+    spouse_alive = plan.has_spouse and _alive(plan.spouse_dob, plan.spouse_death, year)
+    both_alive = client_alive and spouse_alive
+    filing = "MFJ" if both_alive else plan.survivor_status
+
+    survivor_owner = None
+    if not both_alive and plan.has_spouse:
+        survivor_owner = "Client" if client_alive else "Spouse"
+
+    # Spousal rollover the year AFTER first death: the decedent's accounts transfer to
+    # the survivor, so RMDs continue on the survivor's age.
+    if plan.has_spouse:
+        if (not client_alive) and client_alive_prev and spouse_alive:
+            owner_map.update({k: ("Spouse" if v == "Client" else v) for k, v in owner_map.items()})
+        elif (not spouse_alive) and spouse_alive_prev and client_alive:
+            owner_map.update({k: ("Client" if v == "Spouse" else v) for k, v in owner_map.items()})
+
+    num65 = 0
+    med_count = 0
+    for alive, dob in ((client_alive, plan.client_dob),
+                       (spouse_alive, plan.spouse_dob if plan.has_spouse else None)):
+        if alive and dob is not None and _age(dob, year) >= 65:
+            num65 += 1
+            med_count += 1
+
+    return YearStatus(client_alive, spouse_alive, both_alive, client_alive or spouse_alive,
+                      filing, filing == "MFJ", survivor_owner, num65, med_count)
+
+
+@dataclass
+class YearCalc:
+    """All computed scalars for one projection year, ready to serialize into a row."""
+    tax_res: dict
+    bracket_index: float
+    irmaa_index: float
+    ordinary_non_ss: float
+    gross_ss: float
+    recurring_div: float
+    realized_ltcg: float
+    cash_interest: float
+    rmd_total: float
+    conversion: float
+    total_tax: float
+    total_expense: float
+    cash_drawn: float
+    ira_withdraw: float
+    roth_withdraw: float
+    surplus: float
+    wd: dict
+
+
+def _build_year_row(plan: Plan, status: YearStatus, year: int, bal: dict, calc: YearCalc) -> dict:
+    """Serialize one year's end-of-year state into the projection row dict."""
+    tax_res = calc.tax_res
+    cash_ids, taxable_ids = plan.cash_ids, plan.taxable_ids
+    ira_ids, roth_ids, other_ids = plan.ira_ids, plan.roth_ids, plan.other_ids
+    liquid = sum(bal[i] for i in cash_ids + taxable_ids + ira_ids + roth_ids)
+    net_worth = liquid + sum(bal[i] for i in other_ids)
+    return {
+        "year": year,
+        "filing_status": status.filing,
+        "client_age": _age(plan.client_dob, year) if status.client_alive else None,
+        "spouse_age": _age(plan.spouse_dob, year) if (plan.has_spouse and status.spouse_alive) else None,
+        "ordinary_income": round(calc.ordinary_non_ss + calc.rmd_total + calc.cash_interest, 2),
+        "rmd": round(calc.rmd_total, 2),
+        "roth_conversion": round(calc.conversion, 2),
+        "preferential_income": round(calc.recurring_div + calc.realized_ltcg, 2),
+        "gross_ss": round(calc.gross_ss, 2),
+        "taxable_income": tax_res["taxable_income"],
+        "total_tax": round(calc.total_tax, 2),
+        "effective_rate": tax_res["effective_rate"],
+        "marginal_rate": tax_res["marginal_ordinary_rate"],
+        "ordinary_taxable_income": tax_res["ordinary_taxable_income"],
+        "magi": tax_res["magi"],
+        "irmaa_magi": tax_res["irmaa_magi"],
+        "irmaa_tier": tax_res["irmaa_tier"],
+        "irmaa_thresholds": irmaa_thresholds(status.mfj, calc.irmaa_index),
+        "bracket_fill": bracket_fill(tax_res["ordinary_taxable_income"], status.mfj, calc.bracket_index),
+        "tax_breakdown": {
+            "ordinary": tax_res["federal_ordinary_tax"],
+            "preferential": tax_res["federal_ltcg_tax"],
+            "niit": tax_res["niit"],
+            "state": tax_res["state_tax"],
+            "medicare": tax_res["medicare_premiums"],
+        },
+        "cash": round(sum(bal[i] for i in cash_ids), 2),
+        "taxable": round(sum(bal[i] for i in taxable_ids), 2),
+        "traditional": round(sum(bal[i] for i in ira_ids), 2),
+        "roth": round(sum(bal[i] for i in roth_ids), 2),
+        "real_estate": round(sum(bal[i] for i in other_ids), 2),
+        "net_worth": round(net_worth, 2),
+        # per-account end-of-year balances (for the Account Detail view)
+        "account_balances": {aid: round(bal[aid], 2)
+                             for aid in (cash_ids + taxable_ids + ira_ids + roth_ids + other_ids)},
+        # year-by-year cashflow line items (mirrors the spreadsheet CashFlow sheet)
+        "cashflow": {
+            "wages_pension": round(calc.ordinary_non_ss, 2),
+            "gross_ss": round(calc.gross_ss, 2),
+            "taxable_ss": tax_res["taxable_ss"],
+            "dividends": round(calc.recurring_div, 2),
+            "interest": round(calc.cash_interest, 2),
+            "rmd": round(calc.rmd_total, 2),
+            "conversion": round(calc.conversion, 2),
+            "expenses": round(calc.total_expense, 2),
+            "income_tax": tax_res["total_income_tax"],
+            "medicare": tax_res["medicare_premiums"],
+            "from_cash": round(calc.cash_drawn, 2),
+            "from_taxable": round(sum(v for k, v in calc.wd.items() if k in plan.taxable_set), 2),
+            "from_ira": round(calc.ira_withdraw, 2),
+            "from_roth": round(calc.roth_withdraw, 2),
+            "surplus": round(calc.surplus, 2),
+        },
+    }
+
+
+def run_projection(cfg: dict) -> dict:
+    plan = _parse_plan(cfg)
+
+    # mutable balances
+    bal = {a["id"]: a["beginning_balance"] for a in plan.accounts}
+    basis = {a["id"]: a.get("cost_basis", 0.0) for a in plan.accounts}
+    owner_map = {a["id"]: a.get("owner", "Client") for a in plan.accounts}  # reassigned at first death
 
     magi_history = {}  # year -> MAGI, for the IRMAA 2-year lookback
-    client_alive_prev, spouse_alive_prev = True, has_spouse
+    client_alive_prev, spouse_alive_prev = True, plan.has_spouse
     rows = []
 
-    for year in range(start_year, end_year + 1):
-        yr_off = year - start_year
-        bracket_index = (1 + bracket_index_rate) ** yr_off
-        irmaa_index = (1 + irmaa_index_rate) ** yr_off
+    for year in range(plan.start_year, plan.end_year + 1):
+        yr_off = year - plan.start_year
+        bracket_index = (1 + plan.bracket_index_rate) ** yr_off
+        irmaa_index = (1 + plan.irmaa_index_rate) ** yr_off
 
-        client_alive = _alive(client_dob, client_death, year)
-        spouse_alive = has_spouse and _alive(spouse_dob, spouse_death, year)
-        both_alive = client_alive and spouse_alive
-        anyone_alive = client_alive or spouse_alive
-        if not anyone_alive:
+        status = _year_demographics(plan, owner_map, year, client_alive_prev, spouse_alive_prev)
+        if not status.anyone_alive:
             break
-
-        if both_alive:
-            filing = "MFJ"
-        else:
-            filing = survivor_status
-        survivor_owner = None
-        if not both_alive and has_spouse:
-            survivor_owner = "Client" if client_alive else "Spouse"
-
-        # Spousal rollover the year AFTER first death: the decedent's accounts
-        # transfer to the survivor, so RMDs continue on the survivor's age.
-        if has_spouse:
-            if (not client_alive) and client_alive_prev and spouse_alive:
-                owner_map = {k: ("Spouse" if v == "Client" else v) for k, v in owner_map.items()}
-            elif (not spouse_alive) and spouse_alive_prev and client_alive:
-                owner_map = {k: ("Client" if v == "Spouse" else v) for k, v in owner_map.items()}
-
-        # 65+ and medicare counts
-        num65 = 0
-        med_count = 0
-        for alive, dob in ((client_alive, client_dob), (spouse_alive, spouse_dob if has_spouse else None)):
-            if alive and dob is not None:
-                if _age(dob, year) >= 65:
-                    num65 += 1
-                    med_count += 1
 
         # --- income streams ---
         ordinary_non_ss, gross_ss, recurring_div = _aggregate_income(
-            streams, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner)
+            plan.streams, year, status.client_alive, status.spouse_alive,
+            status.both_alive, plan.has_spouse, status.survivor_owner)
 
         # --- RMDs ---
-        rmd_total, rmd_by = _total_rmd(ira_ids, owner_map, bal, client_alive, spouse_alive,
-                                       client_dob, spouse_dob, has_spouse, year)
+        rmd_total, rmd_by = _total_rmd(plan.ira_ids, owner_map, bal, status.client_alive,
+                                       status.spouse_alive, plan.client_dob, plan.spouse_dob,
+                                       plan.has_spouse, year)
 
-        cash_boy = sum(bal[i] for i in cash_ids)
-        cash_interest = cash_boy * cash_rate
+        cash_boy = sum(bal[i] for i in plan.cash_ids)
+        cash_interest = cash_boy * plan.cash_rate
 
         # Taxable-account dividends: paid out as cash income each year, taxed at
         # qualified-dividend / LTCG (preferential) rates. The account itself
         # appreciates at (gross return − dividend yield), so dividends do NOT
         # compound inside the account — only the appreciation does (step-up at death).
-        taxable_dividends = sum(bal[i] for i in taxable_ids) * div_yield
+        taxable_dividends = sum(bal[i] for i in plan.taxable_ids) * plan.div_yield
         recurring_div += taxable_dividends
 
         # --- Roth conversion window (fill-the-bracket, sized inside the circular loop) ---
-        ira_balance = sum(bal[i] for i in ira_ids)
-        in_window = roth_enabled and conv_start <= year <= conv_end and ira_balance > 0
-        if stop_at_rmd and _age(client_dob, year) >= rmd_start_age(client_dob):
+        ira_balance = sum(bal[i] for i in plan.ira_ids)
+        in_window = plan.roth_enabled and plan.conv_start <= year <= plan.conv_end and ira_balance > 0
+        if plan.stop_at_rmd and _age(plan.client_dob, year) >= rmd_start_age(plan.client_dob):
             in_window = False
-        mfj = filing == "MFJ"
-        irmaa_index_yplus2 = (1 + irmaa_index_rate) ** (yr_off + IRMAA_LOOKBACK_YEARS)
+        irmaa_index_yplus2 = (1 + plan.irmaa_index_rate) ** (yr_off + IRMAA_LOOKBACK_YEARS)
 
         # --- expenses ---
         total_expense = _total_expenses(
-            expenses, year, client_alive, spouse_alive, both_alive, start_year,
-            cfg["tax"].get("survivor_spending_reduction", 0.2))
+            plan.expenses, year, status.client_alive, status.spouse_alive,
+            status.both_alive, plan.start_year, plan.survivor_spending_reduction)
 
         # --- circular solve: conversion <-> discretionary IRA withdrawal <-> taxes ---
         tax_base = {
-            "filing_status": filing, "year": year,
+            "filing_status": status.filing, "year": year,
             "bracket_index": bracket_index, "irmaa_index": irmaa_index,
-            "num_65plus": num65, "medicare_count": med_count,
+            "num_65plus": status.num65, "medicare_count": status.med_count,
             "ordinary_non_ss": ordinary_non_ss, "cash_interest": cash_interest,
             "gross_ss": gross_ss, "recurring_div_ltcg": recurring_div,
-            "state_rate": state_rate, "include_irmaa": include_irmaa,
+            "state_rate": plan.state_rate, "include_irmaa": plan.include_irmaa,
         }
         ctx = _SolveCtx(
-            tax_base=tax_base, in_window=in_window, target_rate=target_rate,
-            max_annual=max_annual, irmaa_cap=irmaa_cap, mfj=mfj,
+            tax_base=tax_base, in_window=in_window, target_rate=plan.target_rate,
+            max_annual=plan.max_annual, irmaa_cap=plan.irmaa_cap, mfj=status.mfj,
             irmaa_index_yplus2=irmaa_index_yplus2,
             irmaa_magi=magi_history.get(year - IRMAA_LOOKBACK_YEARS),  # 2-yr lookback
             rmd_total=rmd_total, cash_boy=cash_boy, total_expense=total_expense,
-            ira_balance=ira_balance, funding_order=funding_order, ira_split=ira_split,
-            rmd_reserve_id=rmd_reserve_id, taxable_ids=taxable_ids, ira_ids=ira_ids,
-            roth_ids=roth_ids)
+            ira_balance=ira_balance, funding_order=plan.funding_order, ira_split=plan.ira_split,
+            rmd_reserve_id=plan.rmd_reserve_id, taxable_ids=plan.taxable_ids, ira_ids=plan.ira_ids,
+            roth_ids=plan.roth_ids)
         conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw = \
             _solve_year_conversion(ctx, bal, basis)
         total_tax = tax_res["total_burden"]
@@ -658,70 +809,20 @@ def run_projection(cfg: dict) -> dict:
         surplus = funding_income - spend_need
         # grow BOY balances first, then apply year-end flows (matches the sheet's
         # EOY = BOY×(1+r) ± flows convention; current-year flows do not compound)
-        _grow_balances(bal, accounts, div_yield)
-        _apply_year_flows(bal, basis, acct, cash_need, rmd_by, conversion + ira_withdraw, wd,
-                          roth_withdraw, conversion, surplus, surplus_sweep_to)
+        _grow_balances(bal, plan.accounts, plan.div_yield)
+        _apply_year_flows(bal, basis, plan.acct, cash_need, rmd_by, conversion + ira_withdraw, wd,
+                          roth_withdraw, conversion, surplus, plan.surplus_sweep_to)
 
-        liquid = sum(bal[i] for i in cash_ids + taxable_ids + ira_ids + roth_ids)
-        net_worth = liquid + sum(bal[i] for i in other_ids)
+        calc = YearCalc(
+            tax_res=tax_res, bracket_index=bracket_index, irmaa_index=irmaa_index,
+            ordinary_non_ss=ordinary_non_ss, gross_ss=gross_ss, recurring_div=recurring_div,
+            realized_ltcg=realized_ltcg, cash_interest=cash_interest, rmd_total=rmd_total,
+            conversion=conversion, total_tax=total_tax, total_expense=total_expense,
+            cash_drawn=cash_drawn, ira_withdraw=ira_withdraw, roth_withdraw=roth_withdraw,
+            surplus=surplus, wd=wd)
+        rows.append(_build_year_row(plan, status, year, bal, calc))
 
-        rows.append({
-            "year": year,
-            "filing_status": filing,
-            "client_age": _age(client_dob, year) if client_alive else None,
-            "spouse_age": _age(spouse_dob, year) if (has_spouse and spouse_alive) else None,
-            "ordinary_income": round(ordinary_non_ss + rmd_total + cash_interest, 2),
-            "rmd": round(rmd_total, 2),
-            "roth_conversion": round(conversion, 2),
-            "preferential_income": round(recurring_div + realized_ltcg, 2),
-            "gross_ss": round(gross_ss, 2),
-            "taxable_income": tax_res["taxable_income"],
-            "total_tax": round(total_tax, 2),
-            "effective_rate": tax_res["effective_rate"],
-            "marginal_rate": tax_res["marginal_ordinary_rate"],
-            "ordinary_taxable_income": tax_res["ordinary_taxable_income"],
-            "magi": tax_res["magi"],
-            "irmaa_magi": tax_res["irmaa_magi"],
-            "irmaa_tier": tax_res["irmaa_tier"],
-            "irmaa_thresholds": irmaa_thresholds(mfj, irmaa_index),
-            "bracket_fill": bracket_fill(tax_res["ordinary_taxable_income"], mfj, bracket_index),
-            "tax_breakdown": {
-                "ordinary": tax_res["federal_ordinary_tax"],
-                "preferential": tax_res["federal_ltcg_tax"],
-                "niit": tax_res["niit"],
-                "state": tax_res["state_tax"],
-                "medicare": tax_res["medicare_premiums"],
-            },
-            "cash": round(sum(bal[i] for i in cash_ids), 2),
-            "taxable": round(sum(bal[i] for i in taxable_ids), 2),
-            "traditional": round(sum(bal[i] for i in ira_ids), 2),
-            "roth": round(sum(bal[i] for i in roth_ids), 2),
-            "real_estate": round(sum(bal[i] for i in other_ids), 2),
-            "net_worth": round(net_worth, 2),
-            # per-account end-of-year balances (for the Account Detail view)
-            "account_balances": {aid: round(bal[aid], 2)
-                                 for aid in (cash_ids + taxable_ids + ira_ids + roth_ids + other_ids)},
-            # year-by-year cashflow line items (mirrors the spreadsheet CashFlow sheet)
-            "cashflow": {
-                "wages_pension": round(ordinary_non_ss, 2),
-                "gross_ss": round(gross_ss, 2),
-                "taxable_ss": tax_res["taxable_ss"],
-                "dividends": round(recurring_div, 2),
-                "interest": round(cash_interest, 2),
-                "rmd": round(rmd_total, 2),
-                "conversion": round(conversion, 2),
-                "expenses": round(total_expense, 2),
-                "income_tax": tax_res["total_income_tax"],
-                "medicare": tax_res["medicare_premiums"],
-                "from_cash": round(cash_drawn, 2),
-                "from_taxable": round(sum(v for k, v in wd.items() if k in taxable_set), 2),
-                "from_ira": round(ira_withdraw, 2),
-                "from_roth": round(roth_withdraw, 2),
-                "surplus": round(surplus, 2),
-            },
-        })
-
-        client_alive_prev, spouse_alive_prev = client_alive, spouse_alive
+        client_alive_prev, spouse_alive_prev = status.client_alive, status.spouse_alive
 
     return _aggregate_results(cfg, rows)
 
