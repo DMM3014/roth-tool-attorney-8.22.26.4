@@ -28,6 +28,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
+  const [realDollars, setRealDollars] = useState(false);
 
   const weightSum = ASSET_ROWS.reduce((s, [k]) => s + (assets[k].weight || 0), 0);
   const setAsset = (cls, field, v) =>
@@ -55,6 +56,22 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const nc = res?.without_conversions;
   const seq = res?.sequence_risk;
   const shock = res?.shock;
+
+  // Real ("today's dollars") view: discount each year's percentile at plan inflation.
+  const infl = scenario?.projection?.general_inflation ?? 0.03;
+  const startYear = scenario?.projection?.start_year ?? res?.years?.[0] ?? 0;
+  const dfactor = (year) => 1 / Math.pow(1 + infl, Math.max(0, year - startYear));
+  const fanPct = (() => {
+    if (!wc) return null;
+    if (!realDollars) return wc.percentiles;
+    const out = {};
+    ["p10", "p25", "p50", "p75", "p90"].forEach((k) => {
+      out[k] = wc.percentiles[k].map((v, i) => Math.round(v * dfactor(res.years[i])));
+    });
+    return out;
+  })();
+  const endFactor = res ? dfactor(res.years[res.years.length - 1]) : 1;
+  const endDisp = (v) => (realDollars ? Math.round((v || 0) * endFactor) : v);
 
   return (
     <div className="space-y-6">
@@ -140,7 +157,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                   <div>
                     <Label className="text-[10px] text-muted-foreground"># Years</Label>
                     <Input type="number" step={1} min={1} max={5} value={shockYears} data-testid="mc-shock-years"
-                      onChange={(e) => setShockYears(Math.max(1, parseInt(e.target.value) || 1))} className="h-8 text-right bg-white" />
+                      onChange={(e) => setShockYears(Math.min(5, Math.max(1, parseInt(e.target.value) || 1)))} className="h-8 text-right bg-white" />
                   </div>
                 </div>
               )}
@@ -227,16 +244,33 @@ export const MonteCarlo = ({ scenario, onResult }) => {
 
           {/* Fan chart */}
           <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-fan-card">
-            <div className="flex items-center gap-2 mb-1">
-              <TrendingUp className="h-4 w-4 text-[#4A6741]" />
-              <h3 className="font-display text-base font-bold tracking-tight">Liquid Portfolio Over Time — Percentile Range</h3>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-[#4A6741]" />
+                <h3 className="font-display text-base font-bold tracking-tight">Liquid Portfolio Over Time — Percentile Range</h3>
+              </div>
+              <div className="flex rounded-full border border-[#EBE8E0] bg-[#F9F8F6] p-0.5 shrink-0" data-testid="mc-real-toggle">
+                <button onClick={() => setRealDollars(false)} data-testid="mc-nominal-btn"
+                  className={`px-3 py-1 text-[11px] font-medium rounded-full transition-colors ${!realDollars ? "bg-[#4A6741] text-white" : "text-muted-foreground hover:text-[#4A6741]"}`}>
+                  Nominal $
+                </button>
+                <button onClick={() => setRealDollars(true)} data-testid="mc-real-btn"
+                  className={`px-3 py-1 text-[11px] font-medium rounded-full transition-colors ${realDollars ? "bg-[#4A6741] text-white" : "text-muted-foreground hover:text-[#4A6741]"}`}>
+                  Today's $
+                </button>
+              </div>
             </div>
-            <p className="text-[11px] text-muted-foreground mb-3">Median path with the shaded P10–P90 outcome band (with conversions). Investable assets only — excludes illiquid home equity.</p>
-            <FanChart years={res.years} percentiles={wc.percentiles} />
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Median path with the shaded P10–P90 outcome band (with conversions). Investable assets only — excludes illiquid home equity.
+              {realDollars
+                ? <> Shown in <span className="font-medium text-[#4A6741]">today's dollars</span> (discounted at {fmtPct(infl)} inflation).</>
+                : <> Shown in <span className="font-medium">nominal (future) dollars</span>.</>}
+            </p>
+            <FanChart years={res.years} percentiles={fanPct} />
             <div className="grid grid-cols-3 gap-4 mt-4">
-              <Stat label="Downside ending (P10)" value={fmtUSD(wc.ending.p10)} />
-              <Stat label="Median ending (P50)" value={fmtUSD(wc.ending.p50)} accent />
-              <Stat label="Upside ending (P90)" value={fmtUSD(wc.ending.p90)} />
+              <Stat label={`Downside ending (P10)${realDollars ? " · today's $" : ""}`} value={fmtUSD(endDisp(wc.ending.p10))} />
+              <Stat label={`Median ending (P50)${realDollars ? " · today's $" : ""}`} value={fmtUSD(endDisp(wc.ending.p50))} accent />
+              <Stat label={`Upside ending (P90)${realDollars ? " · today's $" : ""}`} value={fmtUSD(endDisp(wc.ending.p90))} />
             </div>
           </Card>
 

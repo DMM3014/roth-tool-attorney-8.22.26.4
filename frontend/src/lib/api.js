@@ -20,7 +20,7 @@ export const startMonteCarlo = (config, opts) =>
 // poll until status is done/error (or timeout)
 export const runMonteCarlo = async (config, opts = {}) => {
   const jobId = await startMonteCarlo(config, opts);
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 86; i++) {
     const job = await axios.get(`${API}/montecarlo/${jobId}`).then((r) => r.data);
     if (job.status === "done") return job.result;
     if (job.status === "error") throw new Error(job.error || "Monte Carlo failed");

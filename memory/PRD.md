@@ -281,8 +281,20 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
 
 ## Backlog / Next (updated 2026-06-30)
 - P1: Monte Carlo v2.1 — add inflation volatility (stochastic COLA / spending growth) to the simulation.
-- P2: api.js runMonteCarlo poll window is 42s (60×700ms); raise to ~60s or backoff for very large trials.
-- P2: enforce shock-years HTML max=5 in onChange (currently clamps min only).
+- ~~P2: api.js runMonteCarlo poll window is 42s~~ DONE 2026-07-01 (raised to ~60s / 86 polls).
+- ~~P2: enforce shock-years HTML max=5 in onChange~~ DONE 2026-07-01 (now clamps min AND max=5).
+- ~~P2: real-vs-nominal toggle on the Monte Carlo fan chart~~ DONE 2026-07-01.
+
+### Monte Carlo — real/nominal toggle + polish (DONE — 2026-07-01)
+- **Real ("today's dollars") vs Nominal toggle on the fan chart** (`MonteCarlo.jsx`): a pill toggle
+  (`mc-real-toggle` / `mc-nominal-btn` / `mc-real-btn`) in the fan-card header. In real mode every
+  percentile (P10/P25/P50/P75/P90) is discounted per year at the plan inflation rate
+  (`projection.general_inflation`, default 3%) from the plan start year; the three ending stat cards
+  (P10/P50/P90) are discounted at the final-year factor and labeled "today's $". Subtitle notes the mode
+  + discount rate. Frontend-only (no engine/API change). Verified: median ending $38.2M nominal →
+  $13.7M today's-$ (36 yrs @3%), Y-axis rescales $140M→$60M, labels/subtitle update.
+- **Polish**: `runMonteCarlo` poll window raised 42s→~60s (86×700ms) in `lib/api.js`; MC shock-years
+  input now clamps to `min 1 / max 5` in onChange (was min-only).
 
 ### Present-Value charts + spreadsheet verification + MC trials lock (DONE — 2026-06-30)
 - **Present Value (today's dollars) analytics on BOTH Analytics and Scenarios tabs**: new `pvSeries()` helper
