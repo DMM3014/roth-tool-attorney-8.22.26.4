@@ -199,7 +199,7 @@ export const Analytics = ({ scenario }) => {
           </p>
         </div>
 
-        {printConcepts && <ConceptsPrint scenario={scenario} withRoth={withRoth} noRoth={noRoth} />}
+        {<ConceptsPrint scenario={scenario} withRoth={withRoth} />}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 analytics-grid" data-testid="analytics-grid">
           <PvNetWorthChart data={pv.series} />

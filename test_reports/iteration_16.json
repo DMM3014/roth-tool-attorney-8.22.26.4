@@ -1,0 +1,34 @@
+{
+  "summary": "Frontend-only validation of the new 'Deplete IRA vs Leave IRA' comparison replacing the old internal-vs-external illustration, plus the 'Add Concepts to PDF' print flow and cross-tab regression on the public preview URL. All 7 review-request bullets PASS end-to-end. 0 console errors, 0 page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_checklist": {
+    "concepts_tab_and_funding_compare_card": "PASS - tab-concepts renders funding-compare-card with funding-compare-chart (grouped bars containing 'At 2nd Death' + '+N Yrs' groups), the 4-row comparison table (fc-ira-deplete=$4,520,255 / fc-ira-leave=$4,609,393; fc-heirtax-deplete=$1,976,665 / fc-heirtax-leave=$2,015,644; fc-death-deplete=$79,181,906 / fc-death-leave=$78,589,134; fc-plus10-deplete=$140,350,666 / fc-plus10-leave=$142,429,079), and the two net-difference cards (fc-death-delta=+$592,772 EXACT MATCH to main-agent spec; fc-plus10-delta=−$2,078,413 EXACT MATCH).",
+    "gainpct_edit_reruns_projection_correctly": "PASS - Debounced ~350ms as expected. Editing fc-gainpct from 66.67% -> 20% correctly (a) LEFT ALL FOUR 'Deplete IRA' cells unchanged (fc-ira-deplete, fc-heirtax-deplete, fc-death-deplete, fc-plus10-deplete all identical) — confirming that path never sells taxable, and (b) CHANGED all four 'Leave IRA' cells + both delta cards. New fc-death-delta=−$378,115 EXACT MATCH to main-agent spec (2nd-death winner flips from Deplete to Leave when gain% drops). fc-plus10-delta=−$3,705,267 (Leave became more favorable, as expected when the step-up you forfeit is smaller).",
+    "old_internal_external_gone": "PASS - All six legacy testids absent: internal-external-card, ie-conv, ie-chart, ie-external, ie-internal, ie-diff.",
+    "other_concepts_sections_intact": "PASS - funding-year-select, spending-waterfall, conversion-tax-waterfall, heir-atdeath-with/no, heir-plus10-with/no, su-gain, su-rate, su-realized, su-stepup, su-scaled — all present and populated.",
+    "analytics_export_buttons_and_persistent_print_block": "PASS - Both export-presentation and export-with-concepts buttons render. Persistent print-concepts block exists in DOM (position:absolute, top:0, opacity:0, width:720px, containing 5 SVG charts — matches main-agent's '5 SVGs at width 660' spec).",
+    "print_flow_conditional_visibility": "PASS - Under page.emulate_media(media='print'): (a) WITHOUT body.print-concepts class, print-concepts has computed display:none (hidden by CSS as spec'd); (b) WITH body.print-concepts class added, print-concepts becomes display:block/opacity:1 and all six sub-elements are visible: print-spending-waterfall, print-conversion-waterfall, print-funding-compare, print-funding-compare-chart, print-obbba-badge, print-heir-callout. print-cover also visible under print media.",
+    "cross_tab_regression": "PASS - Cycled ALL 8 tabs (optimizer, projection, cashflow, analytics, concepts, montecarlo, inputs, scenarios); each rendered non-empty content (body length 1198-11310 chars), no white-screen, no console errors, no pageerror events."
+  },
+  "console_and_page_errors": {"console_errors": 0, "page_errors": 0},
+  "backend_note": "Backend pytest NOT re-run per main-agent instructions (still 53/53).",
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Concepts.jsx line 243-289: funding-compare-card cleanly gates on cmpReady with a funding-compare-loading placeholder — good UX for the ~1-2s dual runProjection await. No flash of stale data.",
+    "Concepts.jsx line 263: fc-gainpct Pct component (debounced ~350ms). Confirmed working: only the 'Leave IRA' projection re-runs on change (Deplete column stable across 66.67% -> 20% edit), which correctly reflects the engine invariant that the Deplete path never sells taxable assets.",
+    "Analytics.jsx: printWithConcepts() correctly toggles body.print-concepts around window.print(). The persistent .concepts-print-block approach (rendered always at opacity:0 off-screen) is a robust choice — SVGs are pre-laid-out at fixed 720px width, so print CSS just flips display:block instead of fighting Recharts's ResponsiveContainer on the print event.",
+    "index.css: The dual-condition hide (@media screen opacity:0 + @media print display:none unless body.print-concepts) is correct and testable — verified both branches with page.emulate_media.",
+    "ConceptsPrint.jsx line 92: FundingCompareBars receives width={CW} (fixed) — bypasses ResponsiveContainer measurement issues that historically break print. Good pattern.",
+    "Non-blocking / maintainability nit: fc-gainpct's underlying <input> testid resolves to blank innerText at the wrapper level (Pct component); tests need `[data-testid=\"fc-gainpct\"] input` selector. This is fine but a duplicate testid on the raw input could simplify E2E."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (7/7 review-request bullets, 0 console errors, 0 page errors)"},
+  "test_credentials": "n/a - no auth in app",
+  "seed_data_creation": "None - single in-memory edit (fc-gainpct 66.67 -> 20) reverted implicitly on fresh page load.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New funding-compare panel is fully validated. Key testids: funding-compare-card, funding-compare-chart, funding-compare-loading, fc-gainpct (Pct wrapper — the actual editable input is `[data-testid=\"fc-gainpct\"] input` with initial value 66.67), fc-ira-{deplete,leave}, fc-heirtax-{deplete,leave}, fc-death-{deplete,leave,delta}, fc-plus10-{deplete,leave,delta}. Print flow: (1) navigate to tab-analytics, (2) page.evaluate(\"document.body.classList.add('print-concepts')\"), (3) page.emulate_media(media='print'), (4) assert print-concepts + print-spending-waterfall + print-conversion-waterfall + print-funding-compare + print-funding-compare-chart + print-obbba-badge + print-heir-callout are visible; without step (2) print-concepts must be display:none. Baseline plan-default numbers match main-agent spec exactly: fc-death-delta=+$592,772, fc-plus10-delta=−$2,078,413; after fc-gainpct=20, fc-death-delta=−$378,115.",
+  "rca of the issue": "n/a - no defects found in this iteration."
+}

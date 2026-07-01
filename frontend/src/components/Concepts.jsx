@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Coins, Landmark, ArrowLeftRight, Gift, Info } from "lucide-react";
+import { Coins, Landmark, Scale, Gift, Info } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { runProjection, fmtUSD, fmtPct } from "@/lib/api";
-import { Waterfall, InternalExternalLines } from "@/components/ConceptsCharts";
+import { runProjection, fmtUSD, fmtPct, fundingCompareConfigs } from "@/lib/api";
+import { Waterfall, FundingCompareBars } from "@/components/ConceptsCharts";
 
 const C = { green: "#4A6741", sage: "#7A9B76", terra: "#C87941", sand: "#E6B89C", blue: "#4B7A94" };
 const kFmt = (v) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}K`);
@@ -38,6 +38,14 @@ const Big = ({ label, value, tone = "green", testid, sub }) => (
   </div>
 );
 
+const Row = ({ label, a, b, aId, bId }) => (
+  <tr className="text-right border-b border-[#F3F1EC]">
+    <td className="text-left py-2 font-medium">{label}</td>
+    <td className="px-2 text-[#4A6741] font-semibold" data-testid={aId}>{fmtUSD(a)}</td>
+    <td className="px-2 text-[#C87941]" data-testid={bId}>{fmtUSD(b)}</td>
+  </tr>
+);
+
 export const Concepts = ({ scenario }) => {
   const [withRoth, setWithRoth] = useState(null);
   const [noRoth, setNoRoth] = useState(null);
@@ -58,10 +66,7 @@ export const Concepts = ({ scenario }) => {
 
   const rows = useMemo(() => withRoth?.rows || [], [withRoth]);
 
-  // Plan-derived defaults for the illustrations.
-  const iraReturn = scenario.accounts.find((a) => a.tax_type === "Tax-Deferred")?.return
-    ?? scenario.accounts.find((a) => a.tax_type === "Tax-Free")?.return ?? 0.07;
-  const targetRate = scenario.roth?.target_bracket ?? 0.24;
+  // Plan-derived values for the illustrations.
   const stateRate = scenario.tax?.state_rate ?? 0;
   const taxableBal = scenario.accounts.filter((a) => a.tax_type === "Taxable").reduce((s, a) => s + (a.beginning_balance || 0), 0);
   const taxableBasis = scenario.accounts.filter((a) => a.tax_type === "Taxable").reduce((s, a) => s + (a.cost_basis || 0), 0);
@@ -73,22 +78,34 @@ export const Concepts = ({ scenario }) => {
     rows.forEach((r) => { if ((r.roth_conversion || 0) > bv) { bv = r.roth_conversion; best = r.year; } });
     return best;
   }, [rows]);
-  const maxConv = useMemo(() => Math.round(Math.max(0, ...rows.map((r) => r.roth_conversion || 0))), [rows]);
 
   const [selYear, setSelYear] = useState(null);
   useEffect(() => { if (selYear == null && maxConvYear) setSelYear(maxConvYear); }, [maxConvYear, selYear]);
   const yr = selYear ?? maxConvYear;
   const row = rows.find((r) => r.year === yr);
 
-  // ---- Illustration state (pre-filled from plan, editable) ----
-  const [conv, setConv] = useState(null);
-  useEffect(() => { if (conv == null && maxConv) setConv(maxConv); }, [maxConv, conv]);
-  const convVal = conv ?? maxConv ?? 300000;
-  const [convRate, setConvRate] = useState(targetRate + stateRate);
-  const [growth, setGrowth] = useState(iraReturn);
-  const [years, setYears] = useState(20);
+  // ---- Step-up illustration state (pre-filled from plan, editable) ----
   const [gain, setGain] = useState(1000000);
   const [ltcg, setLtcg] = useState(ltcgDefault);
+
+  // ---- Deplete-IRA vs Leave-IRA funding comparison (full-engine, two extra runs) ----
+  const defaultGainPct = taxableBal > 0 ? embeddedGain / taxableBal : 0;
+  const [gainPct, setGainPct] = useState(null);
+  useEffect(() => { if (gainPct == null) setGainPct(defaultGainPct); }, [defaultGainPct, gainPct]);
+  const gp = gainPct ?? defaultGainPct;
+  const [cmpDep, setCmpDep] = useState(null);
+  const [cmpLeave, setCmpLeave] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => {
+      const { depleteIra, leaveIra } = fundingCompareConfigs(scenario, gp);
+      Promise.all([runProjection(depleteIra), runProjection(leaveIra)]).then(([a, b]) => {
+        if (alive) { setCmpDep(a); setCmpLeave(b); }
+      });
+    }, 350);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, gp]);
 
   if (!withRoth) {
     return <div className="py-20 text-center text-muted-foreground animate-pulse label-cap">Building concept illustrations…</div>;
@@ -129,20 +146,20 @@ export const Concepts = ({ scenario }) => {
   const lg = withRoth.legacy || {}, lgn = noRoth?.legacy || {};
   const horizon = lg.horizon_years || 10;
 
-  // ---- Illustration 1: internal vs external tax ----
-  const taxAmt = convVal * convRate;
-  const rothInt0 = Math.max(0, convVal - taxAmt);
-  const rothExt0 = convVal;
-  const ieSeries = Array.from({ length: years + 1 }, (_, y) => ({
-    year: y,
-    External: Math.round(rothExt0 * Math.pow(1 + growth, y)),
-    Internal: Math.round(rothInt0 * Math.pow(1 + growth, y)),
-  }));
-  const rothExtEnd = ieSeries[years].External;
-  const rothIntEnd = ieSeries[years].Internal;
-  const ieDiff = rothExtEnd - rothIntEnd;
+  // ---- Deplete-IRA vs Leave-IRA comparison values ----
+  const depL = cmpDep?.legacy, leaL = cmpLeave?.legacy;
+  const iraDep = cmpDep ? (cmpDep.rows[cmpDep.rows.length - 1]?.traditional || 0) : 0;
+  const iraLeave = cmpLeave ? (cmpLeave.rows[cmpLeave.rows.length - 1]?.traditional || 0) : 0;
+  const heirRate = leaL?.heir_ordinary_rate ?? 0;
+  const cmpReady = !!(depL && leaL);
+  const cmpData = cmpReady ? [
+    { name: "At 2nd Death", "Deplete IRA": Math.round(depL.after_tax_estate_at_death), "Leave IRA to heirs": Math.round(leaL.after_tax_estate_at_death) },
+    { name: `At +${horizon} Years`, "Deplete IRA": Math.round(depL.after_tax_estate_to_heirs), "Leave IRA to heirs": Math.round(leaL.after_tax_estate_to_heirs) },
+  ] : [];
+  const deathDelta = cmpReady ? depL.after_tax_estate_at_death - leaL.after_tax_estate_at_death : 0;
+  const plus10Delta = cmpReady ? depL.after_tax_estate_to_heirs - leaL.after_tax_estate_to_heirs : 0;
 
-  // ---- Illustration 2: realized vs step-up ----
+  // ---- Illustration: realized vs step-up ----
   const realizedCost = Math.round(gain * ltcg);
   const scaledCost = Math.round(embeddedGain * ltcg);
 
@@ -156,8 +173,8 @@ export const Concepts = ({ scenario }) => {
         </div>
         <p className="text-xs text-muted-foreground max-w-4xl">
           Client-friendly illustrations of the mechanics driving the strategy: where each year's spending is funded from,
-          why conversion taxes are paid from outside money, the tax-free-growth prize of paying that tax externally, and why the model
-          deliberately protects your taxable-account step-up at death.
+          the choice to deplete the IRA at your controlled rates versus leaving it for the children to draw down at their higher rates,
+          and why the model protects your taxable-account step-up at death.
         </p>
       </Card>
 
@@ -222,46 +239,53 @@ export const Concepts = ({ scenario }) => {
         </div>
       </Card>
 
-      {/* Illustration 1: internal vs external */}
-      <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="internal-external-card">
+      {/* Deplete IRA vs Leave IRA to heirs */}
+      <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="funding-compare-card">
         <div className="flex items-center gap-2 mb-1">
-          <ArrowLeftRight className="h-4 w-4 text-[#4A6741]" />
-          <h3 className="font-display text-base font-bold tracking-tight">Paying Conversion Tax Internally vs. Externally</h3>
+          <Scale className="h-4 w-4 text-[#4A6741]" />
+          <h3 className="font-display text-base font-bold tracking-tight">Deplete the IRA now, or leave it for the children?</h3>
         </div>
         <p className="text-[11px] text-muted-foreground mb-4 max-w-4xl">
-          One conversion, two ways to pay the tax. Pay it <span className="font-medium">from the conversion</span> and less reaches the Roth; pay it
-          <span className="font-medium"> from outside money</span> and the full amount compounds tax-free. Here's the Roth balance {years} years later.
+          Cash is always spent first — the real choice is what funds the conversion tax (and later spending) next.
+          <span className="font-medium"> Draw the Traditional IRA down at your controlled rates</span> during both lifetimes (which also leaves the
+          taxable account intact for the step-up at the second death), <span className="font-medium">or preserve the IRA</span> by selling taxable assets —
+          realizing gains the step-up would have erased — and leave a larger IRA for the children to draw down at their
+          {heirRate ? ` ~${fmtPct(heirRate)}` : ""} ordinary rate over the 10-year SECURE window. This re-runs your full plan both ways.
         </p>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="space-y-3">
+        {!cmpReady ? (
+          <div className="py-16 text-center text-muted-foreground animate-pulse label-cap" data-testid="funding-compare-loading">Running both funding strategies…</div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
-              <Label className="text-xs text-muted-foreground">Conversion amount</Label>
-              <Money value={convVal} onChange={setConv} testid="ie-conv" />
-              {maxConv > 0 && <button onClick={() => setConv(maxConv)} className="text-[10px] text-[#4A6741] underline mt-1" data-testid="ie-use-plan">Use my plan's largest year ({fmtUSD(maxConv)})</button>}
+              <FundingCompareBars data={cmpData} testid="funding-compare-chart" />
+              <div className="mt-2">
+                <Label className="text-xs text-muted-foreground">Taxable embedded gain % (the step-up you forfeit by selling)</Label>
+                <Pct value={gp} onChange={setGainPct} testid="fc-gainpct" />
+              </div>
             </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Conversion tax rate (fed + state)</Label>
-              <Pct value={convRate} onChange={setConvRate} testid="ie-rate" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Growth rate / yr</Label>
-              <Pct value={growth} onChange={setGrowth} testid="ie-growth" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Horizon (years)</Label>
-              <Input type="number" min={1} max={40} value={years} data-testid="ie-years"
-                onChange={(e) => setYears(Math.min(40, Math.max(1, parseInt(e.target.value) || 1)))} className="h-9 bg-[#F9F8F6] text-right" />
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm tabular-nums">
+                <thead>
+                  <tr className="text-right border-b border-[#EBE8E0] text-muted-foreground text-xs">
+                    <th className="text-left py-2">Metric</th>
+                    <th className="px-2">Deplete IRA</th>
+                    <th className="px-2">Leave IRA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <Row label="Traditional IRA at 2nd death" a={iraDep} b={iraLeave} aId="fc-ira-deplete" bId="fc-ira-leave" />
+                  <Row label="Heir tax on inherited IRA" a={depL.inherited_ira_tax} b={leaL.inherited_ira_tax} aId="fc-heirtax-deplete" bId="fc-heirtax-leave" />
+                  <Row label="After-tax to heirs @ 2nd death" a={depL.after_tax_estate_at_death} b={leaL.after_tax_estate_at_death} aId="fc-death-deplete" bId="fc-death-leave" />
+                  <Row label={`After-tax to heirs @ +${horizon} yrs`} a={depL.after_tax_estate_to_heirs} b={leaL.after_tax_estate_to_heirs} aId="fc-plus10-deplete" bId="fc-plus10-leave" />
+                </tbody>
+              </table>
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <Big label="Net difference @ 2nd death" value={`${deathDelta >= 0 ? "+" : "−"}${fmtUSD(Math.abs(deathDelta))}`} tone={deathDelta >= 0 ? "green" : "terra"} testid="fc-death-delta" sub={deathDelta >= 0 ? "more to heirs by depleting the IRA" : "more to heirs by leaving the IRA"} />
+                <Big label={`Net difference @ +${horizon} yrs`} value={`${plus10Delta >= 0 ? "+" : "−"}${fmtUSD(Math.abs(plus10Delta))}`} tone={plus10Delta >= 0 ? "green" : "terra"} testid="fc-plus10-delta" sub={plus10Delta >= 0 ? "more to heirs by depleting the IRA" : "more to heirs by leaving the IRA"} />
+              </div>
             </div>
           </div>
-          <div className="lg:col-span-2">
-            <InternalExternalLines data={ieSeries} testid="ie-chart" />
-            <div className="grid grid-cols-3 gap-3 mt-3">
-              <Big label={`Roth @ Yr ${years} — External`} value={fmtUSD(rothExtEnd)} testid="ie-external" />
-              <Big label={`Roth @ Yr ${years} — Internal`} value={fmtUSD(rothIntEnd)} tone="terra" testid="ie-internal" />
-              <Big label="Tax-free advantage" value={`+${fmtUSD(ieDiff)}`} testid="ie-diff" sub="extra tax-free growth from paying the tax externally" />
-            </div>
-          </div>
-        </div>
+        )}
       </Card>
 
       {/* Illustration 2: realized vs step-up */}

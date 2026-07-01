@@ -1,5 +1,5 @@
 import {
-  Bar, BarChart, Line, LineChart, Cell, LabelList,
+  Bar, BarChart, Cell, LabelList,
   CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend,
 } from "recharts";
 import { fmtUSD } from "@/lib/api";
@@ -27,18 +27,18 @@ export const Waterfall = ({ data, testid, height = 300, width }) => {
   return <div data-testid={testid}>{width ? chart : <ResponsiveContainer width="100%" height={height}>{chart}</ResponsiveContainer>}</div>;
 };
 
-// Two Roth balances compounding over the horizon (tax paid internally vs externally).
-export const InternalExternalLines = ({ data, testid, width }) => {
+// Grouped bars comparing "Deplete IRA" vs "Leave IRA to heirs" at each horizon.
+export const FundingCompareBars = ({ data, testid, width }) => {
   const chart = (
-    <LineChart data={data} margin={{ top: 8, right: 20, left: 8, bottom: 4 }} {...(width ? { width, height: 260 } : {})}>
+    <BarChart data={data} margin={{ top: 18, right: 16, left: 8, bottom: 8 }} {...(width ? { width, height: 280 } : {})}>
       <CartesianGrid strokeOpacity={0.1} vertical={false} />
-      <XAxis dataKey="year" tick={{ fontSize: 11 }} tickFormatter={(v) => `Yr ${v}`} />
+      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
       <YAxis tickFormatter={mAxis} tick={{ fontSize: 11 }} width={56} />
-      {!width && <Tooltip formatter={(v, n) => [fmtUSD(v), n]} labelFormatter={(l) => `Year ${l}`} />}
+      {!width && <Tooltip formatter={(v, n) => [fmtUSD(v), n]} />}
       <Legend />
-      <Line dataKey="External" stroke="#4A6741" strokeWidth={2.6} dot={false} name="Tax paid externally" isAnimationActive={!width} />
-      <Line dataKey="Internal" stroke="#C87941" strokeWidth={2} strokeDasharray="5 3" dot={false} name="Tax paid from the conversion" isAnimationActive={!width} />
-    </LineChart>
+      <Bar dataKey="Deplete IRA" fill="#4A6741" radius={[3, 3, 0, 0]} isAnimationActive={!width} />
+      <Bar dataKey="Leave IRA to heirs" fill="#C87941" radius={[3, 3, 0, 0]} isAnimationActive={!width} />
+    </BarChart>
   );
-  return <div data-testid={testid}>{width ? chart : <ResponsiveContainer width="100%" height={260}>{chart}</ResponsiveContainer>}</div>;
+  return <div data-testid={testid}>{width ? chart : <ResponsiveContainer width="100%" height={280}>{chart}</ResponsiveContainer>}</div>;
 };

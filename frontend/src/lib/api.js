@@ -6,6 +6,26 @@ export const API = `${BACKEND_URL}/api`;
 
 export const fetchDefaults = () => axios.get(`${API}/defaults`).then((r) => r.data);
 export const fetchStates = () => axios.get(`${API}/states`).then((r) => r.data);
+
+// Two configs for the "deplete IRA now vs. leave it for the children" comparison:
+// fund the conversion tax / spending IRA-first (deplete) vs Taxable-first (leave IRA).
+// Optional gainPct overrides each taxable account's cost basis (drives the step-up forfeited).
+export const fundingCompareConfigs = (scenario, gainPct) => {
+  const mk = (order) => {
+    const c = JSON.parse(JSON.stringify(scenario));
+    c.withdrawal.funding_order = order;
+    if (gainPct != null) {
+      c.accounts.forEach((a) => {
+        if (a.tax_type === "Taxable") a.cost_basis = Math.round((a.beginning_balance || 0) * (1 - gainPct));
+      });
+    }
+    return c;
+  };
+  return {
+    depleteIra: mk("Cash → IRA → Taxable → Roth"),
+    leaveIra: mk("Cash → Taxable → IRA → Roth"),
+  };
+};
 export const runProjection = (config) => axios.post(`${API}/projection`, { config }).then((r) => r.data);
 export const runSweep = (config) => axios.post(`${API}/sweep`, { config }).then((r) => r.data);
 export const optimizeConversion = (inputs, target_rate, max_conversion = 0) =>

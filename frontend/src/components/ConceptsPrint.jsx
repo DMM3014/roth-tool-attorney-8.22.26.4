@@ -1,5 +1,6 @@
-import { fmtUSD, fmtPct } from "@/lib/api";
-import { Waterfall, InternalExternalLines } from "@/components/ConceptsCharts";
+import { useEffect, useState } from "react";
+import { fmtUSD, fmtPct, runProjection, fundingCompareConfigs } from "@/lib/api";
+import { Waterfall, FundingCompareBars } from "@/components/ConceptsCharts";
 
 const C = { green: "#4A6741", sage: "#7A9B76", terra: "#C87941", sand: "#E6B89C", blue: "#4B7A94" };
 const kFmt = (v) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}K`);
@@ -9,16 +10,23 @@ const H = ({ children }) => (
   <div style={{ fontFamily: "Outfit, sans-serif", fontWeight: 700, fontSize: 15, color: "#1A1A1A", marginBottom: 4 }}>{children}</div>
 );
 const Sub = ({ children }) => <div style={{ fontSize: 11, color: "#777", marginBottom: 10, maxWidth: CW }}>{children}</div>;
-const Cell = ({ label, value, tone }) => (
-  <div style={{ flex: 1, border: `1px solid ${tone === "terra" ? "#C87941" : "#4A6741"}55`, background: `${tone === "terra" ? "#C87941" : "#4A6741"}0D`, borderRadius: 8, padding: "10px 12px" }}>
-    <div style={{ fontSize: 9, letterSpacing: 0.4, textTransform: "uppercase", fontWeight: 700, color: tone === "terra" ? "#C87941" : "#4A6741" }}>{label}</div>
-    <div style={{ fontFamily: "Outfit, sans-serif", fontSize: 18, fontWeight: 700, color: tone === "terra" ? "#C87941" : "#4A6741" }}>{value}</div>
-  </div>
-);
 
 // Print-only Concepts pages (fixed-width charts so they render inside the hidden print block).
-export const ConceptsPrint = ({ scenario, withRoth, noRoth }) => {
+export const ConceptsPrint = ({ scenario, withRoth }) => {
   const rows = withRoth?.rows || [];
+
+  const [cmp, setCmp] = useState(null);
+  const sig = JSON.stringify(scenario);
+  useEffect(() => {
+    let alive = true;
+    const { depleteIra, leaveIra } = fundingCompareConfigs(scenario, null);
+    Promise.all([runProjection(depleteIra), runProjection(leaveIra)]).then(([a, b]) => {
+      if (alive) setCmp({ a, b });
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
+
   if (!rows.length) return null;
 
   const stateRate = scenario.tax?.state_rate ?? 0;
@@ -55,20 +63,54 @@ export const ConceptsPrint = ({ scenario, withRoth, noRoth }) => {
   });
   convWF.push({ name: "Conversion Tax", base: 0, value: Math.round(convTax), fill: C.terra, label: kFmt(convTax) });
 
-  // Internal vs external (plan-derived defaults)
-  const iraReturn = scenario.accounts.find((a) => a.tax_type === "Tax-Deferred")?.return
-    ?? scenario.accounts.find((a) => a.tax_type === "Tax-Free")?.return ?? 0.07;
-  const rate = (scenario.roth?.target_bracket ?? 0.24) + stateRate;
-  const years = 20;
-  const convVal = Math.round(Math.max(0, ...rows.map((r) => r.roth_conversion || 0))) || 300000;
-  const taxAmt = convVal * rate;
-  const rothInt0 = Math.max(0, convVal - taxAmt);
-  const ieSeries = Array.from({ length: years + 1 }, (_, y) => ({
-    year: y,
-    External: Math.round(convVal * Math.pow(1 + iraReturn, y)),
-    Internal: Math.round(rothInt0 * Math.pow(1 + iraReturn, y)),
-  }));
-  const extEnd = ieSeries[years].External, intEnd = ieSeries[years].Internal;
+  // Deplete-IRA vs Leave-IRA comparison
+  let cmpBlock = null;
+  if (cmp) {
+    const depL = cmp.a.legacy, leaL = cmp.b.legacy;
+    const iraDep = cmp.a.rows[cmp.a.rows.length - 1]?.traditional || 0;
+    const iraLeave = cmp.b.rows[cmp.b.rows.length - 1]?.traditional || 0;
+    const horizon = leaL.horizon_years || 10;
+    const heirRate = leaL.heir_ordinary_rate || 0;
+    const cmpData = [
+      { name: "At 2nd Death", "Deplete IRA": Math.round(depL.after_tax_estate_at_death), "Leave IRA to heirs": Math.round(leaL.after_tax_estate_at_death) },
+      { name: `At +${horizon} Years`, "Deplete IRA": Math.round(depL.after_tax_estate_to_heirs), "Leave IRA to heirs": Math.round(leaL.after_tax_estate_to_heirs) },
+    ];
+    const rowsTbl = [
+      ["Traditional IRA at 2nd death", iraDep, iraLeave],
+      ["Heir income tax on inherited IRA", depL.inherited_ira_tax, leaL.inherited_ira_tax],
+      ["After-tax to heirs @ 2nd death", depL.after_tax_estate_at_death, leaL.after_tax_estate_at_death],
+      [`After-tax to heirs @ +${horizon} yrs`, depL.after_tax_estate_to_heirs, leaL.after_tax_estate_to_heirs],
+    ];
+    cmpBlock = (
+      <div style={{ paddingTop: 4, pageBreakAfter: "always", breakAfter: "page" }} data-testid="print-funding-compare">
+        <H>Deplete the IRA now, or leave it for the children?</H>
+        <Sub>
+          Cash is spent first; the choice is whether to draw the Traditional IRA down at your controlled rates during both lifetimes (preserving the
+          taxable step-up), or preserve the IRA by selling taxable assets and leave a larger IRA for the children to draw down at their
+          {heirRate ? ` ~${fmtPct(heirRate)}` : ""} ordinary rate over the 10-year SECURE window. Full plan, run both ways.
+        </Sub>
+        <FundingCompareBars data={cmpData} width={CW} testid="print-funding-compare-chart" />
+        <table style={{ width: CW, borderCollapse: "collapse", fontSize: 11, marginTop: 10 }}>
+          <thead>
+            <tr style={{ textAlign: "right", borderBottom: "1px solid #EBE8E0", color: "#777" }}>
+              <th style={{ textAlign: "left", padding: "4px 0" }}>Metric</th>
+              <th style={{ padding: "4px 8px", color: C.green }}>Deplete IRA</th>
+              <th style={{ padding: "4px 8px", color: C.terra }}>Leave IRA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rowsTbl.map(([label, a, b]) => (
+              <tr key={label} style={{ textAlign: "right", borderBottom: "1px solid #F3F1EC" }}>
+                <td style={{ textAlign: "left", padding: "5px 0", fontWeight: 600 }}>{label}</td>
+                <td style={{ padding: "5px 8px", color: C.green, fontWeight: 600 }}>{fmtUSD(a)}</td>
+                <td style={{ padding: "5px 8px", color: C.terra }}>{fmtUSD(b)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
     <div className="concepts-print-block" data-testid="print-concepts">
@@ -87,20 +129,7 @@ export const ConceptsPrint = ({ scenario, withRoth, noRoth }) => {
           </div>
         )}
       </div>
-
-      <div style={{ paddingTop: 4, pageBreakAfter: "always", breakAfter: "page" }}>
-        <H>Paying the conversion tax externally vs. from the conversion</H>
-        <Sub>
-          One {fmtUSD(convVal)} conversion at a {fmtPct(rate)} tax rate, growing {fmtPct(iraReturn)}/yr. Pay the tax from outside money and the full amount
-          compounds tax-free; pay it from the conversion and less ever reaches the Roth. Here's the Roth balance {years} years later.
-        </Sub>
-        <InternalExternalLines data={ieSeries} width={CW} testid="print-ie-chart" />
-        <div style={{ display: "flex", gap: 10, marginTop: 10, maxWidth: CW }}>
-          <Cell label={`Roth @ Yr ${years} — External`} value={fmtUSD(extEnd)} />
-          <Cell label={`Roth @ Yr ${years} — Internal`} value={fmtUSD(intEnd)} tone="terra" />
-          <Cell label="Tax-free advantage" value={`+${fmtUSD(extEnd - intEnd)}`} />
-        </div>
-      </div>
+      {cmpBlock}
     </div>
   );
 };
