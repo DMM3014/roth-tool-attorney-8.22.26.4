@@ -16,6 +16,14 @@ Correctly framed, the key variable is **not** "the retiree's current vs. future 
 
 ---
 
+## Premises of This Analysis
+
+This paper's conclusion rests on two premises. Where they hold — as they do for most successful savers — the case for depleting the IRA during the owners' lifetimes is strong; where they do not, the recommendation can change.
+
+1. **The heirs' tax rate exceeds the parents' controlled rate.** Successful families typically raise children who go on to earn at least average incomes, and those children usually inherit the parents' IRA and taxable assets during their *own peak earning years* — commonly their 50s and 60s. Under the SECURE Act's 10‑year rule, inherited traditional‑IRA distributions are taxed as ordinary income and stacked on top of the heirs' wages, so they land in **higher ordinary brackets (often 32–37%)** than the parents would face converting at low, controlled rates during their own lifetimes.
+
+2. **Conventional calculators ignore the separate character of investment income.** The Roth‑conversion tools offered by large financial firms such as **Fidelity and Schwab** do not account for the separate, preferential treatment of long‑term capital gains and qualified dividends (0/15/20%) versus the ordinary‑income treatment of IRA distributions. Omitting that distinction **understates the true benefit** of conversions — a benefit this planner measures on an apples‑to‑apples basis by valuing the after‑tax inheritance delivered to the heirs **ten years after the second spouse's death**, once the inherited IRA has been fully drawn down.
+
 ## 1. The Problem: Single‑Rate Simplification
 
 Mainstream consumer Roth‑conversion calculators typically ask for two numbers — a current marginal tax rate and an assumed future/retirement marginal rate — and then report a break‑even. This is useful for building awareness, and it captures the first‑order insight (convert when your rate today is lower than your expected rate later). But it treats the household's portfolio as a single pre‑tax bucket and, in doing so, omits four factors that materially change the answer:

@@ -1,4 +1,4 @@
-import { BookOpen, Sparkles } from "lucide-react";
+import { BookOpen, Sparkles, ListChecks } from "lucide-react";
 
 const REFS = [
   { n: 1, text: "Cook, K. A., Meyer, W., & Reichenstein, W. (2015). Tax-Efficient Withdrawal Strategies. Financial Analysts Journal, 71(2), 16–29.", url: "https://ideas.repec.org/a/taf/ufajxx/v71y2015i2p16-29.html" },
@@ -97,6 +97,42 @@ export const WhitePaper = ({ print = false }) => {
           must separate income character, track cost basis, apply the step-up, and let the planner choose the conversion-tax funding
           source. This planner does.
         </P>
+
+        {/* Premises of the analysis */}
+        <div className="my-6 rounded-xl border border-[#4A6741]/30 bg-[#4A6741]/5 p-5" data-testid="whitepaper-premises">
+          <div className="flex items-center gap-2 mb-2">
+            <ListChecks className="h-4 w-4 text-[#4A6741]" />
+            <p className="label-cap text-[11px] text-[#4A6741]">Premises of this analysis</p>
+          </div>
+          <p className="text-[15px] leading-7 text-[#2A2A2A] mb-3">
+            This paper's conclusion rests on two premises. Where they hold — as they do for most successful savers — the case
+            for depleting the IRA during the owners' lifetimes is strong; where they do not, the recommendation can change.
+          </p>
+          <ol className="space-y-3 text-[15px] leading-7 text-[#2A2A2A]">
+            <li className="flex gap-2">
+              <span className="text-[#4A6741] font-bold shrink-0">1.</span>
+              <span>
+                <span className="font-semibold">The heirs' tax rate exceeds the parents' controlled rate.</span> Successful families typically raise children who go on
+                to earn at least average incomes, and those children usually inherit the parents' IRA and taxable assets during their
+                <em> own peak earning years</em> — commonly their 50s and 60s. Under the SECURE Act's 10-year rule, inherited traditional-IRA
+                distributions are taxed as ordinary income and stacked on top of the heirs' wages, so they land in
+                <span className="font-semibold"> higher ordinary brackets (often 32–37%)</span> than the parents would face converting at low, controlled rates during
+                their own lifetimes.
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-[#4A6741] font-bold shrink-0">2.</span>
+              <span>
+                <span className="font-semibold">Conventional calculators ignore the separate character of investment income.</span> The Roth-conversion tools offered by
+                large financial firms such as <span className="font-semibold">Fidelity and Schwab</span> do not account for the separate, preferential treatment of long-term
+                capital gains and qualified dividends (0/15/20%) versus the ordinary-income treatment of IRA distributions. Omitting that
+                distinction <span className="font-semibold">understates the true benefit</span> of conversions — a benefit this planner measures on an apples-to-apples basis by
+                valuing the after-tax inheritance delivered to the heirs <span className="font-semibold">ten years after the second spouse's death</span>, once the inherited IRA
+                has been fully drawn down.
+              </span>
+            </li>
+          </ol>
+        </div>
 
         <H2>1. The Problem: Single-Rate Simplification</H2>
         <P>
