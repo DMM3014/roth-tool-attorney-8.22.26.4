@@ -88,6 +88,8 @@ DEFAULT_SCENARIO = {
     ],
     "tax": {
         "state_rate": 0.0399,
+        "state_code": "",
+        "community_property": False,
         "include_irmaa": True,
         "survivor_filing_status": "Single",
         "survivor_spending_reduction": 0.2,

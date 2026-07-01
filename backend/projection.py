@@ -548,6 +548,7 @@ class Plan:
     spouse_death: int
     has_spouse: bool
     state_rate: float
+    community_property: bool
     include_irmaa: bool
     survivor_status: str
     roth_enabled: bool
@@ -602,6 +603,7 @@ def _parse_plan(cfg: dict) -> Plan:
         spouse_death=h.get("spouse_life_expectancy", 200),
         has_spouse=h.get("spouse_dob_year") is not None,
         state_rate=cfg["tax"]["state_rate"],
+        community_property=cfg["tax"].get("community_property", False),
         include_irmaa=cfg["tax"].get("include_irmaa", True),
         survivor_status=cfg["tax"].get("survivor_filing_status", "Single"),
         roth_enabled=roth.get("enabled", True),
@@ -640,15 +642,43 @@ class YearStatus:
     med_count: int
 
 
-def _apply_spousal_rollover(plan, owner_map, client_alive, spouse_alive,
+def _step_up_basis(plan, owner_map, basis, bal, decedent):
+    """First-death cost-basis step-up on taxable / real-estate accounts.
+
+    Community-property state -> 100% step-up (both halves) regardless of which spouse
+    died. Common-law state -> decedent's separate property 100%, jointly-owned 50%
+    (only the decedent's half), the survivor's separate property 0%. `owner_map` still
+    holds the ORIGINAL owner here (rollover reassignment happens after this call).
+    """
+    for aid in plan.taxable_ids + plan.other_ids:
+        owner = owner_map.get(aid, "Client")
+        if plan.community_property:
+            frac = 1.0
+        elif owner == decedent:
+            frac = 1.0
+        elif owner == "Joint":
+            frac = 0.5
+        else:
+            frac = 0.0
+        cur = basis.get(aid, 0.0)
+        if frac > 0 and bal.get(aid, 0.0) > cur:
+            basis[aid] = cur + frac * (bal[aid] - cur)
+
+
+def _apply_spousal_rollover(plan, owner_map, basis, bal, client_alive, spouse_alive,
                             client_alive_prev, spouse_alive_prev):
-    """The year AFTER first death, transfer the decedent's accounts to the survivor (in place)."""
+    """The year AFTER first death: step up taxable/real-estate basis (state + ownership
+    dependent), then transfer the decedent's accounts to the survivor (all in place)."""
     if not plan.has_spouse:
         return
     if (not client_alive) and client_alive_prev and spouse_alive:
-        owner_map.update({k: ("Spouse" if v == "Client" else v) for k, v in owner_map.items()})
+        decedent, survivor = "Client", "Spouse"
     elif (not spouse_alive) and spouse_alive_prev and client_alive:
-        owner_map.update({k: ("Client" if v == "Spouse" else v) for k, v in owner_map.items()})
+        decedent, survivor = "Spouse", "Client"
+    else:
+        return
+    _step_up_basis(plan, owner_map, basis, bal, decedent)
+    owner_map.update({k: (survivor if v == decedent else v) for k, v in owner_map.items()})
 
 
 def _medicare_headcount(plan, client_alive, spouse_alive, year):
@@ -661,10 +691,11 @@ def _medicare_headcount(plan, client_alive, spouse_alive, year):
     return count
 
 
-def _year_demographics(plan: Plan, owner_map: dict, year: int,
+def _year_demographics(plan: Plan, owner_map: dict, basis: dict, bal: dict, year: int,
                        client_alive_prev: bool, spouse_alive_prev: bool) -> YearStatus:
-    """Resolve who is alive, the filing status, the spousal account rollover and the
-    65+/Medicare head-counts for one year. Mutates `owner_map` in place on first death."""
+    """Resolve who is alive, the filing status, the spousal account rollover (with
+    first-death basis step-up) and the 65+/Medicare head-counts for one year. Mutates
+    `owner_map` and `basis` in place on first death."""
     client_alive = _alive(plan.client_dob, plan.client_death, year)
     spouse_alive = plan.has_spouse and _alive(plan.spouse_dob, plan.spouse_death, year)
     both_alive = client_alive and spouse_alive
@@ -672,7 +703,7 @@ def _year_demographics(plan: Plan, owner_map: dict, year: int,
     survivor_owner = (None if both_alive or not plan.has_spouse
                       else ("Client" if client_alive else "Spouse"))
 
-    _apply_spousal_rollover(plan, owner_map, client_alive, spouse_alive,
+    _apply_spousal_rollover(plan, owner_map, basis, bal, client_alive, spouse_alive,
                             client_alive_prev, spouse_alive_prev)
     count65 = _medicare_headcount(plan, client_alive, spouse_alive, year)
 
@@ -783,7 +814,7 @@ def run_projection(cfg: dict) -> dict:
         bracket_index = (1 + plan.bracket_index_rate) ** yr_off
         irmaa_index = (1 + plan.irmaa_index_rate) ** yr_off
 
-        status = _year_demographics(plan, owner_map, year, client_alive_prev, spouse_alive_prev)
+        status = _year_demographics(plan, owner_map, basis, bal, year, client_alive_prev, spouse_alive_prev)
         if not status.anyone_alive:
             break
 

@@ -5,6 +5,7 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 
 export const fetchDefaults = () => axios.get(`${API}/defaults`).then((r) => r.data);
+export const fetchStates = () => axios.get(`${API}/states`).then((r) => r.data);
 export const runProjection = (config) => axios.post(`${API}/projection`, { config }).then((r) => r.data);
 export const runSweep = (config) => axios.post(`${API}/sweep`, { config }).then((r) => r.data);
 export const optimizeConversion = (inputs, target_rate, max_conversion = 0) =>

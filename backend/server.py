@@ -16,6 +16,7 @@ from tax_engine import compute_year_tax, optimize_conversion
 from projection import run_projection, sweep_brackets
 from montecarlo import run_montecarlo
 from defaults import DEFAULT_SCENARIO
+from states import STATES
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
@@ -102,6 +103,11 @@ async def root():
 @api_router.get("/defaults")
 async def get_defaults():
     return DEFAULT_SCENARIO
+
+
+@api_router.get("/states")
+async def get_states():
+    return STATES
 
 
 @api_router.post("/tax/year")

@@ -83,6 +83,13 @@ def _projection_cases():
     high_tax["legacy"]["heir_state_rate"] = 0.10
     out["high_state_tax"] = run_projection(high_tax)
 
+    # 4. Community property: client dies ~2035, CP state -> 100% first-death basis step-up
+    #    on taxable/real-estate accounts (exercises _step_up_basis full-step branch).
+    community = copy.deepcopy(DEFAULT_SCENARIO)
+    community["household"]["client_life_expectancy"] = 70   # dies ~2035
+    community["tax"]["community_property"] = True
+    out["community_property"] = run_projection(community)
+
     out["sweep"] = sweep_brackets(copy.deepcopy(DEFAULT_SCENARIO))
     return out
 

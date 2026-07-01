@@ -1,11 +1,13 @@
-import { Plus, Trash2, Coins, Receipt, PiggyBank, Landmark } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Trash2, Coins, Receipt, PiggyBank, Landmark, MapPin } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { fmtUSD } from "@/lib/api";
+import { fmtUSD, fetchStates } from "@/lib/api";
 
 const Cell = ({ children, w }) => <td className={`px-2 py-1.5 ${w || ""}`}>{children}</td>;
 
@@ -41,6 +43,11 @@ const FREQS = ["Annual", "Monthly"];
 const TAX_CHARS = ["Ordinary", "SS", "Annuity", "QDiv/LTCG"];
 
 export const PlanInputs = ({ scenario, setScenario }) => {
+  const [states, setStates] = useState([]);
+  useEffect(() => {
+    fetchStates().then(setStates).catch(() => setStates([]));
+  }, []);
+
   const mut = (key, idx, field, value) => {
     setScenario((p) => {
       const next = JSON.parse(JSON.stringify(p));
@@ -64,6 +71,21 @@ export const PlanInputs = ({ scenario, setScenario }) => {
     .filter((a) => a.tax_type === "Taxable")
     .reduce((sum, a) => sum + (a.beginning_balance || 0), 0);
   const divDollars = (scenario.dividend_yield ?? 0.02) * taxableTotal;
+
+  const stateCode = scenario.tax.state_code || "CUSTOM";
+  const currentState = states.find((s) => s.code === scenario.tax.state_code);
+  const onStateChange = (code) => {
+    if (code === "CUSTOM") {
+      setScenario((p) => ({ ...p, tax: { ...p.tax, state_code: "" } }));
+      return;
+    }
+    const st = states.find((s) => s.code === code);
+    if (!st) return;
+    setScenario((p) => ({
+      ...p,
+      tax: { ...p.tax, state_code: code, state_rate: st.rate, community_property: st.is_community_property },
+    }));
+  };
 
   return (
     <div className="space-y-6">
@@ -167,6 +189,10 @@ export const PlanInputs = ({ scenario, setScenario }) => {
           The engine pays out the dividend yield below as taxable cash income each year and grows the account at the
           <span className="font-medium"> appreciation rate = gross return − dividend yield</span> (so set the return gross; appreciation is computed net of dividends automatically).
           Tax-deferred, Roth, cash and real-estate accounts grow at their full return.
+          <span className="block mt-1"><span className="font-medium">Owner</span> (Client / Spouse / Joint) drives the
+          <span className="font-medium"> first-death cost-basis step-up</span> on taxable &amp; real-estate accounts:
+          in a community-property state the full account steps up at the first death; in a common-law state the
+          decedent's own accounts step up 100%, jointly-owned 50%, and the survivor's own accounts 0%.</span>
         </p>
         <div className="mb-4 max-w-sm">
           <Label className="text-xs text-muted-foreground">Other Dividends Realized — Rate (% of taxable)</Label>
@@ -182,7 +208,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
           <table className="w-full text-xs">
             <thead className="text-muted-foreground text-left">
               <tr className="border-b border-[#EBE8E0]">
-                <th className="px-2 py-1">Account</th><th className="px-2">Tax Type</th><th className="px-2">Beginning Balance</th>
+                <th className="px-2 py-1">Account</th><th className="px-2">Owner</th><th className="px-2">Tax Type</th><th className="px-2">Beginning Balance</th>
                 <th className="px-2">Cost Basis</th><th className="px-2">Expected Return</th>
               </tr>
             </thead>
@@ -190,6 +216,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
               {scenario.accounts.map((a, i) => (
                 <tr key={a.id} className="border-b border-[#F3F1EC]" data-testid={`account-row-${i}`}>
                   <Cell w="min-w-[180px]"><Txt value={a.name} onChange={(v) => mut("accounts", i, "name", v)} testid={`acc-name-${i}`} /></Cell>
+                  <Cell><Sel value={a.owner} onChange={(v) => mut("accounts", i, "owner", v)} options={OWNERS} testid={`acc-owner-${i}`} /></Cell>
                   <Cell><span className="text-muted-foreground">{a.tax_type}</span></Cell>
                   <Cell w="w-32"><Txt type="number" step={10000} value={a.beginning_balance} onChange={(v) => mut("accounts", i, "beginning_balance", v)} testid={`acc-bal-${i}`} /></Cell>
                   <Cell w="w-32"><Txt type="number" step={10000} value={a.cost_basis} onChange={(v) => mut("accounts", i, "cost_basis", v)} testid={`acc-basis-${i}`} /></Cell>
@@ -211,11 +238,47 @@ export const PlanInputs = ({ scenario, setScenario }) => {
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <div>
+            <Label className="text-xs text-muted-foreground flex items-center gap-1">
+              <MapPin className="h-3 w-3" /> State of Residence
+            </Label>
+            <Select value={stateCode} onValueChange={onStateChange}>
+              <SelectTrigger className="mt-1 h-9 bg-[#F9F8F6] text-sm" data-testid="tax-state-code">
+                <SelectValue placeholder="Select state" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                <SelectItem value="CUSTOM">Custom / Other</SelectItem>
+                {states.map((s) => <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {currentState && (
+              <div className="flex flex-wrap gap-1 mt-1.5" data-testid="state-flags">
+                {currentState.is_community_property && (
+                  <Badge variant="secondary" className="bg-[#4A6741]/10 text-[#4A6741] text-[10px] px-1.5 py-0">Community Property</Badge>
+                )}
+                {currentState.taxes_ss && (
+                  <Badge variant="secondary" className="bg-[#C87941]/10 text-[#C87941] text-[10px] px-1.5 py-0">Taxes SS</Badge>
+                )}
+                {currentState.taxes_ira && (
+                  <Badge variant="secondary" className="bg-[#B84A4A]/10 text-[#B84A4A] text-[10px] px-1.5 py-0">Taxes IRA</Badge>
+                )}
+              </div>
+            )}
+          </div>
+          <div>
             <Label className="text-xs text-muted-foreground">Your State Income Tax Rate</Label>
             <Input type="number" step={0.001} value={scenario.tax.state_rate} data-testid="tax-state-rate"
               onChange={(e) => setScenario((p) => ({ ...p, tax: { ...p.tax, state_rate: parseFloat(e.target.value) || 0 } }))}
               className="mt-1 bg-[#F9F8F6]" />
-            <p className="text-[10px] text-muted-foreground mt-1">e.g. 0.0399 = 3.99%. Set 0 to disable.</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Auto-filled by state; editable. e.g. 0.0399 = 3.99%. Applied to federal taxable income.</p>
+          </div>
+          <div className="flex items-center gap-2 pt-5">
+            <Switch checked={!!scenario.tax.community_property}
+              onCheckedChange={(v) => setScenario((p) => ({ ...p, tax: { ...p.tax, community_property: v } }))}
+              data-testid="tax-community-property" />
+            <div>
+              <Label className="text-xs text-muted-foreground">Community Property State</Label>
+              <p className="text-[10px] text-muted-foreground">100% basis step-up at 1st death (else decedent/joint half).</p>
+            </div>
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Heirs' Federal Tax Rate</Label>
