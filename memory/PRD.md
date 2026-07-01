@@ -411,3 +411,30 @@ across runs (numpy PCG64 + engine pre-rounding → robust). Cases:
 - `allstock_shock_seed7`: 100% stock @30% vol + early −15%/3yr bear shock, seed 7 → base 0.444, shock 0.234/0.202.
 NOTE for v2.1: adding inflation volatility WILL intentionally change these seeded outputs — refresh the
 baseline (`python tests/golden_snapshot.py save`) and review the diff when implementing it.
+
+### State Income Tax + First-Death Basis Step-Up (DONE — 2026-07-01)
+Implemented the last in-progress requirement: state-specific flat taxes + auto basis step-up at the
+first death, driven by Community Property vs Common Law rules and per-account ownership.
+- **`backend/states.py`** (new): curated 50-state + DC table — each `{code, name, rate,
+  is_community_property, taxes_ss, taxes_ira}` (approximate 2025/2026 top-marginal individual rates,
+  user-editable). 9 community-property states: AZ CA ID LA NV NM TX WA WI. Exposed via **`GET /api/states`**.
+- **`defaults.py`**: `tax` block gains `state_code` ("") + `community_property` (False); `state_rate`
+  unchanged (0.0399), so the flat state rate is still applied to **federal taxable income** (per user).
+  SS/IRA flags are informational only (no engine effect) per user choice.
+- **`projection.py` first-death step-up** (`_step_up_basis` + rewritten `_apply_spousal_rollover`, wired
+  through `_year_demographics(plan, owner_map, basis, bal, ...)`): at the first death, taxable &
+  real-estate account cost-basis steps up to market value —
+  Community-property state → **100%** (both halves, either death); common-law → decedent-owned **100%**,
+  joint-owned **50%**, survivor-owned **0%**. `Plan` gains `community_property`. Uses the ORIGINAL owner
+  (step-up computed BEFORE the survivor-rollover reassignment). Higher basis → less realized LTCG on
+  subsequent taxable withdrawals → less lifetime tax. Verified directional: in a spend-down scenario
+  (spouse-owned taxable w/ big embedded gain, drawn after client's death) CP saves ~$898K lifetime tax
+  vs common-law; the wealthy DEFAULT scenario is UNCHANGED (never liquidates taxable, so step-up doesn't
+  bind — golden default byte-identical for compute_year_tax/optimize/default projection).
+- **`PlanInputs.jsx`**: "State of Residence" dropdown (auto-fills state_rate + community_property + shows
+  CP / Taxes-SS / Taxes-IRA badges; "Custom / Other" keeps manual rate), a Community Property toggle
+  (independently editable), and an **Owner** (Client/Spouse/Joint) Select column on the Accounts editor.
+  `lib/api.js` gains `fetchStates`.
+- **Golden**: added a `community_property` projection case (early-widow + CP) to `golden_snapshot.py`;
+  baseline regenerated (_golden.json 411KB). **53/53 pytest pass.** Frontend verified by testing agent
+  iteration_14.json — 5/5 review bullets PASS, 0 console/page errors, full 8-tab regression clean.
