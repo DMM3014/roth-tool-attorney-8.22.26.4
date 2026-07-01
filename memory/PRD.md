@@ -296,6 +296,23 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
 - **Polish**: `runMonteCarlo` poll window raised 42s→~60s (86×700ms) in `lib/api.js`; MC shock-years
   input now clamps to `min 1 / max 5` in onChange (was min-only).
 
+### Plan Inputs account CRUD + currency inputs + heir with/without panel (DONE — 2026-07-01)
+- **Accounts are now fully editable** (`PlanInputs.jsx`): added an "Add" button (`add-account-button`,
+  seeds a Joint Taxable Brokerage), a per-row delete (`acc-del-{i}`), and made **Tax Type** an editable
+  Select (`acc-type-{i}`: Cash / Taxable / Tax-Deferred / Tax-Free / Real Estate) — so users can add a
+  joint taxable brokerage (or any account). Engine re-partitions by tax_type automatically; projection
+  verified to run with the added account.
+- **Currency-formatted inputs**: new `Money` component shows `$1,234,567` (commas, $, no decimals) when
+  idle and swaps to a raw number field on focus (preserves precision like monthly $2,906.40), reformats
+  on blur. Applied to income amount (`inc-amt-{i}`), expense amount (`exp-amt-{i}`), account
+  beginning_balance (`acc-bal-{i}`) and cost_basis (`acc-basis-{i}`). Rates/COLA/return stay plain number inputs.
+- **Multi-Year Projection — heir with/without-conversions panel** (`ProjectionPanels.jsx`
+  `HeirComparePanel`, `heir-compare-card`): a table + two callout cards contrasting, at 2nd death +
+  horizon (10 yrs), the **ending inheritance to heirs** (With vs Without vs Δ) and the **heir income tax
+  on the inherited IRA** (With vs Without vs tax saved). Uses the existing `legacy` (with) and `legacyNo`
+  (no-conversion) runs already computed by the Projection tab. Verified live: inheritance With $162.7M vs
+  Without $144.1M (+$18.7M); heir tax With $2.0M vs Without $5.6M (−$3.6M saved).
+
 ### Present-Value charts + spreadsheet verification + MC trials lock (DONE — 2026-06-30)
 - **Present Value (today's dollars) analytics on BOTH Analytics and Scenarios tabs**: new `pvSeries()` helper
   (`lib/api.js`) discounts every projection year's net worth — and the net-to-family estate (delivered at

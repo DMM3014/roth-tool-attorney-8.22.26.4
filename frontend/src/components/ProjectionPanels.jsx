@@ -256,6 +256,8 @@ export const LegacyPanels = ({ legacy, legacyNo, heirDelta, postCompare, targetI
         <LegacyHorizonChart rows={legacy?.post_death_rows} />
       </Card>
 
+      <HeirComparePanel legacy={legacy} legacyNo={legacyNo} horizon={horizon} />
+
       <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="convert-compare-card">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
           <h3 className="font-display text-base font-bold tracking-tight">Convert vs. Don't — Heir Value Over {horizon} Years Post-Death</h3>
@@ -278,3 +280,70 @@ const EstateMetric = ({ label, value, accent, warn, big, testid }) => (
     <p data-testid={testid} className={`font-display ${big ? "text-2xl" : "text-lg"} font-bold ${metricColor(accent, warn)}`}>{value}</p>
   </div>
 );
+
+export const HeirComparePanel = ({ legacy, legacyNo, horizon }) => {
+  const inhW = legacy?.after_tax_estate_to_heirs ?? 0;
+  const inhN = legacyNo?.after_tax_estate_to_heirs ?? 0;
+  const inhDelta = inhW - inhN;                       // more to heirs when > 0
+  const taxW = legacy?.inherited_ira_tax ?? 0;
+  const taxN = legacyNo?.inherited_ira_tax ?? 0;
+  const taxSaved = taxN - taxW;                       // heirs save tax when > 0
+  return (
+    <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="heir-compare-card">
+      <div className="flex items-center gap-2 mb-1">
+        <Gift className="h-4 w-4 text-[#4A6741]" />
+        <h3 className="font-display text-base font-bold tracking-tight">To Heirs at 2nd Death + {horizon} Years — With vs. Without Conversions</h3>
+      </div>
+      <p className="text-xs text-muted-foreground mb-5 max-w-4xl">
+        The after-tax inheritance delivered to your heirs, and the income tax they pay drawing down the inherited
+        Traditional IRA, projected {horizon} years after the second death — comparing your Roth conversion plan against doing none.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-right border-b border-[#EBE8E0] text-muted-foreground text-xs">
+              <th className="text-left py-2">Metric (2nd death + {horizon} yrs)</th>
+              <th className="px-3">With Conversions</th>
+              <th className="px-3">Without Conversions</th>
+              <th className="px-3">Difference</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            <tr className="text-right border-b border-[#F3F1EC]">
+              <td className="text-left py-3 font-medium">Ending inheritance to heirs</td>
+              <td className="px-3 text-[#4A6741] font-semibold" data-testid="heir-inherit-with">{fmtUSD(inhW)}</td>
+              <td className="px-3" data-testid="heir-inherit-no">{fmtUSD(inhN)}</td>
+              <td className={`px-3 font-semibold ${inhDelta >= 0 ? "text-[#4A6741]" : "text-[#C87941]"}`} data-testid="heir-inherit-delta">
+                {inhDelta >= 0 ? "+" : "−"}{fmtUSD(Math.abs(inhDelta))}
+              </td>
+            </tr>
+            <tr className="text-right">
+              <td className="text-left py-3 font-medium">Heir income tax on inherited IRA</td>
+              <td className="px-3 text-[#C87941] font-semibold" data-testid="heir-tax-with">{fmtUSD(taxW)}</td>
+              <td className="px-3 text-[#C87941]" data-testid="heir-tax-no">{fmtUSD(taxN)}</td>
+              <td className={`px-3 font-semibold ${taxSaved >= 0 ? "text-[#4A6741]" : "text-[#C87941]"}`} data-testid="heir-tax-savings">
+                {taxSaved >= 0 ? "−" : "+"}{fmtUSD(Math.abs(taxSaved))}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+        <div className="rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 p-4" data-testid="heir-inherit-callout">
+          <p className="label-cap text-[#4A6741] text-[10px] mb-1">Extra inheritance from converting</p>
+          <p className={`font-display text-2xl font-bold ${inhDelta >= 0 ? "text-[#4A6741]" : "text-[#C87941]"}`}>
+            {inhDelta >= 0 ? "+" : "−"}{fmtUSD(Math.abs(inhDelta))}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">{inhDelta >= 0 ? "more to heirs vs. no conversions" : "less to heirs vs. no conversions"}</p>
+        </div>
+        <div className="rounded-lg border border-[#C87941]/30 bg-[#C87941]/5 p-4" data-testid="heir-tax-callout">
+          <p className="label-cap text-[#C87941] text-[10px] mb-1">Heir tax {taxSaved >= 0 ? "saved" : "added"} by converting</p>
+          <p className={`font-display text-2xl font-bold ${taxSaved >= 0 ? "text-[#4A6741]" : "text-[#C87941]"}`}>
+            {taxSaved >= 0 ? "−" : "+"}{fmtUSD(Math.abs(taxSaved))}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">{taxSaved >= 0 ? "less income tax on the inherited IRA" : "more income tax on the inherited IRA"}</p>
+        </div>
+      </div>
+    </Card>
+  );
+};

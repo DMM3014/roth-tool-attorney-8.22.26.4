@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plus, Trash2, Coins, Receipt, PiggyBank, Landmark, MapPin } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,11 +36,36 @@ const DateInput = ({ value, onChange, testid }) => (
     className="h-8 bg-[#F9F8F6] text-xs px-2 w-[140px]" />
 );
 
+// Currency input: shows "$1,234,567" (no decimals, commas) when idle; a raw number field while editing
+// (so precision like monthly $2,906.40 is preserved).
+const Money = ({ value, onChange, testid, step }) => {
+  const [editing, setEditing] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (editing && ref.current) { ref.current.focus(); ref.current.select(); }
+  }, [editing]);
+  if (editing) {
+    return (
+      <Input ref={ref} type="number" step={step} value={value ?? ""} data-testid={testid}
+        onChange={(e) => onChange(e.target.value === "" ? null : parseFloat(e.target.value))}
+        onBlur={() => setEditing(false)}
+        className="h-8 bg-[#F9F8F6] text-xs px-2 text-right" />
+    );
+  }
+  return (
+    <Input type="text" readOnly data-testid={testid}
+      value={value == null || value === "" ? "" : `$${Math.round(value).toLocaleString("en-US")}`}
+      onFocus={() => setEditing(true)}
+      className="h-8 bg-[#F9F8F6] text-xs px-2 text-right cursor-text" />
+  );
+};
+
 const yearOf = (d) => (d ? parseInt(String(d).slice(0, 4), 10) : null);
 
 const OWNERS = ["Client", "Spouse", "Joint"];
 const FREQS = ["Annual", "Monthly"];
 const TAX_CHARS = ["Ordinary", "SS", "Annuity", "QDiv/LTCG"];
+const TAX_TYPES = ["Cash", "Taxable", "Tax-Deferred", "Tax-Free", "Real Estate"];
 
 export const PlanInputs = ({ scenario, setScenario }) => {
   const [states, setStates] = useState([]);
@@ -120,7 +145,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
                   <Cell w="min-w-[160px]"><Txt value={s.description} onChange={(v) => mut("income_streams", i, "description", v)} testid={`inc-desc-${i}`} /></Cell>
                   <Cell><Sel value={s.owner} onChange={(v) => mut("income_streams", i, "owner", v)} options={OWNERS} testid={`inc-owner-${i}`} /></Cell>
                   <Cell><Sel value={s.tax_character} onChange={(v) => mut("income_streams", i, "tax_character", v)} options={TAX_CHARS} testid={`inc-char-${i}`} /></Cell>
-                  <Cell w="w-24"><Txt type="number" value={s.amount} onChange={(v) => mut("income_streams", i, "amount", v)} testid={`inc-amt-${i}`} /></Cell>
+                  <Cell w="w-28"><Money value={s.amount} onChange={(v) => mut("income_streams", i, "amount", v)} testid={`inc-amt-${i}`} /></Cell>
                   <Cell><Sel value={s.frequency} onChange={(v) => mut("income_streams", i, "frequency", v)} options={FREQS} testid={`inc-freq-${i}`} /></Cell>
                   <Cell w="w-16"><Txt type="number" step={0.01} value={s.cola} onChange={(v) => mut("income_streams", i, "cola", v)} testid={`inc-cola-${i}`} /></Cell>
                   <Cell w="w-36"><DateInput value={s.start_date} onChange={(v) => mutDate("income_streams", i, "start_date", "start_year", v)} testid={`inc-start-${i}`} /></Cell>
@@ -164,7 +189,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
                 <tr key={e.id} className="border-b border-[#F3F1EC]" data-testid={`expense-row-${i}`}>
                   <Cell w="min-w-[160px]"><Txt value={e.category} onChange={(v) => mut("expenses", i, "category", v)} testid={`exp-cat-${i}`} /></Cell>
                   <Cell><Sel value={e.owner} onChange={(v) => mut("expenses", i, "owner", v)} options={OWNERS} testid={`exp-owner-${i}`} /></Cell>
-                  <Cell w="w-24"><Txt type="number" value={e.amount} onChange={(v) => mut("expenses", i, "amount", v)} testid={`exp-amt-${i}`} /></Cell>
+                  <Cell w="w-28"><Money value={e.amount} onChange={(v) => mut("expenses", i, "amount", v)} testid={`exp-amt-${i}`} /></Cell>
                   <Cell><Sel value={e.frequency} onChange={(v) => mut("expenses", i, "frequency", v)} options={FREQS} testid={`exp-freq-${i}`} /></Cell>
                   <Cell w="w-16"><Txt type="number" step={0.01} value={e.inflation} onChange={(v) => mut("expenses", i, "inflation", v)} testid={`exp-infl-${i}`} /></Cell>
                   <Cell w="w-36"><DateInput value={e.start_date} onChange={(v) => mutDate("expenses", i, "start_date", "start_year", v)} testid={`exp-start-${i}`} /></Cell>
@@ -180,9 +205,17 @@ export const PlanInputs = ({ scenario, setScenario }) => {
 
       {/* Accounts */}
       <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="accounts-editor">
-        <div className="flex items-center gap-2 mb-1">
-          <PiggyBank className="h-4 w-4 text-[#4A6741]" />
-          <h3 className="font-display text-lg font-bold tracking-tight">Accounts</h3>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <PiggyBank className="h-4 w-4 text-[#4A6741]" />
+            <h3 className="font-display text-lg font-bold tracking-tight">Accounts</h3>
+          </div>
+          <Button size="sm" onClick={() => addRow("accounts", {
+            id: `ACC${Date.now()}`, owner: "Joint", name: "Joint Taxable Brokerage", tax_type: "Taxable",
+            beginning_balance: 0, cost_basis: 0, return: 0.07,
+          })} className="bg-[#4A6741] hover:bg-[#3B5234] text-white" data-testid="add-account-button">
+            <Plus className="h-4 w-4 mr-1" /> Add
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground mb-4 max-w-3xl">
           Enter each <span className="font-medium">taxable account's Expected Return as the GROSS total return</span> (e.g. 0.07).
@@ -209,7 +242,7 @@ export const PlanInputs = ({ scenario, setScenario }) => {
             <thead className="text-muted-foreground text-left">
               <tr className="border-b border-[#EBE8E0]">
                 <th className="px-2 py-1">Account</th><th className="px-2">Owner</th><th className="px-2">Tax Type</th><th className="px-2">Beginning Balance</th>
-                <th className="px-2">Cost Basis</th><th className="px-2">Expected Return</th>
+                <th className="px-2">Cost Basis</th><th className="px-2">Expected Return</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -217,10 +250,11 @@ export const PlanInputs = ({ scenario, setScenario }) => {
                 <tr key={a.id} className="border-b border-[#F3F1EC]" data-testid={`account-row-${i}`}>
                   <Cell w="min-w-[180px]"><Txt value={a.name} onChange={(v) => mut("accounts", i, "name", v)} testid={`acc-name-${i}`} /></Cell>
                   <Cell><Sel value={a.owner} onChange={(v) => mut("accounts", i, "owner", v)} options={OWNERS} testid={`acc-owner-${i}`} /></Cell>
-                  <Cell><span className="text-muted-foreground">{a.tax_type}</span></Cell>
-                  <Cell w="w-32"><Txt type="number" step={10000} value={a.beginning_balance} onChange={(v) => mut("accounts", i, "beginning_balance", v)} testid={`acc-bal-${i}`} /></Cell>
-                  <Cell w="w-32"><Txt type="number" step={10000} value={a.cost_basis} onChange={(v) => mut("accounts", i, "cost_basis", v)} testid={`acc-basis-${i}`} /></Cell>
+                  <Cell><Sel value={a.tax_type} onChange={(v) => mut("accounts", i, "tax_type", v)} options={TAX_TYPES} testid={`acc-type-${i}`} /></Cell>
+                  <Cell w="w-36"><Money step={10000} value={a.beginning_balance} onChange={(v) => mut("accounts", i, "beginning_balance", v)} testid={`acc-bal-${i}`} /></Cell>
+                  <Cell w="w-36"><Money step={10000} value={a.cost_basis} onChange={(v) => mut("accounts", i, "cost_basis", v)} testid={`acc-basis-${i}`} /></Cell>
                   <Cell w="w-24"><Txt type="number" step={0.005} value={a.return} onChange={(v) => mut("accounts", i, "return", v)} testid={`acc-return-${i}`} /></Cell>
+                  <Cell><button onClick={() => delRow("accounts", i)} data-testid={`acc-del-${i}`}><Trash2 className="h-4 w-4 text-[#B84A4A]" /></button></Cell>
                 </tr>
               ))}
             </tbody>
