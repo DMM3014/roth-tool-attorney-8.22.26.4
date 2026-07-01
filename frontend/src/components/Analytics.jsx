@@ -141,6 +141,9 @@ export const Analytics = ({ scenario }) => {
           <div style={{ marginTop: 20 }}>
             <div style={{ fontFamily: "Outfit, sans-serif", fontWeight: 700, fontSize: 15 }}>Prepared for {household}</div>
             <div style={{ fontSize: 11, color: "#777", marginTop: 2 }}>Generated {today}</div>
+            <div data-testid="print-obbba-badge" style={{ marginTop: 8, display: "inline-block", border: "1px solid #4A6741", borderRadius: 999, padding: "3px 10px", fontSize: 10, color: "#4A6741", fontWeight: 600 }}>
+              Assumes current law — OBBBA 2025: permanent, inflation-indexed TCJA brackets
+            </div>
           </div>
           <table style={{ width: "100%", marginTop: 22, borderCollapse: "collapse", fontSize: 12 }}>
             <thead>

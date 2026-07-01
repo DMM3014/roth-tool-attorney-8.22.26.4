@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices } from "lucide-react";
+import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchDefaults } from "@/lib/api";
 import { Optimizer } from "@/components/Optimizer";
@@ -10,6 +10,7 @@ import { DetailCashflow } from "@/components/DetailCashflow";
 import { Compare } from "@/components/Compare";
 import { Analytics } from "@/components/Analytics";
 import { MonteCarlo } from "@/components/MonteCarlo";
+import { Concepts } from "@/components/Concepts";
 
 export const Planner = () => {
   const [scenario, setScenario] = useState(null);
@@ -44,7 +45,12 @@ export const Planner = () => {
               <p className="text-xs text-muted-foreground mt-0.5">Spreadsheet-grade tax engine · ordinary vs. LTCG/dividend separation</p>
             </div>
           </div>
-          <span className="hidden md:inline label-cap text-[#7A9B76]">v9 Longevity Engine</span>
+          <span className="hidden md:flex items-center gap-3">
+            <span className="label-cap text-[#7A9B76]">v9 Longevity Engine</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#4A6741]/30 bg-[#4A6741]/5 px-2.5 py-1 text-[10px] font-medium text-[#4A6741]" data-testid="obbba-badge">
+              <BadgeCheck className="h-3 w-3" /> Current law · OBBBA 2025 (permanent, indexed brackets)
+            </span>
+          </span>
         </div>
       </header>
 
@@ -62,6 +68,9 @@ export const Planner = () => {
             </TabsTrigger>
             <TabsTrigger value="analytics" data-testid="tab-analytics" className="gap-2 data-[state=active]:bg-white">
               <BarChart3 className="h-4 w-4" /> Analytics
+            </TabsTrigger>
+            <TabsTrigger value="concepts" data-testid="tab-concepts" className="gap-2 data-[state=active]:bg-white">
+              <Lightbulb className="h-4 w-4" /> Concepts
             </TabsTrigger>
             <TabsTrigger value="montecarlo" data-testid="tab-montecarlo" className="gap-2 data-[state=active]:bg-white">
               <Dices className="h-4 w-4" /> Monte Carlo
@@ -88,6 +97,9 @@ export const Planner = () => {
           </TabsContent>
           <TabsContent value="analytics">
             <Analytics scenario={scenario} />
+          </TabsContent>
+          <TabsContent value="concepts">
+            <Concepts scenario={scenario} />
           </TabsContent>
           <TabsContent value="montecarlo">
             <MonteCarlo scenario={scenario} onResult={setMcResult} />

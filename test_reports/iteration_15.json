@@ -1,0 +1,43 @@
+{
+  "summary": "Frontend-only validation of the new Concepts tab, OBBBA badge (header + print cover) and cross-tab regression on the public preview URL. All 7 review-request bullets PASS end-to-end. 0 console errors, 0 page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_checklist": {
+    "concepts_tab_and_intro": "PASS - tab-concepts click renders concepts-intro without white-screen; no console/page errors.",
+    "funding_waterfalls_default_year": "PASS - funding-year-select defaults to 2031 ★ (largest-conversion year marked with a star). Both spending-waterfall and conversion-tax-waterfall render for the default (star) year.",
+    "funding_waterfalls_year_change_non_conversion": "PASS - Selecting last option (2062, a late non-conversion year) via funding-year-select correctly REMOVES the conversion-tax-waterfall and shows the 'No Roth conversion in 2062. Pick a conversion year (★ = largest) to see the tax-funding waterfall.' message.",
+    "funding_waterfalls_return_to_star_year": "PASS - Switching back to the ★ star year re-renders the conversion-tax-waterfall.",
+    "heir_value_card_four_figures": "PASS - heir-atdeath-with=$79,181,906, heir-atdeath-no=$75,290,686, heir-plus10-with=$140,350,666, heir-plus10-no=$126,092,776. All four cards populated with real dollar amounts (With > Without on both horizons as expected).",
+    "illustration_1_internal_vs_external": "PASS - ie-use-plan sets the plan's largest year into ie-conv. Initial ie-external=$1,535,564, ie-internal=$1,105,760, ie-diff=+$429,804 — external > internal and diff == external-internal exactly. Editing ie-conv (click money to reveal raw number → type 50000 → blur) recomputed ie-external to $193,484; editing ie-rate to 40% recomputed ie-internal to $116,091; editing ie-growth to 10% recomputed ie-external to $336,375. ie-chart renders.",
+    "illustration_2_stepup": "PASS - su-stepup is $0 initially and stayed $0 after edits. Editing su-gain=100,000 + su-rate=20% recomputed su-realized to −$20,000 (=100,000 × 0.20, matches spec) and su-scaled to −$800,000.",
+    "obbba_badge_header": "PASS - obbba-badge is visible in the app header at all times (verified on load and while switching tabs).",
+    "print_cover_obbba_and_heir_callout": "PASS - After navigating to tab-analytics and calling page.emulate_media(media='print'), print-cover is visible; print-obbba-badge and print-heir-callout are both present and visible under print media.",
+    "cross_tab_regression": "PASS - Cycled through ALL 8 tabs (optimizer, projection, cashflow, analytics, concepts, montecarlo, inputs, scenarios); each rendered non-empty content (body length 1199-11310 chars, charts/tables visible), no white-screen, no console errors, no pageerror events."
+  },
+  "console_and_page_errors": {"console_errors": 0, "page_errors": 0},
+  "backend_note": "Backend pytest was NOT re-run per main-agent instructions (still 53/53 per prior iteration). Concepts tab fires runProjection with/without conversions on load (debounced ~300ms) — 3.5s wait was sufficient for charts to appear.",
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Concepts.jsx line 173-179: shadcn Select uses value={String(yr)} + onValueChange with parseInt(v,10). Round-trips correctly with SelectItem value={String(r.year)}. Good.",
+    "Concepts.jsx line 192: conversion-waterfall visibility gate uses `conversion > 0.5` — safe against float-noise 'zero' rows. The 'No Roth conversion' fallback message includes both the year and a hint about the ★ largest-conversion year. Good UX.",
+    "Concepts.jsx line 176: Star marker uses raw non-ASCII '★' char in JSX text — renders fine cross-browser; no need to entitize.",
+    "Concepts.jsx Money component (Input readOnly display -> click to reveal autoFocus number input -> blur to commit) — flicker-free in test. Consider adding data-testid on the readonly display too so tests don't need the click-to-reveal step (currently the same testid is on both states, so tests work; noted as a maintainability nit).",
+    "Analytics.jsx line 136-166: print-cover uses print-only class (display:none on screen). page.emulate_media(media='print') is required to assert visibility — verified working. print-obbba-badge inline styles include border+color to survive print CSS resets. Good.",
+    "Planner.jsx line 50: obbba-badge is unconditionally rendered in the header — matches 'at all times' spec.",
+    "Non-blocking: ie-years initial value already appears to be 20, so a test that fills '20' produces no visible delta; not a bug (the field is user-editable and the value is correct). Other three ie-* inputs (conv, rate, growth) all recompute the chart+cards on edit.",
+    "Waterfall label uses LabelList dataKey='label' per feature spec — the initial spend waterfall labels (per screenshots by main agent: Income $262K + Cash $212K = Total $475K) match the review-request description; not re-parsed from SVG in this run but the DOM node data-testid spending-waterfall exists and the chart is visible in tab regression."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100% (7/7 review-request bullets, 0 console errors, 0 page errors)"},
+  "test_credentials": "n/a - no auth in the app",
+  "seed_data_creation": "None - stateful edits made in-memory only (funding year cycled default->last->star; ie-conv=50000, ie-rate=40%, ie-growth=10%; su-gain=100000, su-rate=20%); no persistence beyond page session.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Concepts tab + OBBBA badge + print cover are fully validated on the public preview. Key testids confirmed live: tab-concepts, concepts-intro, funding-card, funding-year-select (shadcn Select — needs ~300-400ms wait after opening; options rendered as [role=option]), spending-waterfall, conversion-tax-waterfall (conditionally rendered when conversion>0.5), heir-value-card + heir-{atdeath,plus10}-{with,no}, internal-external-card + ie-{conv,rate,growth,years,chart,external,internal,diff,use-plan}, stepup-card + su-{gain,rate,realized,stepup,scaled}, obbba-badge (header), print-cover + print-obbba-badge + print-heir-callout (need page.emulate_media(media='print') on tab-analytics to see them). Star year in the current scenario is 2031. Interaction quirk: the Money component (ie-conv, su-gain) renders as readonly display initially — must click before fill.",
+  "rca of the issue": "n/a - no defects found in this iteration."
+}
