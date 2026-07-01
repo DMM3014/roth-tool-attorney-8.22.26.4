@@ -19,10 +19,12 @@ export const useAiSummary = ({ scenario, withRoth, s, sn, legacy, legacyNo, swee
         with_conversions: legacy.after_tax_estate_to_heirs,
         without_conversions: legacyNo.after_tax_estate_to_heirs,
         delta: heirDelta,
+        inheritance_delta: heirDelta,
         tax_free_roth_with: legacy.tax_free_roth_to_heirs,
         tax_free_roth_without: legacyNo.tax_free_roth_to_heirs,
         heir_ira_tax_with: legacy.inherited_ira_tax,
         heir_ira_tax_without: legacyNo.inherited_ira_tax,
+        heir_ira_tax_saved: (legacyNo.inherited_ira_tax || 0) - (legacy.inherited_ira_tax || 0),
       },
       monte_carlo: mcResult && {
         trials: mcResult.n_trials,

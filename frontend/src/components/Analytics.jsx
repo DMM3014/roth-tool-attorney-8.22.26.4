@@ -101,8 +101,11 @@ export const Analytics = ({ scenario }) => {
     { label: "Ending Net Worth", withV: s.ending_net_worth, noV: sn.ending_net_worth },
     { label: "Total Converted to Roth", withV: s.total_roth_converted, noV: 0 },
     { label: "Ending Roth (tax-free)", withV: s.ending_roth, noV: sn.ending_roth },
-    { label: "After-Tax Estate to Heirs", withV: lg.after_tax_estate_to_heirs, noV: lgn.after_tax_estate_to_heirs },
+    { label: "Inheritance to Heirs (2nd death +10)", withV: lg.after_tax_estate_to_heirs, noV: lgn.after_tax_estate_to_heirs },
+    { label: "Heir Income Tax on Inherited IRA (+10)", withV: lg.inherited_ira_tax, noV: lgn.inherited_ira_tax },
   ];
+  const heirInheritDelta = (lg.after_tax_estate_to_heirs || 0) - (lgn.after_tax_estate_to_heirs || 0);
+  const heirTaxSaved = (lgn.inherited_ira_tax || 0) - (lg.inherited_ira_tax || 0);
   const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
   return (
@@ -157,8 +160,24 @@ export const Analytics = ({ scenario }) => {
               ))}
             </tbody>
           </table>
+          <div data-testid="print-heir-callout" style={{ marginTop: 18, display: "flex", gap: 12 }}>
+            <div style={{ flex: 1, border: "1px solid #4A6741", background: "#4A67410D", borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontSize: 10, letterSpacing: 0.5, color: "#4A6741", fontWeight: 700, textTransform: "uppercase" }}>Extra Inheritance from Converting</div>
+              <div style={{ fontFamily: "Outfit, sans-serif", fontSize: 22, fontWeight: 700, color: heirInheritDelta >= 0 ? "#4A6741" : "#C87941" }}>
+                {heirInheritDelta >= 0 ? "+" : "−"}{fmtUSD(Math.abs(heirInheritDelta))}
+              </div>
+              <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>more to heirs at 2nd death + {lg.horizon_years || 10} yrs</div>
+            </div>
+            <div style={{ flex: 1, border: "1px solid #C87941", background: "#C879410D", borderRadius: 8, padding: "12px 14px" }}>
+              <div style={{ fontSize: 10, letterSpacing: 0.5, color: "#C87941", fontWeight: 700, textTransform: "uppercase" }}>Heir Income Tax Saved by Converting</div>
+              <div style={{ fontFamily: "Outfit, sans-serif", fontSize: 22, fontWeight: 700, color: heirTaxSaved >= 0 ? "#4A6741" : "#C87941" }}>
+                {heirTaxSaved >= 0 ? "−" : "+"}{fmtUSD(Math.abs(heirTaxSaved))}
+              </div>
+              <div style={{ fontSize: 10, color: "#777", marginTop: 2 }}>less tax on the inherited IRA over 10 yrs</div>
+            </div>
+          </div>
           <p style={{ fontSize: 10, color: "#999", marginTop: 16, fontStyle: "italic" }}>
-            Educational model · LTCG/QDIV stacked at 0/15/20% · NIIT · IRMAA · indexed brackets. Verify against current IRS tables.
+            Educational model · LTCG/QDIV stacked at 0/15/20% · NIIT · IRMAA · brackets permanent &amp; inflation-indexed (OBBBA 2025). Verify against current IRS tables.
           </p>
         </div>
 

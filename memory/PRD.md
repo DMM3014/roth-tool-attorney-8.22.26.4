@@ -313,6 +313,21 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   (no-conversion) runs already computed by the Projection tab. Verified live: inheritance With $162.7M vs
   Without $144.1M (+$18.7M); heir tax With $2.0M vs Without $5.6M (−$3.6M saved).
 
+### AI legacy figures + OBBBA current-law prompt + Print cover heir cards (DONE — 2026-07-01)
+- **Heir figures into AI Insights**: `useAiSummary.js` `net_to_family` block now includes
+  `inheritance_delta` and `heir_ira_tax_saved`; the `/insights` system prompt (server.py) now requires a
+  LEGACY bullet stating BOTH the extra inheritance AND heir tax saved (e.g. "leave heirs ~$18.7M more and
+  cut their inherited-IRA income tax by ~$3.6M, mostly tax-free"). Verified live via streaming curl.
+- **OBBBA current tax law**: both `/insights` and `/insights/chat` system prompts now instruct the model
+  to assume the One Big Beautiful Bill Act of 2025 made the TCJA individual brackets (10/12/22/24/32/35/37%)
+  PERMANENT and inflation-indexed (chained CPI) with a permanent larger standard deduction — and to NOT
+  warn about a 2026 TCJA sunset. Verified: AI now says "today's permanently indexed TCJA rates".
+- **Print/PDF cover heir cards** (`Analytics.jsx`): cover metrics table gained "Inheritance to Heirs
+  (2nd death +10)" and "Heir Income Tax on Inherited IRA (+10)" rows, plus two headline callout cards
+  ("Extra Inheritance from Converting +$X" / "Heir Income Tax Saved by Converting −$Y"). Footer updated
+  to "brackets permanent & inflation-indexed (OBBBA 2025)". Verified via print-media screenshot
+  (default: +$14.26M inheritance, −$3.67M heir tax).
+
 ### Present-Value charts + spreadsheet verification + MC trials lock (DONE — 2026-06-30)
 - **Present Value (today's dollars) analytics on BOTH Analytics and Scenarios tabs**: new `pvSeries()` helper
   (`lib/api.js`) discounts every projection year's net worth — and the net-to-family estate (delivered at
