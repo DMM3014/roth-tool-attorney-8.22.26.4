@@ -501,3 +501,21 @@ first death, driven by Community Property vs Common Law rules and per-account ow
 - **Golden**: added a `community_property` projection case (early-widow + CP) to `golden_snapshot.py`;
   baseline regenerated (_golden.json 411KB). **53/53 pytest pass.** Frontend verified by testing agent
   iteration_14.json — 5/5 review bullets PASS, 0 console/page errors, full 8-tab regression clean.
+
+### Phase 16 — In-app White Paper (2026-07-01)
+- **`frontend/src/components/WhitePaper.jsx`** (new): renders the academic white paper "Why Simplified
+  Roth-Conversion Calculators Get the Funding Decision Wrong" as a styled in-app document. Includes a
+  brand-styled **plain-English summary box** at top, then the full formal paper (Exec Summary + 6 sections
+  + numbered References with external links + superscript footnotes). Takes a `print` prop for the PDF variant.
+- **New Section 3 "Two Forces Every Conversion Analysis Must Balance"** (per user): 3.1 the case for
+  converting early/aggressively for tax-free Roth compounding (even paying tax on growth that may never
+  occur); 3.2 the ceiling — the "common rate" between the couple's and heirs' rates, above which conversions
+  destroy value; coupled with §1014 step-up → deplete-IRA-at-controlled-rates strategy. Sections renumbered
+  (Correct Framing→4, Defensible Model→5, Conclusion→6). `/app/WHITEPAPER.md` source kept in sync.
+- **`Planner.jsx`**: new **"White Paper"** tab (ScrollText icon, `data-testid="tab-whitepaper"`) placed
+  right after Concepts.
+- **`Analytics.jsx` + `index.css`**: new **"Add White Paper to PDF"** button (`data-testid=
+  "export-with-whitepaper"`, blue #4B7A94) mirroring the Concepts print pattern — reveals an off-flow
+  `<WhitePaper print />` appendix via `body.print-whitepaper` class + `window.print()`, page-break before it.
+- Verified via screenshot: White Paper tab renders (title, summary box, §3 "Two Forces", §4/§6, references);
+  Analytics loads clean with all 5 toolbar buttons. (Frontend-only change; no backend/tax-engine touch.)

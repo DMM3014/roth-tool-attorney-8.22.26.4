@@ -76,6 +76,7 @@ h1, h2, h3, h4, .font-display {
 /* ---- Presentation print layout (Analytics → Print / Export PDF) ---- */
 .print-only { display: none; }
 .concepts-print-block { position: absolute; left: 0; top: 0; width: 720px; opacity: 0; pointer-events: none; z-index: -10; }
+.whitepaper-print-block { display: none; }
 
 @media print {
     @page { size: A4 portrait; margin: 12mm; }
@@ -99,4 +100,8 @@ h1, h2, h3, h4, .font-display {
     /* Concepts pages: hidden by default in print; revealed only via "Add Concepts to PDF" */
     .concepts-print-block { display: none; }
     body.print-concepts .concepts-print-block { display: block; position: static; opacity: 1; width: 100%; z-index: auto; pointer-events: auto; }
+    /* White Paper appendix: hidden by default; revealed only via "Add White Paper to PDF" */
+    .whitepaper-print-block { display: none; }
+    body.print-whitepaper .whitepaper-print-block { display: block; page-break-before: always; break-before: page; }
+    body.print-whitepaper .whitepaper-print-block h2 { break-after: avoid; page-break-after: avoid; }
 }

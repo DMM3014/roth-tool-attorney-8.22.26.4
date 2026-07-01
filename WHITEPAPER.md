@@ -43,7 +43,21 @@ Crucially, **§1014(c) denies the step‑up to "income in respect of a decedent,
 
 The correct general rule is well established: **pay the conversion tax from outside funds, not by withholding from the IRA**, so that 100% of the converted amount lands in the Roth and compounds tax‑free.[^3] But the same literature attaches a caveat that consumer calculators omit: this holds cleanly only when the outside funds have a **high cost basis**. When the taxable assets used to pay the tax carry large **unrealized gains, selling them triggers LTCG (and possibly NIIT) that the §1014 step‑up would otherwise have eliminated** — degrading, and sometimes reversing, the apparent benefit.[^3] Because single‑rate tools track neither basis nor the step‑up, they cannot see this cost and therefore default to recommending taxable assets as the funding source.
 
-## 3. The Correct Framing: Whose Rate Pays the IRA's Tax?
+## 3. Two Forces Every Conversion Analysis Must Balance
+
+Every credible Roth‑conversion analysis is a contest between two forces, and the optimum lives where they meet.
+
+### 3.1 The case for converting early and aggressively
+
+The first force favors converting as much as possible, as early in retirement as possible. Dollars moved into a Roth compound **tax‑free** for the rest of the owners' lives and for the full ten‑year window the heirs then hold the account — so the earlier a conversion happens, the longer that tax‑free compounding runs. On this logic it can be worth paying the conversion tax now *even on growth that has not yet happened and may never occur*, because the future compounding inside the Roth is itself never taxed. The low‑income years between retirement and the onset of Social Security and RMDs are the natural window to do this, deliberately filling the 22%–24% brackets.[^1]
+
+### 3.2 The ceiling: the "common rate" between the couple and their heirs
+
+The second force sets a ceiling on that enthusiasm. A conversion only creates value when the rate the couple pays today is no higher than the rate that would otherwise apply when the money is eventually taxed — for most successful savers, the rate their **heirs** will pay. There is therefore an assumed **common rate** — the equilibrium between the couple's controlled lifetime rate and the heirs' expected ordinary rate — and **conversions pushed above that common rate destroy value rather than create it.** A couple that has raised successful, high‑earning children faces heirs in the 32%–37% brackets; that high heir rate *raises* the common rate and so justifies *more* conversion — but only up to it, never above it. Converting into the couple's own 32%+ brackets to chase compounding, when the heirs' rate is no higher, simply prepays tax at a bad rate.
+
+Coupled with the §1014 step‑up in basis on inherited taxable accounts — which erases the capital‑gains tax on a lifetime of appreciation — these two forces point to a single disciplined strategy: **convert early, but only up to the common rate; fund the conversion tax and later spending by depleting the traditional IRA at those controlled rates; and leave the taxable account untouched so it passes to the heirs with a stepped‑up basis.**
+
+## 4. The Correct Framing: Whose Rate Pays the IRA's Tax?
 
 A traditional IRA is best understood as a **deferred ordinary‑income liability held jointly with the U.S. Treasury.** The relevant question is not the retiree's current‑vs‑future rate; it is **who eventually pays the ordinary tax on those dollars, and at what rate:**
 
@@ -54,7 +68,7 @@ Framed this way, the decision hinges on a comparison the simplified tools never 
 
 This is consistent with the peer‑reviewed record. Cook, Meyer, and Reichenstein, in the *Financial Analysts Journal*, show that early tax‑deferred drawdown and Roth conversions that fill low brackets can extend portfolio longevity by roughly **two to three years** relative to the conventional "spend taxable first" ordering.[^1][^2] Vanguard's advisor research similarly finds the value of well‑structured conversions is routinely larger than clients expect once bracket management and heirs are considered.[^9]
 
-## 4. What a Defensible Model Must Do
+## 5. What a Defensible Model Must Do
 
 A model fit to guide this decision — and the design of this planner — must:
 
@@ -64,7 +78,7 @@ A model fit to guide this decision — and the design of this planner — must:
 4. **Model the SECURE 10‑year inherited‑IRA drawdown at the heirs' ordinary rate**, not the retiree's.[^5]
 5. **Assume current law** — the OBBBA‑2025 permanent, inflation‑indexed TCJA brackets — rather than a lapsed sunset.[^8]
 
-## 5. Conclusion
+## 6. Conclusion
 
 Simplified, single‑rate Roth‑conversion calculators are a reasonable first screen, but they are not a planning engine. Because they cannot see income character, cost basis, the step‑up, or the heirs' tax rate, they lean toward converting with — and liquidating — taxable assets, quietly forfeiting a step‑up that can eliminate the tax on decades of appreciation. A basis‑aware, character‑aware model frequently reaches the opposite conclusion: **deplete the pre‑tax IRA at the family's controlled rates during the owners' lifetimes, preserve the taxable account for the step‑up at death, and avoid handing a large, fully‑taxable IRA to heirs during their peak earning years.** That is the decision this planner is built to model honestly.
 

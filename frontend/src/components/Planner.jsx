@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck } from "lucide-react";
+import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchDefaults } from "@/lib/api";
 import { Optimizer } from "@/components/Optimizer";
@@ -11,6 +11,7 @@ import { Compare } from "@/components/Compare";
 import { Analytics } from "@/components/Analytics";
 import { MonteCarlo } from "@/components/MonteCarlo";
 import { Concepts } from "@/components/Concepts";
+import { WhitePaper } from "@/components/WhitePaper";
 
 export const Planner = () => {
   const [scenario, setScenario] = useState(null);
@@ -72,6 +73,9 @@ export const Planner = () => {
             <TabsTrigger value="concepts" data-testid="tab-concepts" className="gap-2 data-[state=active]:bg-white">
               <Lightbulb className="h-4 w-4" /> Concepts
             </TabsTrigger>
+            <TabsTrigger value="whitepaper" data-testid="tab-whitepaper" className="gap-2 data-[state=active]:bg-white">
+              <ScrollText className="h-4 w-4" /> White Paper
+            </TabsTrigger>
             <TabsTrigger value="montecarlo" data-testid="tab-montecarlo" className="gap-2 data-[state=active]:bg-white">
               <Dices className="h-4 w-4" /> Monte Carlo
             </TabsTrigger>
@@ -100,6 +104,9 @@ export const Planner = () => {
           </TabsContent>
           <TabsContent value="concepts">
             <Concepts scenario={scenario} />
+          </TabsContent>
+          <TabsContent value="whitepaper">
+            <WhitePaper />
           </TabsContent>
           <TabsContent value="montecarlo">
             <MonteCarlo scenario={scenario} onResult={setMcResult} />

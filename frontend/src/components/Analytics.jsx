@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Printer, FileSpreadsheet, FileDown, Lightbulb } from "lucide-react";
+import { Printer, FileSpreadsheet, FileDown, Lightbulb, ScrollText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { runProjection, fmtUSD, pvSeries, buildPvSheets, downloadWorkbook, downloadCSV } from "@/lib/api";
 import {
@@ -8,6 +8,7 @@ import {
   PvNetWorthChart, RothConversionsChart, PvNetToFamilyChart,
 } from "@/components/AnalyticsCharts";
 import { ConceptsPrint } from "@/components/ConceptsPrint";
+import { WhitePaper } from "@/components/WhitePaper";
 
 const BRACKET_LABELS = ["10%", "12%", "22%", "24%", "32%", "35%", "37%"];
 
@@ -20,6 +21,15 @@ export const Analytics = ({ scenario }) => {
   const printWithConcepts = () => {
     document.body.classList.add("print-concepts");
     const cleanup = () => { document.body.classList.remove("print-concepts"); window.removeEventListener("afterprint", cleanup); };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+    setTimeout(cleanup, 1000);
+  };
+
+  // "Add White Paper to PDF": reveal the off-flow white-paper appendix during print only.
+  const printWithWhitePaper = () => {
+    document.body.classList.add("print-whitepaper");
+    const cleanup = () => { document.body.classList.remove("print-whitepaper"); window.removeEventListener("afterprint", cleanup); };
     window.addEventListener("afterprint", cleanup);
     window.print();
     setTimeout(cleanup, 1000);
@@ -143,6 +153,10 @@ export const Analytics = ({ scenario }) => {
             className="gap-2 bg-[#C87941] hover:bg-[#A8632F] text-white rounded-full">
             <Lightbulb className="h-4 w-4" /> Add Concepts to PDF
           </Button>
+          <Button size="sm" onClick={printWithWhitePaper} data-testid="export-with-whitepaper"
+            className="gap-2 bg-[#4B7A94] hover:bg-[#3C6478] text-white rounded-full">
+            <ScrollText className="h-4 w-4" /> Add White Paper to PDF
+          </Button>
         </div>
       </div>
 
@@ -200,6 +214,8 @@ export const Analytics = ({ scenario }) => {
         </div>
 
         {<ConceptsPrint scenario={scenario} withRoth={withRoth} />}
+
+        <WhitePaper print />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 analytics-grid" data-testid="analytics-grid">
           <PvNetWorthChart data={pv.series} />
