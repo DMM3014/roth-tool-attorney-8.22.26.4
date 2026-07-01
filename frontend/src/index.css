@@ -95,4 +95,6 @@ h1, h2, h3, h4, .font-display {
         border: 1px solid #EBE8E0 !important;
     }
     #analytics-print .print-cover { page-break-after: always; }
+    /* Concepts pages render off-screen on screen; pull into the print flow */
+    #print-concepts-wrap { position: static !important; left: auto !important; top: auto !important; width: 100% !important; }
 }

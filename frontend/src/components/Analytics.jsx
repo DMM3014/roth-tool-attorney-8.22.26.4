@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Printer, FileSpreadsheet, FileDown } from "lucide-react";
+import { Printer, FileSpreadsheet, FileDown, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { runProjection, fmtUSD, pvSeries, buildPvSheets, downloadWorkbook, downloadCSV } from "@/lib/api";
 import {
@@ -7,12 +7,23 @@ import {
   RmdBalanceChart, IrmaaChart, RateTrendChart, CumulativeTaxChart, HeirLegacyCompareChart,
   PvNetWorthChart, RothConversionsChart, PvNetToFamilyChart,
 } from "@/components/AnalyticsCharts";
+import { ConceptsPrint } from "@/components/ConceptsPrint";
 
 const BRACKET_LABELS = ["10%", "12%", "22%", "24%", "32%", "35%", "37%"];
 
 export const Analytics = ({ scenario }) => {
   const [withRoth, setWithRoth] = useState(null);
   const [noRoth, setNoRoth] = useState(null);
+
+  // "Add Concepts to PDF": the print pages are pre-rendered off-screen; toggle the
+  // body class that reveals them in the print flow, then print.
+  const printWithConcepts = () => {
+    document.body.classList.add("print-concepts");
+    const cleanup = () => { document.body.classList.remove("print-concepts"); window.removeEventListener("afterprint", cleanup); };
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+    setTimeout(cleanup, 1000);
+  };
 
   const sig = JSON.stringify(scenario);
   useEffect(() => {
@@ -128,6 +139,10 @@ export const Analytics = ({ scenario }) => {
             className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
             <Printer className="h-4 w-4" /> Print / Export PDF
           </Button>
+          <Button size="sm" onClick={printWithConcepts} data-testid="export-with-concepts"
+            className="gap-2 bg-[#C87941] hover:bg-[#A8632F] text-white rounded-full">
+            <Lightbulb className="h-4 w-4" /> Add Concepts to PDF
+          </Button>
         </div>
       </div>
 
@@ -183,6 +198,8 @@ export const Analytics = ({ scenario }) => {
             Educational model · LTCG/QDIV stacked at 0/15/20% · NIIT · IRMAA · brackets permanent &amp; inflation-indexed (OBBBA 2025). Verify against current IRS tables.
           </p>
         </div>
+
+        {printConcepts && <ConceptsPrint scenario={scenario} withRoth={withRoth} noRoth={noRoth} />}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 analytics-grid" data-testid="analytics-grid">
           <PvNetWorthChart data={pv.series} />
