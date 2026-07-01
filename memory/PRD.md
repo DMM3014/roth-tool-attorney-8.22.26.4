@@ -328,6 +328,25 @@ Applied the legitimate code-review findings (kept the V9 reconciliation green th
   to "brackets permanent & inflation-indexed (OBBBA 2025)". Verified via print-media screenshot
   (default: +$14.26M inheritance, −$3.67M heir tax).
 
+### Concepts (client-education) tab + OBBBA badges (DONE — 2026-07-01)
+New dedicated **"Concepts"** tab (`Concepts.jsx` + `ConceptsCharts.jsx`, wired in `Planner.jsx`) — runs the
+projection with & without conversions and presents four client-facing illustrations. All 7 review
+bullets PASS (testing agent iteration_15.json, 0 console/page errors, full 8-tab regression clean).
+- **Funding Waterfalls** (year selector defaulting to the ★ largest-conversion year): a **Spending**
+  waterfall (Income&RMD → Cash → Taxable → IRA → Roth → Total) and a **Conversion-tax funding** waterfall
+  (Cash/Taxable only — "never Roth, never IRA proceeds"), with a "No conversion in {yr}" fallback. NOTE:
+  fundable income excludes cash interest (engine retains interest in cash); waterfall bar labels use an
+  explicit `LabelList dataKey="label"` string (recharts stacked-bar `label` otherwise shows cumulative,
+  not the per-segment increment).
+- **Value to Heirs** at 2nd death & +10 (With vs Without) — four metric cards.
+- **Illustration 1 — Internal vs External conversion tax**: pre-filled from plan (conv = largest year,
+  rate = target bracket + state, growth = IRA return, 20 yrs), editable; line chart + Roth-at-horizon
+  cards + tax-free-advantage delta (external always ≥ internal by taxAmt×(1+g)^yrs).
+- **Illustration 2 — Realized-in-life vs Step-up-at-death**: $1M gains @ LTCG+NIIT+state (≈23.45%) = tax
+  vs $0 stepped-up, scaled to the household's taxable balance & embedded gain (auto-filled), editable.
+- **OBBBA "current law" badge**: always-on header pill (`obbba-badge`) AND on the Print/PDF cover
+  (`print-obbba-badge`).
+
 ### Present-Value charts + spreadsheet verification + MC trials lock (DONE — 2026-06-30)
 - **Present Value (today's dollars) analytics on BOTH Analytics and Scenarios tabs**: new `pvSeries()` helper
   (`lib/api.js`) discounts every projection year's net worth — and the net-to-family estate (delivered at
