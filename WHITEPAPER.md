@@ -18,11 +18,11 @@ Correctly framed, the key variable is **not** "the retiree's current vs. future 
 
 ## Premises of This Analysis
 
-This paper's conclusion rests on two premises. Where they hold — as they do for most successful savers — the case for depleting the IRA during the owners' lifetimes is strong; where they do not, the recommendation can change.
+**The core premise: parents should pay the tax on their own IRA at controlled rates during their lifetimes, rather than leave that liability to children who will pay it at higher rates.** Two conditions make this true for most successful savers:
 
-1. **The heirs' tax rate exceeds the parents' controlled rate.** Successful families typically raise children who go on to earn at least average incomes, and those children usually inherit the parents' IRA and taxable assets during their *own peak earning years* — commonly their 50s and 60s. Under the SECURE Act's 10‑year rule, inherited traditional‑IRA distributions are taxed as ordinary income and stacked on top of the heirs' wages, so they land in **higher ordinary brackets (often 32–37%)** than the parents would face converting at low, controlled rates during their own lifetimes.
+1. **Heirs pay a higher rate than the parents.** Successful families' children usually earn at least average incomes and inherit the IRA during their own peak earning years (50s–60s). Under the SECURE 10‑year rule those distributions are taxed as ordinary income on top of their wages — often at **32–37%**, above the parents' controlled lifetime rate.
 
-2. **Conventional calculators ignore the separate character of investment income.** The Roth‑conversion tools offered by large financial firms such as **Fidelity and Schwab** do not account for the separate, preferential treatment of long‑term capital gains and qualified dividends (0/15/20%) versus the ordinary‑income treatment of IRA distributions. Omitting that distinction **understates the true benefit** of conversions — a benefit this planner measures on an apples‑to‑apples basis by valuing the after‑tax inheritance delivered to the heirs **ten years after the second spouse's death**, once the inherited IRA has been fully drawn down.
+2. **Conventional calculators miss this.** The Roth tools from firms like **Fidelity and Schwab** don't separate preferential LTCG and qualified‑dividend income (0/15/20%) from ordinary IRA income, so they understate the benefit — which this planner measures as the after‑tax inheritance to heirs **ten years after the second death**.
 
 ## 1. The Problem: Single‑Rate Simplification
 

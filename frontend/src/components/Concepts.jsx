@@ -176,6 +176,12 @@ export const Concepts = ({ scenario }) => {
           the choice to deplete the IRA at your controlled rates versus leaving it for the children to draw down at their higher rates,
           and why the model protects your taxable-account step-up at death.
         </p>
+        <div className="mt-3 rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 px-4 py-3" data-testid="concepts-premise">
+          <p className="text-[13px] leading-6 text-[#2A2A2A]">
+            <span className="font-semibold text-[#4A6741]">The core premise:</span> pay the income tax on your own IRA at your controlled rates
+            during your lifetime — rather than leaving that liability to your children, who will usually pay it at higher rates.
+          </p>
+        </div>
       </Card>
 
       {/* Funding waterfalls */}
