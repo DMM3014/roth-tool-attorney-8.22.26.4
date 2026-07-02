@@ -626,7 +626,8 @@ def _parse_plan(cfg: dict) -> Plan:
         max_annual=roth.get("max_annual", 0.0),
         stop_at_rmd=roth.get("stop_at_rmd_age", True),
         irmaa_cap=irmaa_cap,
-        year_targets=roth.get("year_targets") or {},
+        # normalize JSON string keys ("2026") to ints so HTTP payloads work
+        year_targets={int(k): float(v) for k, v in (roth.get("year_targets") or {}).items()},
         streams=cfg["income_streams"], expenses=cfg["expenses"], accounts=accounts,
         div_yield=cfg.get("dividend_yield", 0.02),
         cash_rate=next((a["return"] for a in accounts if a["tax_type"] == "Cash"), 0.03),

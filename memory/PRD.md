@@ -502,6 +502,77 @@ first death, driven by Community Property vs Common Law rules and per-account ow
   baseline regenerated (_golden.json 411KB). **53/53 pytest pass.** Frontend verified by testing agent
   iteration_14.json — 5/5 review bullets PASS, 0 console/page errors, full 8-tab regression clean.
 
+### Phase 17 — Strategy / SS / Roth-Compliance Optimizers (2026-07-02)
+Adds the three top-priority "beat Boldin at its own game" enhancements from the competitive review.
+
+**1. Multi-Year Roth Conversion Strategy Optimizer** (`backend/strategy_optimizer.py`,
+`frontend/src/components/StrategyOptimizer.jsx`, `POST /api/strategy-sweep`):
+- New tab that sweeps `(start_year × stop_year × target_bracket)` combinations, plus two-phase
+  time-varying schedules pivoting off the SS claim year and the RMD wall (e.g. "fill 32% pre-SS,
+  24% after"). Each candidate is a full projection run through the SECURE 10-yr post-death horizon.
+- Ranked by **nominal after-tax legacy at 2nd death + horizon** (user spec, matches AI Insights /
+  Analytics convention); lifetime tax is tiebreaker. Every result also reports its **PV** discounted
+  at plan inflation — sortable via `strategy-sort-nominal` / `strategy-sort-pv` toggle chips.
+- Frontend has: IRMAA-cap dropdown, max-annual cap, include-phased toggle, results table with
+  ★ winner row, and a one-click **"Apply winner"** button that mutates `roth.enabled/start_year/
+  end_year/target_bracket/year_targets` in the working scenario.
+- Verified: default plan winner is `Fill 32% · 2026-2062` at legacy $141.9M (+$1.55M vs single-
+  bracket 24% and +$26.9M vs no-conversion baseline).
+
+**2. Time-varying phased conversions in the engine** (`projection.py`):
+- New `roth.year_targets` map (year → bracket rate) overrides the flat `target_bracket` per year.
+- Wired into `_parse_plan` with JSON-safe string-key normalization (`int(k)` coercion at boundary)
+  and consumed by `_solve_year_conversion` via the per-year `year_target` variable.
+- Enables the phased schedules from the strategy optimizer AND direct user-set phasing on saved
+  scenarios.
+
+**3. Social Security Claiming-Age Optimizer** (`backend/ss_optimizer.py`,
+`frontend/src/components/SSOptimizer.jsx`, `POST /api/ss-optimizer`):
+- Sweeps `(client_age, spouse_age) ∈ {62, 65, 67, 70}` using the SSA reduction/DRC formulas:
+  early = 5/9% first 36mo + 5/12% beyond (30% cut at age 62 for FRA-67); late = 8% per year
+  (24% at age 70). Backs out each owner's implied FRA benefit from the current stream then
+  rescales + reslates for each candidate age.
+- Reruns the full projection for every combination — captures the interaction with the Roth
+  conversion window (claiming later = more room for conversions in the low-income years).
+- Ranked by after-tax legacy at +horizon (tiebreaker lifetime tax); shows lifetime SS collected
+  and lifetime tax alongside. One-click **"Apply optimal pair"** button rewrites the SS streams.
+
+**4. 5-year Roth Rule + Pre-59½ Penalty Guard** (`projection.py`):
+- Every year the engine tracks a **per-conversion Roth basis clock** (`conversions_ledger`) and
+  flags any Roth withdrawal that would tap a conversion within its 5-year window or before the
+  primary owner is 59½. Estimated 10% penalty is dollar-quantified in `roth_early_penalty_total`.
+- Frontend `RothComplianceCard` on the Multi-Year Projection tab renders either the green
+  "Roth compliance clean" state (default V9 plan — no withdrawals) or a red warnings table with
+  reason / dollar penalty / client age per event. This is the Boldin-documented blind spot.
+
+**Testing**:
+- New `backend/tests/test_phase17_strategy_ss_compliance.py` — 14 tests covering FRA math,
+  SS reduction/DRC formulas, sweep shape + ranking invariants, phased year_targets (int AND
+  string keys, HTTP-boundary safe), and Roth compliance flagging.
+- Golden snapshot extended with `strategy` + `ss` sections (`_golden.json` 437KB); math on all
+  existing projection cases is BYTE-IDENTICAL — the change is purely additive fields.
+- Testing agent iteration_17.json: backend 6/7 → 7/7 after year_targets JSON key fix; frontend
+  14/16 → 16/16 after RothComplianceCard was actually mounted in the JSX tree.
+
+**KNOWN limitations**:
+- FRA calculation snaps to whole years (67 for 1960+, 66 for pre-1960) — the SSA table has
+  monthly precision from 1943-1959. Acceptable approximation for a sweep-style optimizer.
+- Strategy sweep grid: default sweeps `[start .. start+8*step] × [step..end]` sampled every
+  `(end-start)/8` years (~9×9=81 combos on a 37-yr plan) — small enough to complete in ~10-15s.
+  Users can supply an explicit grid via the request body.
+- Roth compliance is a household-level approximation (age of the primary owner at conversion
+  time; oldest-conversion-first drawdown). A per-owner Roth attribution refinement is P2.
+
+## Backlog / Next (updated 2026-07-02)
+- P1: Monte Carlo v2.1 — add inflation volatility (stochastic COLA / spending growth) to the sim.
+- P1: Account aggregation (Yodlee / Plaid) — the one remaining "Boldin wins" item from the
+  competitive review.
+- P2: Per-owner Roth conversion attribution (separate client vs spouse ledgers for the 5-year
+  rule + pre-59½ warnings).
+- P2: Show a "ties broken by lifetime tax" note on the Strategy Optimizer results header when
+  the top-N rows have identical nominal legacy (fill-32% variants converge at the RMD wall).
+
+
 ### Phase 16 — In-app White Paper (2026-07-01)
 - **`frontend/src/components/WhitePaper.jsx`** (new): renders the academic white paper "Why Simplified
   Roth-Conversion Calculators Get the Funding Decision Wrong" as a styled in-app document. Includes a

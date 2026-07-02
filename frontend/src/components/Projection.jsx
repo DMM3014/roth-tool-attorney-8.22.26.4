@@ -119,6 +119,11 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
 
       <LegacyPanels legacy={legacy} legacyNo={legacyNo} heirDelta={heirDelta} postCompare={postCompare} targetIdx={targetIdx} />
 
+      {/* 5-year / pre-59½ Roth compliance warnings (Boldin's documented blind spot) */}
+      {withRoth?.roth_compliance && (
+        <RothComplianceCard compliance={withRoth.roth_compliance} />
+      )}
+
       {/* AI */}
       <Card className="p-6 bg-[#EBE8E0]/60 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="ai-insights-panel-proj">
         <div className="flex items-center gap-2 mb-3">

@@ -121,6 +121,20 @@ def test_year_targets_override_flat_target():
     assert flat_out["summary"]["total_roth_converted"] != phased_out["summary"]["total_roth_converted"]
 
 
+def test_year_targets_handles_string_keys_from_json():
+    """When year_targets comes from JSON (HTTP boundary), keys are strings — the
+    parser must coerce them to ints or the phased schedule silently no-ops."""
+    phased_int = copy.deepcopy(DEFAULT_SCENARIO)
+    phased_int["roth"]["target_bracket"] = 0.24
+    phased_int["roth"]["year_targets"] = {y: 0.32 for y in range(2026, 2032)}
+    phased_str = copy.deepcopy(DEFAULT_SCENARIO)
+    phased_str["roth"]["target_bracket"] = 0.24
+    phased_str["roth"]["year_targets"] = {str(y): 0.32 for y in range(2026, 2032)}
+    a = run_projection(phased_int)["summary"]["total_roth_converted"]
+    b = run_projection(phased_str)["summary"]["total_roth_converted"]
+    assert a == b, f"string-keyed year_targets ({b}) must equal int-keyed ({a})"
+
+
 # ------- Roth compliance tracking -------
 
 def test_roth_compliance_block_exists_and_clean_by_default():
