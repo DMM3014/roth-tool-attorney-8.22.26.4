@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning } from "lucide-react";
+import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,9 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const [shockOn, setShockOn] = useState(false);
   const [shockRate, setShockRate] = useState(-0.15);
   const [shockYears, setShockYears] = useState(2);
+  const [inflOn, setInflOn] = useState(false);
+  const [inflMean, setInflMean] = useState(scenario?.projection?.general_inflation ?? 0.03);
+  const [inflVol, setInflVol] = useState(0.015);
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
@@ -42,6 +45,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
         n_trials: TRIALS,
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
+        inflation: { enabled: inflOn, mean: inflMean, vol: inflVol },
       });
       setRes(out);
       onResult?.(out);
@@ -56,6 +60,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const nc = res?.without_conversions;
   const seq = res?.sequence_risk;
   const shock = res?.shock;
+  const infl_res = res?.inflation;
 
   // Real ("today's dollars") view: discount each year's percentile at plan inflation.
   const infl = scenario?.projection?.general_inflation ?? 0.03;
@@ -163,6 +168,30 @@ export const MonteCarlo = ({ scenario, onResult }) => {
               )}
             </div>
 
+            <div className="rounded-lg border border-[#EBE8E0] p-3" data-testid="mc-inflation-card">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs flex items-center gap-1.5"><Flame className="h-3.5 w-3.5 text-[#C87941]" /> Stochastic inflation</Label>
+                <Switch checked={inflOn} onCheckedChange={setInflOn} data-testid="mc-inflation-toggle" />
+              </div>
+              {inflOn && (
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Mean %/yr</Label>
+                    <Input type="number" step={0.5} value={+(inflMean * 100).toFixed(1)} data-testid="mc-inflation-mean"
+                      onChange={(e) => setInflMean((parseFloat(e.target.value) || 0) / 100)} className="h-8 text-right bg-white" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Vol %</Label>
+                    <Input type="number" step={0.25} value={+(inflVol * 100).toFixed(2)} data-testid="mc-inflation-vol"
+                      onChange={(e) => setInflVol((parseFloat(e.target.value) || 0) / 100)} className="h-8 text-right bg-white" />
+                  </div>
+                </div>
+              )}
+              <p className="text-[10px] text-muted-foreground mt-2">
+                Applies a per-trial cumulative CPI multiplier to outflows (expenses + taxes). Off = deterministic inflation.
+              </p>
+            </div>
+
             <Button onClick={run} disabled={running} data-testid="mc-run"
               className="w-full gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
               {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
@@ -208,8 +237,8 @@ export const MonteCarlo = ({ scenario, onResult }) => {
             </Card>
           </div>
 
-          {/* Sequence-of-returns risk + optional shock */}
-          <div className={`grid grid-cols-1 ${shock ? "lg:grid-cols-2" : ""} gap-6`}>
+          {/* Sequence-of-returns risk + optional shock + optional inflation */}
+          <div className={`grid grid-cols-1 ${shock || infl_res ? "lg:grid-cols-2" : ""} gap-6`}>
             <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-seq-card">
               <div className="flex items-center gap-2 mb-1">
                 <Activity className="h-4 w-4 text-[#C87941]" />
@@ -238,6 +267,24 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                   <span className="font-bold text-[#C87941]" data-testid="mc-shock-success">{fmtPct(shock.success_with)}</span>.
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-2">Even under this shock, converting keeps you ahead: {fmtPct(shock.success_with)} vs {fmtPct(shock.success_without)} without conversions.</p>
+              </Card>
+            )}
+
+            {infl_res && (
+              <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-inflation-result">
+                <div className="flex items-center gap-2 mb-1">
+                  <Flame className="h-4 w-4 text-[#C87941]" />
+                  <h3 className="font-display text-base font-bold tracking-tight">Stochastic Inflation ({fmtPct(infl_res.mean)} mean · {fmtPct(infl_res.vol)} vol)</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Cumulative CPI is <span className="font-medium">expected</span> to reach{" "}
+                  <span className="font-bold">{(infl_res.cumulative.expected[infl_res.cumulative.expected.length - 1] * 100 - 100).toFixed(0)}%</span>{" "}
+                  by <span className="font-medium">{res.years[res.years.length - 1]}</span>. In the worst 10% of trials it lands at{" "}
+                  <span className="font-bold text-[#C87941]" data-testid="mc-infl-p90-cum">
+                    {(infl_res.cumulative.p90[infl_res.cumulative.p90.length - 1] * 100 - 100).toFixed(0)}%
+                  </span>{" "}(the P90 tail).
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-2">Higher realized inflation scales your outflows (expenses + taxes) per trial — the fan chart above already reflects this stress.</p>
               </Card>
             )}
           </div>

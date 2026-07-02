@@ -116,6 +116,10 @@ def _montecarlo_cases():
         "allstock_shock_seed7": run_montecarlo(
             cfg, n_trials=500, assets=stock_assets,
             shock={"enabled": True, "rate": -0.15, "years": 3}, seed=7),
+        # v2.1: stochastic inflation enabled — guards the new inflation-vol code path.
+        "inflation_vol_seed13": run_montecarlo(
+            cfg, n_trials=500, assets=base_assets,
+            inflation={"enabled": True, "mean": 0.03, "vol": 0.015}, seed=13),
     }
 
 

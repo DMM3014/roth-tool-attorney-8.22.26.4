@@ -187,7 +187,8 @@ const RothComplianceCard = ({ compliance }) => {
           <thead className="text-muted-foreground text-left">
             <tr className="border-b border-[#EBE8E0]">
               <th className="px-2 py-1">Year</th>
-              <th className="px-2">Client age</th>
+              <th className="px-2">Owner</th>
+              <th className="px-2">Owner age</th>
               <th className="px-2">Roth withdrawal</th>
               <th className="px-2">Within 5-yr clock</th>
               <th className="px-2">10% penalty</th>
@@ -196,9 +197,10 @@ const RothComplianceCard = ({ compliance }) => {
           </thead>
           <tbody>
             {warnings.slice(0, 10).map((w, i) => (
-              <tr key={`${w.year}-${i}`} className="border-b border-[#F3F1EC]" data-testid={`roth-warn-${i}`}>
+              <tr key={`${w.year}-${w.owner || i}-${i}`} className="border-b border-[#F3F1EC]" data-testid={`roth-warn-${i}`}>
                 <td className="px-2 py-1.5 font-medium">{w.year}</td>
-                <td className="px-2">{w.client_age}</td>
+                <td className="px-2">{w.owner || "—"}</td>
+                <td className="px-2">{w.owner_age ?? w.client_age}</td>
                 <td className="px-2">{fmtUSD(w.roth_withdrawn)}</td>
                 <td className="px-2">{fmtUSD(w.amount_within_5yr)}</td>
                 <td className="px-2 font-medium text-[#B84A4A]">{fmtUSD(w.penalty_10pct)}</td>
@@ -209,7 +211,7 @@ const RothComplianceCard = ({ compliance }) => {
         </table>
       </div>
       <p className="text-[10px] text-muted-foreground mt-2">
-        Approximation: per-conversion 5-year clock (oldest-first drawdown). Consult a CPA before executing.
+        Per-conversion 5-year clock tracked per owner (client vs spouse). Oldest-conversion-first drawdown. Consult a CPA before executing.
       </p>
     </Card>
   );

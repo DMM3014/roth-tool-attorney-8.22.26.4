@@ -897,54 +897,85 @@ def run_projection(cfg: dict) -> dict:
             _solve_year_conversion(ctx, bal, basis)
         total_tax = tax_res["total_burden"]
 
-        # 5-year / pre-59½ compliance tracking (per-conversion Roth ordering rules)
+        # 5-year / pre-59½ compliance tracking — PER-OWNER (client vs spouse):
+        # A conversion is attributed to the source-IRA's owner (their Roth clock).
+        # A Roth withdrawal is attributed to the source-Roth-account's owner (their age).
         client_age = _age(plan.client_dob, year)
         spouse_age = (_age(plan.spouse_dob, year) if plan.has_spouse else None)
         if conversion > 0:
-            conversions_ledger.append({"year": year, "amount": conversion, "remaining": conversion,
-                                       "client_age": client_age})
-        if roth_withdraw > 0:
-            # tap oldest conversions first (Roth ordering rules: contributions, then
-            # conversions by age, then earnings). We only track conversion buckets here.
-            rem = roth_withdraw
-            violating = 0.0
-            for lot in conversions_ledger:
-                if rem <= 0:
+            # Attribute per-source-IRA (drain client IRA first, then spouse — matches
+            # _apply_year_flows drain order after RMDs come out first).
+            rem_conv = conversion
+            for iid in plan.ira_ids:
+                if rem_conv <= 0:
                     break
-                if lot["remaining"] <= 0:
+                r = next((a["return"] for a in plan.accounts if a["id"] == iid), 0.0)
+                grown_after_rmd = max(0.0, bal[iid] * (1 + r) - rmd_by.get(iid, 0.0))
+                take = min(rem_conv, grown_after_rmd)
+                if take <= 0:
                     continue
-                take = min(rem, lot["remaining"])
-                lot["remaining"] -= take
-                rem -= take
-                lot_age = year - lot["year"]
-                # 5-year rule breach — a conversion tapped within 5 tax years incurs
-                # the 10% recapture penalty on the CONVERTED amount if owner < 59½.
-                if lot_age < 5 and client_age < 60:
-                    violating += take
-            if violating > 0:
-                penalty = round(violating * 0.10, 2)
-                roth_warnings.append({
-                    "year": year,
-                    "roth_withdrawn": round(roth_withdraw, 2),
-                    "amount_within_5yr": round(violating, 2),
-                    "client_age": client_age,
-                    "spouse_age": spouse_age,
-                    "penalty_10pct": penalty,
-                    "reason": ("5-year rule + pre-59½: 10% penalty on early conversion principal"
-                               if client_age < 60 else "5-year rule breach on conversion principal"),
+                src_owner = owner_map.get(iid, "Client")
+                owner_age_at_conv = client_age if src_owner == "Client" else (spouse_age or client_age)
+                conversions_ledger.append({
+                    "year": year, "owner": src_owner, "amount": round(take, 2),
+                    "remaining": round(take, 2), "owner_age_at_conversion": owner_age_at_conv,
                 })
-            elif client_age < 60 and roth_withdraw > 0:
-                # withdrawal from Roth by an owner under 59½ — earnings may be
-                # penalized (approximation; we conservatively flag).
-                roth_warnings.append({
-                    "year": year,
-                    "roth_withdrawn": round(roth_withdraw, 2),
-                    "amount_within_5yr": 0.0,
-                    "client_age": client_age,
-                    "spouse_age": spouse_age,
-                    "penalty_10pct": round(roth_withdraw * 0.10, 2),
-                    "reason": "Pre-59½ Roth withdrawal — earnings portion subject to 10% penalty",
-                })
+                rem_conv -= take
+        if roth_withdraw > 0:
+            # Attribute per-Roth-account withdrawal (mirrors _apply_year_flows drain
+            # order: acct["roth"] list — typically ROTC (client) before ROTS (spouse)).
+            rem_wd_total = roth_withdraw
+            per_roth_wd = {}
+            for rid in plan.roth_ids:
+                if rem_wd_total <= 0:
+                    break
+                r = next((a["return"] for a in plan.accounts if a["id"] == rid), 0.0)
+                grown = bal[rid] * (1 + r)
+                take = min(rem_wd_total, grown)
+                if take > 0:
+                    per_roth_wd[rid] = take
+                    rem_wd_total -= take
+            for rid, wd_from_rid in per_roth_wd.items():
+                rid_owner = owner_map.get(rid, "Client")
+                rid_owner_age = client_age if rid_owner == "Client" else (spouse_age if spouse_age is not None else 200)
+                # Consume the ledger entries owned by rid_owner, oldest-first.
+                rem = wd_from_rid
+                violating = 0.0
+                for lot in conversions_ledger:
+                    if rem <= 0:
+                        break
+                    if lot.get("owner") != rid_owner or lot["remaining"] <= 0:
+                        continue
+                    take = min(rem, lot["remaining"])
+                    lot["remaining"] -= take
+                    rem -= take
+                    lot_age = year - lot["year"]
+                    if lot_age < 5 and rid_owner_age < 60:
+                        violating += take
+                if violating > 0:
+                    roth_warnings.append({
+                        "year": year, "owner": rid_owner, "roth_account": rid,
+                        "roth_withdrawn": round(wd_from_rid, 2),
+                        "amount_within_5yr": round(violating, 2),
+                        "owner_age": rid_owner_age,
+                        "client_age": client_age, "spouse_age": spouse_age,
+                        "penalty_10pct": round(violating * 0.10, 2),
+                        "reason": ("5-year rule + pre-59½: 10% penalty on early conversion principal"
+                                   if rid_owner_age < 60 else "5-year rule breach on conversion principal"),
+                    })
+                elif rid_owner_age < 60:
+                    # Pre-59½ withdrawal even without a 5-yr breach — earnings portion
+                    # is conservatively flagged (approximation; principal is always
+                    # tax + penalty free after 5 yrs).
+                    roth_warnings.append({
+                        "year": year, "owner": rid_owner, "roth_account": rid,
+                        "roth_withdrawn": round(wd_from_rid, 2),
+                        "amount_within_5yr": 0.0,
+                        "owner_age": rid_owner_age,
+                        "client_age": client_age, "spouse_age": spouse_age,
+                        "penalty_10pct": round(wd_from_rid * 0.10, 2),
+                        "reason": "Pre-59½ Roth withdrawal — earnings portion subject to 10% penalty",
+                    })
 
         magi_history[year] = tax_res["magi"]  # record for future-year IRMAA lookback
 

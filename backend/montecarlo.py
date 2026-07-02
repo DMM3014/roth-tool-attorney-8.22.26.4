@@ -1,4 +1,5 @@
-"""Monte Carlo v2 — locks the deterministic conversion schedule and randomizes returns.
+"""Monte Carlo v2.1 — locks the deterministic conversion schedule and randomizes returns
++ (v2.1) stochastic inflation on the spending side.
 
 v2 adds:
   * per-asset-class volatility via a GLOBAL stocks/bonds/cash allocation (each class has its own
@@ -8,10 +9,21 @@ v2 adds:
     first N years) reported as a side stress-test,
   * an automatic sequence-of-returns risk report (outcomes among the worst 5% of early-return paths).
 
-Methodology (aggregate liquid-wealth recursion, unchanged):
-    L_{t+1} = L_t * g_t + (external_income_t - spending_t - taxes_t)
-where g_t is the random portfolio gross-return factor and the cashflow terms are taken from the
-deterministic projection (conversion strategy, taxes, RMDs, SS and IRMAA are locked).
+v2.1 adds:
+  * OPTIONAL stochastic inflation: draw per-trial per-year inflation π_t ~ LogNormal, then apply a
+    cumulative inflation multiplier M[t] = ∏(1+π_s) / (1+μ_det)^t to each year's OUTFLOWS (expenses
+    + taxes). Incomes are left at deterministic levels — this models the client-facing risk that
+    "spending runs hotter than expected" while nominal wages/pensions don't fully keep up. SS is
+    approximated as deterministic (it's inflation-indexed in reality, but the deterministic run
+    already grew it at plan inflation, so this is conservative in the right direction).
+  * Reports cumulative-inflation percentiles (p10/p50/p90) over the horizon, and the ratio of
+    inflation-shocked success rate to the base success rate.
+
+Methodology (aggregate liquid-wealth recursion):
+    L_{t+1} = L_t * g_t + (external_income_t - outflow_t * M_t)
+where g_t is the random portfolio gross-return factor, M_t is the cumulative inflation multiplier
+(1.0 when inflation is deterministic), and the cashflow terms are taken from the deterministic
+projection (conversion strategy, taxes, RMDs, SS and IRMAA are locked).
 "Success" = the liquid portfolio never depletes through the second death.
 """
 
@@ -36,10 +48,12 @@ def _liquid_start(config):
                      for a in config["accounts"] if a.get("tax_type") in LIQUID_TAX_TYPES))
 
 
-def _flows(rows):
+def _flows_split(rows):
+    """Split each year's deterministic cashflow into (external_income, outflow) so inflation
+    volatility can rescale the outflow side per-trial without touching income."""
     ext = np.array([(r["cashflow"]["wages_pension"] + r["cashflow"]["gross_ss"]) for r in rows], dtype=float)
     out = np.array([(r["cashflow"]["expenses"] + r["total_tax"]) for r in rows], dtype=float)
-    return ext - out
+    return ext, out
 
 
 def _portfolio_factors(assets, n, T, rng):
@@ -58,13 +72,47 @@ def _portfolio_factors(assets, n, T, rng):
     return g, weights, port_mean, port_vol
 
 
-def _simulate(liquid0, net_flow, g):
+def _inflation_factors(inflation, n, T, rng, det_mean):
+    """Return (multiplier[n,T], mean_used, vol_used, cum_summary).
+
+    Multiplier at year t = ∏_{s≤t}(1+π_s) / (1+det_mean)^(t+1)   (t is 0-indexed here).
+    So the LHS scales the deterministic (already-inflated) outflow to what it WOULD have been
+    if realized inflation ran at π_s instead of det_mean.  When inflation is None or vol<=0
+    the multiplier is 1.0 everywhere (backward-compatible with v2).
+    """
+    if not inflation or not inflation.get("enabled", True) or float(inflation.get("vol", 0.0)) <= 0.0:
+        return np.ones((n, T), dtype=float), None, None, None
+    mean = float(inflation.get("mean", det_mean))
+    vol = float(inflation.get("vol", 0.015))
+    # lognormal draws of (1 + π_t): mean of ln(1+π) ≈ mean - 0.5*vol^2
+    mu_ln = np.log(1.0 + mean) - 0.5 * vol * vol
+    draws = np.exp(rng.normal(mu_ln, vol, size=(n, T)))     # (1 + π_t) per trial per year
+    cum_actual = np.cumprod(draws, axis=1)                  # ∏(1+π)
+    cum_expected = np.array([(1.0 + det_mean) ** (t + 1) for t in range(T)])
+    m = cum_actual / cum_expected                            # relative multiplier
+    # summary stats for the UI (cumulative realized inflation percentiles)
+    cum_pct = np.percentile(cum_actual, [10, 50, 90], axis=0)
+    cum_summary = {
+        "p10": [round(float(v), 4) for v in cum_pct[0]],
+        "p50": [round(float(v), 4) for v in cum_pct[1]],
+        "p90": [round(float(v), 4) for v in cum_pct[2]],
+        "expected": [round(float(v), 4) for v in cum_expected],
+    }
+    return m, mean, vol, cum_summary
+
+
+def _simulate(liquid0, ext, out, g, infl_mult):
+    """Advance the aggregate liquid-wealth recursion N trials × T years.
+
+    Outflow is scaled per-trial per-year by `infl_mult` (1.0 = deterministic inflation only).
+    """
     n, T = g.shape
     L = np.full(n, liquid0, dtype=float)
     paths = np.empty((n, T), dtype=float)
     ever_dep = np.zeros(n, dtype=bool)
     for t in range(T):
-        L = L * g[:, t] + net_flow[t]
+        net_flow = ext[t] - out[t] * infl_mult[:, t]
+        L = L * g[:, t] + net_flow
         ever_dep |= (L <= 0.0)
         L = np.where(ever_dep, 0.0, L)
         paths[:, t] = L
@@ -121,14 +169,14 @@ def _sequence_risk(g, paths_w, dep_w, T):
     }
 
 
-def _shock_run(shock, g, liquid0, flow_w, flow_n, T, base_success_with):
+def _shock_run(shock, g, liquid0, ext_w, out_w, ext_n, out_n, infl_mult, T, base_success_with):
     """Optional early bear-market stress: force a fixed negative return for the first N years."""
     rate = float(shock.get("rate", -0.15))
     yrs = int(max(1, min(shock.get("years", 2), T)))
     g_shock = g.copy()
     g_shock[:, :yrs] = 1.0 + rate
-    sp_w, sd_w = _simulate(liquid0, flow_w, g_shock)
-    sp_n, sd_n = _simulate(liquid0, flow_n, g_shock)
+    sp_w, sd_w = _simulate(liquid0, ext_w, out_w, g_shock, infl_mult)
+    sp_n, sd_n = _simulate(liquid0, ext_n, out_n, g_shock, infl_mult)
     return {
         "rate": round(rate, 4),
         "years": yrs,
@@ -139,7 +187,7 @@ def _shock_run(shock, g, liquid0, flow_w, flow_n, T, base_success_with):
     }
 
 
-def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None):
+def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inflation=None):
     n = int(max(50, min(n_trials, 2000)))
     assets = assets or DEFAULT_ASSETS
 
@@ -149,13 +197,17 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None):
     T = len(rows_w)
 
     liquid0 = _liquid_start(config)
-    flow_w, flow_n = _flows(rows_w), _flows(rows_n)
+    ext_w, out_w = _flows_split(rows_w)
+    ext_n, out_n = _flows_split(rows_n)
 
     rng = np.random.default_rng(seed)
     g, weights, port_mean, port_vol = _portfolio_factors(assets, n, T, rng)
 
-    paths_w, dep_w = _simulate(liquid0, flow_w, g)
-    paths_n, dep_n = _simulate(liquid0, flow_n, g)
+    det_infl = float(config.get("projection", {}).get("general_inflation", 0.03))
+    infl_mult, infl_mean, infl_vol, cum_summary = _inflation_factors(inflation, n, T, rng, det_infl)
+
+    paths_w, dep_w = _simulate(liquid0, ext_w, out_w, g, infl_mult)
+    paths_n, dep_n = _simulate(liquid0, ext_n, out_n, g, infl_mult)
 
     result = {
         "years": years,
@@ -169,10 +221,20 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None):
         "without_conversions": _summarize(paths_n, dep_n),
         "sequence_risk": _sequence_risk(g, paths_w, dep_w, T),
         "shock": None,
+        "inflation": None,
     }
 
+    if infl_vol is not None:
+        result["inflation"] = {
+            "enabled": True,
+            "mean": round(infl_mean, 4),
+            "vol": round(infl_vol, 4),
+            "deterministic_mean": round(det_infl, 4),
+            "cumulative": cum_summary,
+        }
+
     if shock and shock.get("enabled"):
-        result["shock"] = _shock_run(shock, g, liquid0, flow_w, flow_n, T,
+        result["shock"] = _shock_run(shock, g, liquid0, ext_w, out_w, ext_n, out_n, infl_mult, T,
                                      result["with_conversions"]["success"])
 
     return result

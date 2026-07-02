@@ -88,11 +88,18 @@ class ShockSpec(BaseModel):
     years: int = 2
 
 
+class InflationSpec(BaseModel):
+    enabled: bool = True
+    mean: float = 0.03
+    vol: float = 0.015     # 1.5% inflation vol ≈ post-1990 US CPI stdev
+
+
 class MonteCarloRequest(BaseModel):
     config: Dict[str, Any]
     n_trials: int = 500
     assets: Optional[Dict[str, AssetClass]] = None
     shock: Optional[ShockSpec] = None
+    inflation: Optional[InflationSpec] = None
     seed: Optional[int] = None
 
 
@@ -200,10 +207,11 @@ async def start_montecarlo(req: MonteCarloRequest):
 
     assets = {k: v.model_dump() for k, v in req.assets.items()} if req.assets else None
     shock = req.shock.model_dump() if req.shock else None
+    inflation = req.inflation.model_dump() if req.inflation else None
 
     async def worker():
         try:
-            res = await asyncio.to_thread(run_montecarlo, req.config, req.n_trials, assets, shock, req.seed)
+            res = await asyncio.to_thread(run_montecarlo, req.config, req.n_trials, assets, shock, req.seed, inflation)
             await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "done", "result": res}})
         except Exception as e:
             logging.exception("montecarlo failed")

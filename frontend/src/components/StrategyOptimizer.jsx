@@ -54,6 +54,19 @@ export const StrategyOptimizer = ({ scenario, setScenario }) => {
     return [...result.ranked].sort((a, b) => (b[sortKey] || 0) - (a[sortKey] || 0));
   }, [result, sortKey]);
 
+  // Detect tie clusters at the top of the ranking — happens when several bracket
+  // strategies converge at the RMD wall (identical after-tax legacy).
+  const topTieCount = useMemo(() => {
+    if (!sortedResults.length) return 0;
+    const top = sortedResults[0][sortKey] || 0;
+    let n = 0;
+    for (const r of sortedResults) {
+      if (Math.abs((r[sortKey] || 0) - top) < 1.0) n++;
+      else break;
+    }
+    return n;
+  }, [sortedResults, sortKey]);
+
   const applyWinner = () => {
     if (!result?.best) return;
     const b = result.best;
@@ -188,6 +201,13 @@ export const StrategyOptimizer = ({ scenario, setScenario }) => {
                 {result.results.length} strategies evaluated · sorted by <span className="font-medium">
                   {sortKey === "after_tax_estate" ? "nominal legacy (+horizon)" : "PV legacy (today's $)"}
                 </span>
+                {topTieCount > 1 && (
+                  <span className="ml-2 text-[#C87941]" data-testid="strategy-tie-note">
+                    · <span className="font-medium">Ties broken by lifetime tax:</span> the top {topTieCount} rows have identical
+                    {sortKey === "after_tax_estate_pv" ? " PV" : ""} legacy (Fill-32%+ variants converge once conversions hit
+                    the RMD wall), so we rank by <span className="font-medium">lowest lifetime tax</span> among them.
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex items-center gap-2">
