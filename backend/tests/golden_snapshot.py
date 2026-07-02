@@ -18,6 +18,8 @@ from defaults import DEFAULT_SCENARIO
 from tax_engine import compute_year_tax, optimize_conversion
 from projection import run_projection, sweep_brackets
 from montecarlo import run_montecarlo
+from strategy_optimizer import strategy_sweep
+from ss_optimizer import sweep_ss_claims
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GOLDEN = os.path.join(HERE, "_golden.json")
@@ -117,12 +119,31 @@ def _montecarlo_cases():
     }
 
 
+def _strategy_cases():
+    """Small fixed grid so runs stay fast (~15s) but real coverage exists."""
+    cfg = copy.deepcopy(DEFAULT_SCENARIO)
+    return {
+        "small_grid": strategy_sweep(
+            cfg, start_years=[2026, 2030], stop_years=[2035, 2050],
+            brackets=[0.22, 0.24, 0.32], include_phased=True),
+    }
+
+
+def _ss_cases():
+    cfg = copy.deepcopy(DEFAULT_SCENARIO)
+    return {
+        "62_67_70": sweep_ss_claims(cfg, [62, 67, 70]),
+    }
+
+
 def build():
     return {
         "year_tax": _year_tax_cases(),
         "optimize": _optimize_cases(),
         "projection": _projection_cases(),
         "montecarlo": _montecarlo_cases(),
+        "strategy": _strategy_cases(),
+        "ss": _ss_cases(),
     }
 
 
@@ -143,7 +164,7 @@ def main():
     # find first differing region for a helpful message
     base_obj = json.loads(baseline)
     cur_obj = json.loads(payload)
-    for k in ("year_tax", "optimize", "projection", "montecarlo"):
+    for k in ("year_tax", "optimize", "projection", "montecarlo", "strategy", "ss"):
         if json.dumps(base_obj.get(k), sort_keys=True, default=str) != json.dumps(cur_obj.get(k), sort_keys=True, default=str):
             print(f"GOLDEN MISMATCH in section: {k}")
     sys.exit(1)

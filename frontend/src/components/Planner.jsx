@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText } from "lucide-react";
+import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { fetchDefaults } from "@/lib/api";
 import { Optimizer } from "@/components/Optimizer";
@@ -12,6 +12,8 @@ import { Analytics } from "@/components/Analytics";
 import { MonteCarlo } from "@/components/MonteCarlo";
 import { Concepts } from "@/components/Concepts";
 import { WhitePaper } from "@/components/WhitePaper";
+import { StrategyOptimizer } from "@/components/StrategyOptimizer";
+import { SSOptimizer } from "@/components/SSOptimizer";
 
 export const Planner = () => {
   const [scenario, setScenario] = useState(null);
@@ -64,6 +66,12 @@ export const Planner = () => {
             <TabsTrigger value="projection" data-testid="tab-projection" className="gap-2 data-[state=active]:bg-white">
               <TrendingUp className="h-4 w-4" /> Multi-Year Projection
             </TabsTrigger>
+            <TabsTrigger value="strategy" data-testid="tab-strategy" className="gap-2 data-[state=active]:bg-white">
+              <Trophy className="h-4 w-4" /> Strategy Optimizer
+            </TabsTrigger>
+            <TabsTrigger value="ssopt" data-testid="tab-ssopt" className="gap-2 data-[state=active]:bg-white">
+              <CalendarClock className="h-4 w-4" /> SS Optimizer
+            </TabsTrigger>
             <TabsTrigger value="cashflow" data-testid="tab-cashflow" className="gap-2 data-[state=active]:bg-white">
               <ListTree className="h-4 w-4" /> Detail / Cashflow
             </TabsTrigger>
@@ -95,6 +103,12 @@ export const Planner = () => {
           </TabsContent>
           <TabsContent value="projection">
             <Projection scenario={scenario} setScenario={setScenario} mcResult={mcResult} />
+          </TabsContent>
+          <TabsContent value="strategy">
+            <StrategyOptimizer scenario={scenario} setScenario={setScenario} />
+          </TabsContent>
+          <TabsContent value="ssopt">
+            <SSOptimizer scenario={scenario} setScenario={setScenario} />
           </TabsContent>
           <TabsContent value="cashflow">
             <DetailCashflow scenario={scenario} />

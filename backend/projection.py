@@ -519,9 +519,11 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
     return conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw
 
 
-def _aggregate_results(cfg: dict, rows: list) -> dict:
-    """Roll year rows up into summary totals + the legacy block."""
+def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
+                       ledger: list | None = None) -> dict:
+    """Roll year rows up into summary totals + the legacy block + Roth compliance."""
     final = rows[-1] if rows else {}
+    total_early_penalty = round(sum(w.get("penalty_10pct", 0.0) for w in (warnings or [])), 2)
     return {
         "rows": rows,
         "summary": {
@@ -533,8 +535,14 @@ def _aggregate_results(cfg: dict, rows: list) -> dict:
             "ending_traditional": final.get("traditional", 0),
             "ending_taxable": final.get("taxable", 0),
             "ending_real_estate": final.get("real_estate", 0),
+            "roth_early_penalty_total": total_early_penalty,
         },
         "legacy": _compute_legacy(cfg, final),
+        "roth_compliance": {
+            "warnings": warnings or [],
+            "conversions_ledger": ledger or [],
+            "total_early_penalty": total_early_penalty,
+        },
     }
 
 
@@ -562,6 +570,7 @@ class Plan:
     max_annual: float
     stop_at_rmd: bool
     irmaa_cap: Any
+    year_targets: dict     # optional {year: bracket_rate} override for phased schedules
     streams: list
     expenses: list
     accounts: list
@@ -617,6 +626,7 @@ def _parse_plan(cfg: dict) -> Plan:
         max_annual=roth.get("max_annual", 0.0),
         stop_at_rmd=roth.get("stop_at_rmd_age", True),
         irmaa_cap=irmaa_cap,
+        year_targets=roth.get("year_targets") or {},
         streams=cfg["income_streams"], expenses=cfg["expenses"], accounts=accounts,
         div_yield=cfg.get("dividend_yield", 0.02),
         cash_rate=next((a["return"] for a in accounts if a["tax_type"] == "Cash"), 0.03),
@@ -812,6 +822,16 @@ def run_projection(cfg: dict) -> dict:
     magi_history = {}  # year -> MAGI, for the IRMAA 2-year lookback
     client_alive_prev, spouse_alive_prev = True, plan.has_spouse
     rows = []
+    # 5-year/pre-59½ compliance tracking — per-conversion basis (Roth ordering rules):
+    #   (1) each conversion has its own 5-yr clock (10% penalty on conversion principal
+    #       tapped early),
+    #   (2) earnings withdrawn before the OWNER's account-first-contribution 5yr clock
+    #       AND before age 59½ are taxable + 10% penalty.
+    # We approximate at the household level: any Roth withdrawal that would tap a
+    # conversion less than 5 years old, OR occur before the primary owner turns 59½,
+    # generates a `roth_early_warning` row.
+    conversions_ledger = []  # list of {year, amount, remaining, owner_age_at_conversion}
+    roth_warnings = []
 
     for year in range(plan.start_year, plan.end_year + 1):
         yr_off = year - plan.start_year
@@ -845,6 +865,10 @@ def run_projection(cfg: dict) -> dict:
         in_window = plan.roth_enabled and plan.conv_start <= year <= plan.conv_end and ira_balance > 0
         if plan.stop_at_rmd and _age(plan.client_dob, year) >= rmd_start_age(plan.client_dob):
             in_window = False
+        # per-year target bracket (phased schedules override the flat target_rate)
+        year_target = plan.year_targets.get(year, plan.target_rate)
+        if year_target is not None and year_target <= 0:
+            in_window = False       # a 0 bracket disables conversions that year
         irmaa_index_yplus2 = (1 + plan.irmaa_index_rate) ** (yr_off + IRMAA_LOOKBACK_YEARS)
 
         # --- expenses ---
@@ -862,7 +886,7 @@ def run_projection(cfg: dict) -> dict:
             "state_rate": plan.state_rate, "include_irmaa": plan.include_irmaa,
         }
         ctx = _SolveCtx(
-            tax_base=tax_base, in_window=in_window, target_rate=plan.target_rate,
+            tax_base=tax_base, in_window=in_window, target_rate=year_target,
             max_annual=plan.max_annual, irmaa_cap=plan.irmaa_cap, mfj=status.mfj,
             irmaa_index_yplus2=irmaa_index_yplus2,
             irmaa_magi=magi_history.get(year - IRMAA_LOOKBACK_YEARS),  # 2-yr lookback
@@ -871,6 +895,55 @@ def run_projection(cfg: dict) -> dict:
         conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw = \
             _solve_year_conversion(ctx, bal, basis)
         total_tax = tax_res["total_burden"]
+
+        # 5-year / pre-59½ compliance tracking (per-conversion Roth ordering rules)
+        client_age = _age(plan.client_dob, year)
+        spouse_age = (_age(plan.spouse_dob, year) if plan.has_spouse else None)
+        if conversion > 0:
+            conversions_ledger.append({"year": year, "amount": conversion, "remaining": conversion,
+                                       "client_age": client_age})
+        if roth_withdraw > 0:
+            # tap oldest conversions first (Roth ordering rules: contributions, then
+            # conversions by age, then earnings). We only track conversion buckets here.
+            rem = roth_withdraw
+            violating = 0.0
+            for lot in conversions_ledger:
+                if rem <= 0:
+                    break
+                if lot["remaining"] <= 0:
+                    continue
+                take = min(rem, lot["remaining"])
+                lot["remaining"] -= take
+                rem -= take
+                lot_age = year - lot["year"]
+                # 5-year rule breach — a conversion tapped within 5 tax years incurs
+                # the 10% recapture penalty on the CONVERTED amount if owner < 59½.
+                if lot_age < 5 and client_age < 60:
+                    violating += take
+            if violating > 0:
+                penalty = round(violating * 0.10, 2)
+                roth_warnings.append({
+                    "year": year,
+                    "roth_withdrawn": round(roth_withdraw, 2),
+                    "amount_within_5yr": round(violating, 2),
+                    "client_age": client_age,
+                    "spouse_age": spouse_age,
+                    "penalty_10pct": penalty,
+                    "reason": ("5-year rule + pre-59½: 10% penalty on early conversion principal"
+                               if client_age < 60 else "5-year rule breach on conversion principal"),
+                })
+            elif client_age < 60 and roth_withdraw > 0:
+                # withdrawal from Roth by an owner under 59½ — earnings may be
+                # penalized (approximation; we conservatively flag).
+                roth_warnings.append({
+                    "year": year,
+                    "roth_withdrawn": round(roth_withdraw, 2),
+                    "amount_within_5yr": 0.0,
+                    "client_age": client_age,
+                    "spouse_age": spouse_age,
+                    "penalty_10pct": round(roth_withdraw * 0.10, 2),
+                    "reason": "Pre-59½ Roth withdrawal — earnings portion subject to 10% penalty",
+                })
 
         magi_history[year] = tax_res["magi"]  # record for future-year IRMAA lookback
 
@@ -897,7 +970,7 @@ def run_projection(cfg: dict) -> dict:
 
         client_alive_prev, spouse_alive_prev = status.client_alive, status.spouse_alive
 
-    return _aggregate_results(cfg, rows)
+    return _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger)
 
 
 def sweep_brackets(cfg: dict) -> dict:

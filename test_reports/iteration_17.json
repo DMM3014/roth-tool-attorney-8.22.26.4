@@ -1,0 +1,75 @@
+{
+  "summary": "Phase-17 backend + frontend validation on the public preview URL. Backend HTTP endpoints /api/strategy-sweep and /api/ss-optimizer are fully working per spec (6/7 new HTTP tests pass). Backend module-level pytest still 13/13 green. Frontend: two new tabs (Strategy Optimizer, SS Optimizer) render, execute, and Apply-winner correctly. Two DEFECTS found: (1) FRONTEND — RothComplianceCard component is defined in /app/frontend/src/components/Projection.jsx (line 153) but is NEVER rendered/invoked in the JSX tree — neither `roth-compliance-clear` nor `roth-compliance-warning` ever appears on the Projection tab, blocking a review-request bullet. (2) BACKEND — POST /api/projection with `roth.year_targets` sent as a JSON object (keys must be strings over HTTP) is silently ignored — projection.py line 869 does `plan.year_targets.get(year, plan.target_rate)` with int `year`, missing the string keys, so total_roth_converted matches the flat run instead of the phased run.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/projection",
+        "issue": "roth.year_targets is ignored when submitted via HTTP because JSON forces string keys ('2026') but projection.py:869 looks up with int year (year_targets.get(year, ...)). Reproduces: send scenario with roth.year_targets={'2026':0.32,...} — response's total_roth_converted equals the flat-target result. Same test passes in-process because Python test uses int keys directly. Fix: normalize keys in projection._parse_plan (e.g. year_targets={int(k):v for k,v in (roth.get('year_targets') or {}).items()}).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Projection",
+        "issue": "RothComplianceCard component defined at Projection.jsx:153 but is never invoked in the JSX render tree. `data-testid='roth-compliance-clear'` never mounts on the Multi-Year Projection tab on the default V9 scenario (waited 8s post-load, projection charts loaded, but neither compliance card testid exists). Backend response includes roth_compliance correctly — this is a pure wiring miss. Fix: render <RothComplianceCard compliance={result.roth_compliance} /> inside Projection.jsx alongside the summary cards.",
+        "selector": "[data-testid='roth-compliance-clear']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_checklist": {
+    "tabs_present_and_ordered": "PASS — tab-strategy and tab-ssopt render right after tab-projection. All 12 tabs visible and clickable.",
+    "backend_strategy_sweep_default_shape": "PASS — /api/strategy-sweep returns 200 with ranked/results/best/baseline/grid; every row has after_tax_estate and after_tax_estate_pv; PV <= nominal; ranked[0] equals best.",
+    "backend_strategy_sweep_phased": "PASS — include_phased:true yields ≥1 row with kind='phased' and segments array (seen row 8 = 'Fill 32% pre-SS (2026-2027), 24% after').",
+    "backend_strategy_sweep_beats_baseline": "PASS — with start_years:[2026], stop_years:[2062], brackets:[0.22,0.32] best.after_tax_estate > baseline.after_tax_estate.",
+    "backend_ss_optimizer_default": "PASS — /api/ss-optimizer returns baseline/ranked/fra_amounts/fra_ages; fra_amounts.Client≈4152 and fra_amounts.Spouse≈4152; ranked strictly descending by after_tax_estate.",
+    "backend_ss_optimizer_ages_grid": "PASS — ages:[62,70] returns exactly 4 combos each with client_age/spouse_age fields.",
+    "backend_projection_roth_compliance_clean": "PASS — roth_compliance={warnings:[], total_early_penalty:0, conversions_ledger:[...]}, summary.roth_early_penalty_total=0.",
+    "backend_projection_math_unchanged": "PASS — lifetime_taxes=7,765,487.89 and ending_net_worth=81,426,835.12 match golden.",
+    "backend_projection_year_targets_phased": "FAIL — via HTTP API year_targets is silently ignored (see backend_issues.critical). In-process pytest test_year_targets_override_flat_target PASSES because it uses int keys directly.",
+    "frontend_strategy_tab_controls": "PASS — strategy-controls, strategy-irmaa-cap, strategy-max-annual, strategy-include-phased, strategy-run, strategy-empty all present.",
+    "frontend_strategy_run_produces_results": "PASS — clicking strategy-run yields strategy-winner + strategy-results table with 270 rows (well over the 10-row minimum); first row visually highlighted; header shows 'Best Strategy: Fill 32% · 2026-2042' with legacy $141,901,362, PV $36,431,263.",
+    "frontend_strategy_sort_toggles_render": "PASS with caveat — strategy-sort-nominal / strategy-sort-pv buttons exist and toggle the 'sorted by' label, but the top-10 rows share identical nominal AND PV values ($141,901,362 / $36,431,263 — all Fill 32% variants converge at the RMD wall) so no visible reordering in the visible viewport. Not a bug, expected tie-block behavior with stable sort.",
+    "frontend_strategy_apply_mutates_scenario": "PASS — clicking strategy-apply shows confirmation toast and mutating projection tab reflects new bracket. Verified via SS test where after apply the plan's After-tax legacy updated to $142,498,284.",
+    "frontend_ss_optimizer_tab": "PASS — ss-controls, ss-empty, ss-run render; clicking ss-run yields ss-winner + ss-results (16 rows = 4×4 grid) descending by legacy ($6,651,970 > $6,630,341 > $6,606,440); ss-fra-amounts shows Client $4,152 and Spouse $4,152.",
+    "frontend_ss_apply_updates_streams": "PASS — clicking ss-apply shows 'Applied: Client 62, Spouse 62 · After-tax legacy $142,498,284' toast; navigating to Plan Inputs shows updated SS stream start dates (Client SS 01/01/2027, Spouse SS 01/01/2028) matching the winning claim ages.",
+    "frontend_roth_compliance_card": "FAIL — data-testid='roth-compliance-clear' NEVER mounts on the Projection tab (waited 8s on fresh load; projection charts rendered fine; both roth-compliance-clear and roth-compliance-warning absent). Component is defined but not invoked.",
+    "cross_tab_regression": "PASS — all 12 tabs (optimizer, projection, strategy, ssopt, cashflow, analytics, concepts, whitepaper, montecarlo, inputs, scenarios, compare) load with non-empty body (1039-16524 chars), 0 console errors, 0 page errors."
+  },
+  "console_and_page_errors": {"console_errors": 0, "page_errors": 0},
+  "test_report_links": [
+    "/app/backend/tests/test_phase17_http_endpoints.py",
+    "/app/backend/tests/test_phase17_strategy_ss_compliance.py",
+    "/app/test_reports/pytest/pytest_phase17.xml",
+    "/app/test_reports/pytest/pytest_phase17_http.xml"
+  ],
+  "action_items": [
+    "FRONTEND: In /app/frontend/src/components/Projection.jsx, invoke <RothComplianceCard compliance={result.roth_compliance} /> inside the JSX render tree — it is currently only defined and never mounted. This blocks the 'roth-compliance-clear (green) on default V9 scenario' review bullet.",
+    "BACKEND: Fix /app/backend/projection.py:_parse_plan (~line 629) to normalize year_targets keys to int at parse time — e.g. `year_targets={int(k): v for k, v in (roth.get('year_targets') or {}).items()}`. Currently JSON string keys silently no-op because line 869 uses `plan.year_targets.get(year, plan.target_rate)` with an int year."
+  ],
+  "critical_code_review_comments": [
+    "server.py:99-107 StrategySweepRequest — schema matches frontend api.js payload; irmaa_cap is Optional[int] which is correct for the 'No cap' dropdown value=None.",
+    "server.py:109-111 SsOptimizerRequest — ages: Optional[List[int]] correctly defaults to full [62,65,67,70] sweep inside sweep_ss_claims.",
+    "projection.py:869 — plan.year_targets.get(year, plan.target_rate): when year_targets originates from JSON its keys are strings while `year` is int; the lookup silently falls back. Add key normalization in _parse_plan for HTTP safety.",
+    "Projection.jsx:153-180 — RothComplianceCard is well-written (green clean-state + red warnings table with per-conversion 5-year clock hints) but the parent component never mounts it. Verified with `grep -c RothComplianceCard Projection.jsx` returning 1 (only the declaration). Zero JSX usages.",
+    "StrategyOptimizer.jsx — sort toggle correctly re-sorts the underlying array; visible top-10 rows tie on nominal/PV for the default scenario because Fill-32% converges at the RMD wall for many stop_years. Not a bug, but consider showing a small 'ties broken by lifetime tax' note in the UI header."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase17_http_endpoints.py (NEW — 7 HTTP-level tests using REACT_APP_BACKEND_URL, 6 pass, 1 documents the year_targets bug)"
+  ],
+  "success_rate": {
+    "backend": "94% (18/19 including 13 legacy + 6/7 new HTTP tests). The 1 HTTP failure documents a real key-type bug in JSON deserialization of roth.year_targets.",
+    "frontend": "88% (14/16 review-checklist items PASS; RothComplianceCard rendering FAIL blocks one bullet; sort visual reorder caveat is expected-behavior only)."
+  },
+  "test_credentials": "n/a — no auth in the app",
+  "seed_data_creation": "None — all interactions in-memory; strategy-apply and ss-apply mutations reverted on next fresh load.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Public preview: https://roth-retirement-tool.preview.emergentagent.com. Two open defects logged in action_items. Both new sweep endpoints take ~10-15s to complete on the default 37-year plan (frontend timeouts of 90s are ample). Key testids confirmed live: tab-strategy, tab-ssopt, strategy-{controls,irmaa-cap,max-annual,include-phased,run,winner,results,sort-nominal,sort-pv,apply,empty}, ss-{controls,run,winner,results,fra-amounts,apply,empty}. Missing: roth-compliance-{clear,warning} (defined but not mounted). Backend request payloads use `{config: scenario, ...}` NOT `{scenario: ...}`. To repro the year_targets bug via curl: POST /api/projection with body {config: <DEFAULT_SCENARIO with roth.year_targets={'2026':0.32,'2027':0.32,'2028':0.24,'2029':0.24}>} — total_roth_converted returns 3,890,426.83 (identical to flat 0.24 run) instead of the phased result.",
+  "rca of the issue": "Defect #1 (RothComplianceCard): grep confirms only the declaration exists; Projection.jsx parent JSX omits the <RothComplianceCard/> element. Simple wiring miss, one-line fix. Defect #2 (year_targets ignored via HTTP): JSON.parse produces string-keyed object; projection.py line 869 uses `.get(year, ...)` where `year` is int → miss → falls back to plan.target_rate. Fix at parse boundary: `year_targets = {int(k): float(v) for k, v in (roth.get('year_targets') or {}).items()}` in _parse_plan (~line 629)."
+}

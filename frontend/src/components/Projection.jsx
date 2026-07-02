@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Wallet, Landmark, Receipt, Sparkles, Dices } from "lucide-react";
+import { Wallet, Landmark, Receipt, Sparkles, Dices, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { runProjection, runSweep, fmtUSD } from "@/lib/api";
 import { AIInsights } from "@/components/AIInsights";
@@ -149,3 +149,63 @@ const SummaryCard = ({ icon: Icon, label, value, sub, accent, testid }) => (
     <p className="text-xs text-muted-foreground mt-1">{sub}</p>
   </Card>
 );
+
+const RothComplianceCard = ({ compliance }) => {
+  const { warnings = [], total_early_penalty = 0 } = compliance;
+  const hasWarnings = warnings.length > 0;
+  if (!hasWarnings) {
+    return (
+      <Card className="p-5 border-[#4A6741]/25 bg-[#4A6741]/5 shadow-none lg:col-span-4" data-testid="roth-compliance-clear">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-[#4A6741]" />
+          <p className="text-xs text-[#2C4A2D]">
+            <span className="font-semibold">Roth compliance clean.</span> No withdrawals under the 5-year rule, no pre-59½ taps.
+          </p>
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card className="p-5 border-[#B84A4A]/40 bg-[#B84A4A]/5 shadow-none lg:col-span-4" data-testid="roth-compliance-warning">
+      <div className="flex items-center gap-2 mb-2">
+        <AlertTriangle className="h-4 w-4 text-[#B84A4A]" />
+        <h3 className="font-display text-lg font-bold tracking-tight text-[#B84A4A]">5-Year Rule / Pre-59½ Warnings</h3>
+      </div>
+      <p className="text-xs text-muted-foreground mb-3 max-w-3xl">
+        The funding order taps Roth <span className="font-medium">before</span> either the 5-year clock on a
+        specific conversion, or before the owner reaches age 59½. Each such withdrawal on the
+        converted principal incurs a <span className="font-medium">10% penalty</span> under IRC §408A(d)(3)
+        (Boldin's documented blind spot). Estimated penalty: <span className="font-bold text-[#B84A4A]">{fmtUSD(total_early_penalty)}</span>.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-muted-foreground text-left">
+            <tr className="border-b border-[#EBE8E0]">
+              <th className="px-2 py-1">Year</th>
+              <th className="px-2">Client age</th>
+              <th className="px-2">Roth withdrawal</th>
+              <th className="px-2">Within 5-yr clock</th>
+              <th className="px-2">10% penalty</th>
+              <th className="px-2">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {warnings.slice(0, 10).map((w, i) => (
+              <tr key={`${w.year}-${i}`} className="border-b border-[#F3F1EC]" data-testid={`roth-warn-${i}`}>
+                <td className="px-2 py-1.5 font-medium">{w.year}</td>
+                <td className="px-2">{w.client_age}</td>
+                <td className="px-2">{fmtUSD(w.roth_withdrawn)}</td>
+                <td className="px-2">{fmtUSD(w.amount_within_5yr)}</td>
+                <td className="px-2 font-medium text-[#B84A4A]">{fmtUSD(w.penalty_10pct)}</td>
+                <td className="px-2 text-muted-foreground">{w.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-2">
+        Approximation: per-conversion 5-year clock (oldest-first drawdown). Consult a CPA before executing.
+      </p>
+    </Card>
+  );
+};

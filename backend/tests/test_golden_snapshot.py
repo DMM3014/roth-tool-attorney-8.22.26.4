@@ -26,7 +26,7 @@ def test_golden_snapshot_matches_baseline():
 
     cur, base = json.loads(current), json.loads(baseline)
     drifted = [
-        section for section in ("year_tax", "optimize", "projection", "montecarlo")
+        section for section in ("year_tax", "optimize", "projection", "montecarlo", "strategy", "ss")
         if json.dumps(base.get(section), sort_keys=True, default=str)
         != json.dumps(cur.get(section), sort_keys=True, default=str)
     ]

@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from tax_engine import compute_year_tax, optimize_conversion
 from projection import run_projection, sweep_brackets
 from montecarlo import run_montecarlo
+from strategy_optimizer import strategy_sweep
+from ss_optimizer import sweep_ss_claims
 from defaults import DEFAULT_SCENARIO
 from states import STATES
 import asyncio
@@ -94,6 +96,21 @@ class MonteCarloRequest(BaseModel):
     seed: Optional[int] = None
 
 
+class StrategySweepRequest(BaseModel):
+    config: Dict[str, Any]
+    start_years: Optional[List[int]] = None
+    stop_years: Optional[List[int]] = None
+    brackets: Optional[List[float]] = None
+    include_phased: bool = True
+    irmaa_cap: Optional[int] = None
+    max_annual: float = 0.0
+
+
+class SsOptimizerRequest(BaseModel):
+    config: Dict[str, Any]
+    ages: Optional[List[int]] = None
+
+
 # ---------- Routes ----------
 @api_router.get("/")
 async def root():
@@ -135,6 +152,29 @@ async def sweep(req: ProjectionRequest):
         return sweep_brackets(req.config)
     except Exception as e:
         logging.exception("sweep failed")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.post("/strategy-sweep")
+async def strategy_sweep_endpoint(req: StrategySweepRequest):
+    try:
+        return strategy_sweep(
+            req.config,
+            start_years=req.start_years, stop_years=req.stop_years,
+            brackets=req.brackets, include_phased=req.include_phased,
+            irmaa_cap=req.irmaa_cap, max_annual=req.max_annual,
+        )
+    except Exception as e:
+        logging.exception("strategy_sweep failed")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.post("/ss-optimizer")
+async def ss_optimizer_endpoint(req: SsOptimizerRequest):
+    try:
+        return sweep_ss_claims(req.config, req.ages)
+    except Exception as e:
+        logging.exception("ss_optimizer failed")
         raise HTTPException(status_code=400, detail=str(e))
 
 

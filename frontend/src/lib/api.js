@@ -28,6 +28,10 @@ export const fundingCompareConfigs = (scenario, gainPct) => {
 };
 export const runProjection = (config) => axios.post(`${API}/projection`, { config }).then((r) => r.data);
 export const runSweep = (config) => axios.post(`${API}/sweep`, { config }).then((r) => r.data);
+export const runStrategySweep = (config, opts = {}) =>
+  axios.post(`${API}/strategy-sweep`, { config, ...opts }).then((r) => r.data);
+export const runSsOptimizer = (config, ages) =>
+  axios.post(`${API}/ss-optimizer`, { config, ages }).then((r) => r.data);
 export const optimizeConversion = (inputs, target_rate, max_conversion = 0) =>
   axios.post(`${API}/tax/optimize`, { inputs, target_rate, max_conversion }).then((r) => r.data);
 export const computeYearTax = (inputs) => axios.post(`${API}/tax/year`, { inputs }).then((r) => r.data);
