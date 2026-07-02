@@ -573,6 +573,66 @@ Adds the three top-priority "beat Boldin at its own game" enhancements from the 
   the top-N rows have identical nominal legacy (fill-32% variants converge at the RMD wall).
 
 
+### Phase 18 — Monte Carlo v2.1 + Per-Owner Roth Attribution + Strategy Tie Note (2026-07-02)
+
+**1. Monte Carlo v2.1 — Stochastic Inflation** (`backend/montecarlo.py`, `POST /api/montecarlo`):
+- New optional `inflation: {enabled, mean, vol}` request field. When enabled, generates a per-trial NxT
+  lognormal CPI matrix and applies a **cumulative CPI multiplier** to each year's OUTFLOWS
+  (expenses + taxes): `M[t] = ∏(1+π_s) / (1+μ_det)^t`. Nominal income streams are left at deterministic
+  levels (models "spending runs hotter than expected while nominal wages/pensions don't fully keep up").
+- Reports `cumulative: {p10, p50, p90, expected}` inflation summary — e.g. 3%/yr mean, 2% vol over 37yrs
+  produces expected cum 2.99x, P90 tail 3.41x.
+- Refactored `_simulate` to accept `(ext, out, g, infl_mult)` instead of `(net_flow, g)` — backwards
+  compatible: `infl_mult` of ones reproduces v2 numbers exactly (verified byte-identical against golden
+  seeds 42 and 7). `inflation=None` (or vol=0, or enabled=False) short-circuits: no RNG consumed, no
+  cost, response's `inflation` field is `null`.
+- Frontend `MonteCarlo.jsx`: new `mc-inflation-card` on the controls panel with Flame icon and a
+  `mc-inflation-toggle` switch (off by default); when on, `mc-inflation-mean` + `mc-inflation-vol`
+  inputs (defaults 3% / 1.5%). Results add a `mc-inflation-result` card with expected/P90 cum CPI.
+- Golden snapshot extended with `inflation_vol_seed13` case.
+
+**2. Per-owner Roth Conversion Attribution** (`projection.py`):
+- The `conversions_ledger` was household-level; it's now **per-owner**. Each conversion lot is
+  attributed to the source IRA's owner: `{year, owner, amount, remaining, owner_age_at_conversion}`.
+  Attribution drains client IRA first (matches `_apply_year_flows` behavior after RMDs).
+- Roth withdrawals are attributed **per Roth account**: a withdrawal from ROTS (spouse's Roth)
+  consumes the spouse's conversion ledger only, and checks the spouse's age for pre-59½ (not the
+  client's). Warnings gain `owner`, `owner_age`, `roth_account` fields.
+- Frontend Roth compliance card now renders `Owner` + `Owner age` columns.
+- Behavior-preserving on the default plan (client IRA drained first → all early ledger entries
+  attribute to Client; lifetime_taxes / ending_net_worth / after_tax_estate_to_heirs byte-identical
+  to golden). Only differs on scenarios where the spouse's IRA is meaningfully involved.
+
+**3. Strategy Optimizer tie-break hint** (`frontend/src/components/StrategyOptimizer.jsx`):
+- New `strategy-tie-note` element appears in the results header when the top-N ranked strategies
+  share identical after-tax legacy (a common Fill-32%+ convergence at the RMD wall). Explains that
+  the tiebreaker is lowest lifetime tax, so users understand why the top rows look identical.
+
+**Testing**:
+- `backend/tests/test_phase18_inflation_and_attribution.py` — 8 new pytest cases (inflation
+  none-matches-v2, vol≥0 populated, higher vol worsens P10, seed reproducibility, per-owner
+  ledger, client-drained-first attribution, warnings-carry-owner, math-unchanged).
+- Golden snapshot refresh: `_golden.json` 447KB. **54/54 pytest pass** module-level.
+- Testing agent iteration_18.json: **100% PASS** — backend 88/88 (including 8 new + 7 new HTTP),
+  frontend 13/13 review bullets, 0 console errors, 0 page errors, all 12 tabs regression clean.
+
+**Deliberately deferred**:
+- Full-projection stochastic re-runs per trial (would require running the tax engine N times —
+  ~50x slower). The current outflow-multiplier model is the industry-standard approximation.
+- Regime-switching / autocorrelated inflation (P3).
+- Per-owner conversion routing at deposit time (currently all conversions still physically land
+  in `acct["roth"][0]`; only the *ledger attribution* is per-owner). Would require refactoring
+  `_apply_year_flows` and could shift a small amount of value on scenarios where spouse's IRA
+  is converted while spouse's Roth exists — P2 refinement.
+
+## Backlog / Next (updated 2026-07-02, post-Phase-18)
+- P1: **Account aggregation** (Plaid / Yodlee) — the last "Boldin wins" gap.
+- P2: Per-owner conversion *routing* (physically deposit into same-owner Roth account, not just
+  ledger attribution). Small effect but tightens the model.
+- P2: Correlated inflation-return draws (copula / correlation matrix — separate P2).
+- P3: Regime-switching stochastic inflation (macro regime advanced modeling).
+
+
 ### Phase 16 — In-app White Paper (2026-07-01)
 - **`frontend/src/components/WhitePaper.jsx`** (new): renders the academic white paper "Why Simplified
   Roth-Conversion Calculators Get the Funding Decision Wrong" as a styled in-app document. Includes a
