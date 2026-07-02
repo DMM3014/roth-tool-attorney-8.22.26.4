@@ -425,7 +425,9 @@ def _apply_year_flows(plan, bal, basis, flows):
     # conversion + discretionary IRA withdrawal drawn in account order (client IRA first)
     rem = flows.ira_draw
     for iid in acct["ira"]:
-        t = min(rem, bal[iid]); bal[iid] -= t; rem -= t
+        t = min(rem, bal[iid])
+        bal[iid] -= t
+        rem -= t
     # taxable discretionary withdrawals per converged waterfall
     for aid, amt in flows.wd.items():
         if aid in acct["taxable_set"]:
@@ -433,7 +435,9 @@ def _apply_year_flows(plan, bal, basis, flows):
     # roth withdrawals, then conversion lands in roth
     rem = flows.roth_withdraw
     for rid in acct["roth"]:
-        t = min(rem, bal[rid]); bal[rid] -= t; rem -= t
+        t = min(rem, bal[rid])
+        bal[rid] -= t
+        rem -= t
     if flows.conversion > 0 and acct["roth"]:
         bal[acct["roth"][0]] += flows.conversion
     # reinvest surplus (after-tax) — default to taxable brokerage (gross return), add basis

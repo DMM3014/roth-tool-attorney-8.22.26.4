@@ -1,5 +1,6 @@
 """Run the Python engine on V9 Scenario 1 and diff vs the spreadsheet actuals."""
-import os, sys
+import os
+import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from projection import run_projection  # noqa: E402
 from v9_scenario1 import (V9_SCENARIO_1, V9_CONVERSIONS, V9_EOY,  # noqa: E402
