@@ -752,3 +752,29 @@ Two P2 refinements requested by user ("go with recommendation" = auto-create Rot
   "Clear stagflation preset" (reverts everything to baseline); editing ANY preset value drops the badge.
 - Amber results banner (`mc-stagflation-banner`) labels runs that used the preset — shareable talking point.
 - Testing agent iteration 22: 6/6 acceptance criteria pass on public preview (100% frontend).
+
+### Phase 21 — Security Hardening Round 2 (post-Phase-20 audit, 2026-07-03)
+Ran security_audit_agent on the deployed app (CONDITIONAL PASS). Prior SEC-001/002/003 + headers
+verified intact; fixed the 1 MEDIUM + 4 LOW/P3 items below. All in `backend/server.py` + `frontend/src/lib/api.js`.
+- **SEC-001 (MEDIUM) — spoofable rate-limit key**: `_client_ip` took the LEFTMOST `X-Forwarded-For`
+  entry (client-prependable) → an attacker varying XFF got a fresh limiter bucket per request,
+  defeating all per-client caps (compute DoS + paid-LLM cost abuse). FIX: key off the trusted proxy
+  hop = the Nth-from-RIGHT XFF entry (N = `TRUSTED_PROXY_HOPS` env, default 1 = the ingress).
+  Also removed `X-Forwarded-For` from CORS allow_headers. VERIFIED end-to-end through the real ingress:
+  45 projection requests with unique spoofed XFF → 30×200 then 429 (single real-client bucket).
+- **H1 — Monte Carlo BOLA**: `GET/POST /api/montecarlo` now `Depends(require_session)`; jobs stamped
+  with `owner_token` and reads scoped to it (401 no token / 404 wrong token). `owner_token` and
+  `created_at` projected out of responses (no leak). job_id UUID-format validated.
+- **H2 — non-finite float inputs**: `AssetClass`/`ShockSpec`/`InflationSpec`/`CorrelationSpec` floats now
+  `Field(..., allow_inf_nan=False, ge/le=...)` → NaN/Inf/out-of-range rejected at the boundary.
+  Added a custom `RequestValidationError` handler returning a sanitized 422 that (a) never crashes on
+  non-serializable input (the old default handler 500'd trying to echo NaN) and (b) drops the raw
+  `input`/`ctx` echo (SEC-003 defense-in-depth).
+- **H3 — weak token fallback**: `api.js uuidv4()` now uses `crypto.randomUUID`, else a
+  `crypto.getRandomValues`-based v4 builder (throws if no secure RNG) — dropped `Math.random`.
+- **H4 — CSP**: added `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` to the
+  security-headers middleware (API serves only JSON/plain-text).
+- **Tests**: `tests/test_phase21_security_hardening.py` (8 HTTP tests, all pass) — XFF-spoof rate-limit,
+  MC session-scoping + BOLA + no-leak, malformed job id, NaN/Inf/out-of-range 422, CSP header.
+  Golden snapshot unchanged (no math touched). Frontend regression (iter 23): all MC flows +
+  Scenarios CRUD work under the new session-gating (100%).
