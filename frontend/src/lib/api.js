@@ -9,13 +9,17 @@ export const API = `${BACKEND_URL}/api`;
 // persisted in localStorage. UUIDv4 format required by the backend.
 const SESSION_KEY = "roth-planner-session-token";
 const uuidv4 = () => {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  // Fallback for older browsers
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+  const c = typeof crypto !== "undefined" ? crypto : null;
+  if (c?.randomUUID) return c.randomUUID();
+  // Cryptographically strong fallback for browsers lacking randomUUID.
+  if (c?.getRandomValues) {
+    const b = c.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant 10
+    const h = [...b].map((x) => x.toString(16).padStart(2, "0"));
+    return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+  }
+  throw new Error("Secure random generator unavailable");
 };
 export const getSessionToken = () => {
   if (typeof window === "undefined") return "";

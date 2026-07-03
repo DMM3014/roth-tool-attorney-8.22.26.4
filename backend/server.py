@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -77,12 +78,24 @@ async def require_session(x_session_token: Optional[str] = Header(default=None))
     return x_session_token.lower()
 
 
-# ---------- Rate limiting (SEC-001 hardening) ----------
+# ---------- Rate limiting (SEC-001) ----------
+# X-Forwarded-For is client-prependable: an attacker can spoof the LEFTMOST entries to
+# dodge per-client limits. The trusted proxy chain (our ingress) APPENDS the real socket
+# peer on the RIGHT, so the trustworthy client identity is the Nth-from-right hop, where
+# N = number of trusted proxies in front of the app. Default 1 (the ingress). Configurable
+# for other deploy topologies without touching code.
+TRUSTED_PROXY_HOPS = max(1, int(os.environ.get("TRUSTED_PROXY_HOPS", "1")))
+
+
 def _client_ip(request: Request) -> str:
-    """Use X-Forwarded-For (set by ingress) so limits are per real client, not per ingress IP."""
+    """Rate-limit key derived from the trusted proxy hop, not from client-controlled XFF."""
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        if parts:
+            # count TRUSTED_PROXY_HOPS in from the right; clamp so extra spoofed
+            # leftmost entries can never shift us past the real client hop.
+            return parts[max(0, len(parts) - TRUSTED_PROXY_HOPS)]
     return get_remote_address(request)
 
 
@@ -91,6 +104,16 @@ limiter = Limiter(key_func=_client_ip, default_limits=["300/minute"])
 app = FastAPI()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_handler(request: Request, exc: RequestValidationError):
+    """Return a clean 422 that never reflects raw request input. Non-finite floats
+    (NaN/Inf) in the offending body otherwise break the default handler's JSON
+    serializer (500) AND echo attacker-supplied values back (SEC-003)."""
+    errors = [{"loc": e.get("loc"), "msg": e.get("msg"), "type": e.get("type")}
+              for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 # ---------- Security headers (P3 hardening) ----------
@@ -102,6 +125,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        # API serves only JSON / plain-text; lock rendering contexts down entirely.
+        resp.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
         return resp
 
 
@@ -186,41 +211,34 @@ class InsightChatRequest(BaseModel):
 
 
 class AssetClass(BaseModel):
-    mean: float
-    vol: float
-    weight: float
+    mean: float = Field(ge=-1.0, le=1.0, allow_inf_nan=False)
+    vol: float = Field(ge=0.0, le=2.0, allow_inf_nan=False)
+    weight: float = Field(ge=0.0, le=1000.0, allow_inf_nan=False)
 
 
 class ShockSpec(BaseModel):
     enabled: bool = False
-    rate: float = -0.15
-    years: int = 2
+    rate: float = Field(default=-0.15, ge=-1.0, le=1.0, allow_inf_nan=False)
+    years: int = Field(default=2, ge=0, le=60)
 
 
 class InflationSpec(BaseModel):
     enabled: bool = True
-    mean: float = 0.03
-    vol: float = 0.015     # 1.5% inflation vol ≈ post-1990 US CPI stdev
+    mean: float = Field(default=0.03, ge=-0.5, le=1.0, allow_inf_nan=False)
+    vol: float = Field(default=0.015, ge=0.0, le=1.0, allow_inf_nan=False)  # 1.5% ≈ post-1990 US CPI stdev
 
 
 class CorrelationSpec(BaseModel):
     """Gaussian-copula pairwise correlations across stocks/bonds/cash/inflation draws.
-    Defaults ≈ long-run US annual history. Repaired to nearest PSD matrix server-side."""
+    Defaults ≈ long-run US annual history. Repaired to nearest PSD matrix server-side.
+    Field bounds reject out-of-range AND non-finite (NaN/Inf) inputs at the API boundary."""
     enabled: bool = False
-    stocks_bonds: float = 0.15
-    stocks_cash: float = 0.0
-    bonds_cash: float = 0.20
-    stocks_inflation: float = -0.20
-    bonds_inflation: float = -0.30
-    cash_inflation: float = 0.55
-
-    @field_validator("stocks_bonds", "stocks_cash", "bonds_cash",
-                     "stocks_inflation", "bonds_inflation", "cash_inflation")
-    @classmethod
-    def _corr_bounds(cls, v):
-        if v < -0.99 or v > 0.99:
-            raise ValueError("correlations must be within [-0.99, 0.99]")
-        return v
+    stocks_bonds: float = Field(default=0.15, ge=-0.99, le=0.99, allow_inf_nan=False)
+    stocks_cash: float = Field(default=0.0, ge=-0.99, le=0.99, allow_inf_nan=False)
+    bonds_cash: float = Field(default=0.20, ge=-0.99, le=0.99, allow_inf_nan=False)
+    stocks_inflation: float = Field(default=-0.20, ge=-0.99, le=0.99, allow_inf_nan=False)
+    bonds_inflation: float = Field(default=-0.30, ge=-0.99, le=0.99, allow_inf_nan=False)
+    cash_inflation: float = Field(default=0.55, ge=-0.99, le=0.99, allow_inf_nan=False)
 
 
 class MonteCarloRequest(BaseModel):
@@ -380,11 +398,13 @@ async def _mc_indexes():
 
 @api_router.post("/montecarlo")
 @limiter.limit("30/minute")
-async def start_montecarlo(request: Request, req: MonteCarloRequest):
+async def start_montecarlo(request: Request, req: MonteCarloRequest,
+                           owner_token: str = Depends(require_session)):
     _validate_config(req.config)
     job_id = str(uuid.uuid4())
     await db.mc_jobs.insert_one({
-        "job_id": job_id, "status": "running", "result": None, "error": None,
+        "job_id": job_id, "owner_token": owner_token,
+        "status": "running", "result": None, "error": None,
         "created_at": datetime.now(timezone.utc),
     })
 
@@ -407,8 +427,13 @@ async def start_montecarlo(request: Request, req: MonteCarloRequest):
 
 
 @api_router.get("/montecarlo/{job_id}")
-async def montecarlo_status(job_id: str):
-    job = await db.mc_jobs.find_one({"job_id": job_id}, {"_id": 0, "created_at": 0})
+async def montecarlo_status(job_id: str, owner_token: str = Depends(require_session)):
+    if not UUID_RE.match(job_id):
+        raise HTTPException(status_code=400, detail="Invalid job id")
+    # scope the read to the session that started the job (BOLA guard)
+    job = await db.mc_jobs.find_one(
+        {"job_id": job_id, "owner_token": owner_token}, {"_id": 0, "created_at": 0, "owner_token": 0}
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Monte Carlo job not found")
     return job
@@ -584,7 +609,7 @@ app.add_middleware(
     allow_credentials=_allow_credentials,
     allow_origins=_allow_origins,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Session-Token", "X-Forwarded-For"],
+    allow_headers=["Content-Type", "Authorization", "X-Session-Token"],
 )
 
 logging.basicConfig(level=logging.INFO,

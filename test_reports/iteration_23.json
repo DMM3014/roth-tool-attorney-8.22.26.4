@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend regression after Phase 21 session-gating on /api/montecarlo — all Monte Carlo flows work end-to-end. Session token is a valid crypto-strong UUIDv4. Plain MC, correlated-draws MC, and stagflation-preset MC all completed with results rendered; ZERO 4xx/5xx responses observed on /api/montecarlo endpoints (confirms the axios X-Session-Token interceptor is injecting correctly). Scenarios save+list also verified (POST/GET /api/scenarios returned 200 with the crypto-strong UUID). Multi-Year Projection tab loads charts without errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Monte Carlo", "issues": ["Recharts console warning: 'width(-1) and height(-1) of chart should be greater than 0' — cosmetic, chart still renders once card mounts. Non-blocking."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "api.js uuidv4 fallback is correct (v4 bit-flag + variant bits). getSessionToken persists to localStorage — good.",
+    "Recharts width(-1) warning suggests a ResponsiveContainer mounts inside a hidden/empty parent momentarily during MC result render. Non-blocking but could be silenced by rendering charts only after data is present or setting minHeight on the wrapper."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (backend not retested per request)", "frontend": "100%"},
+  "test_credentials": "None required — anonymous session token auto-minted in localStorage.",
+  "seed_data_creation": "Created one TEST_iter23 scenario during the Scenarios test. Backend uses session-scoped storage so it will not leak across other sessions.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Session-gating on /api/montecarlo is now live. The frontend axios interceptor in /app/frontend/src/lib/api.js injects X-Session-Token on every request. Verified: plain MC, mc-corr-toggle correlated run, mc-stagflation-preset run, Scenarios CRUD, Projection tab. Only cosmetic Recharts sizing warning remains.",
+  "rca of the issue": "N/A — no bug found."
+}
