@@ -573,6 +573,60 @@ Adds the three top-priority "beat Boldin at its own game" enhancements from the 
   the top-N rows have identical nominal legacy (fill-32% variants converge at the RMD wall).
 
 
+### Phase 19 — Security Hardening: SEC-001/002/003 + P3 (2026-07-03)
+
+Post-audit fixes. Full security review flagged 3 findings (SEC-001 HIGH, SEC-002 MEDIUM, SEC-003 LOW)
+plus P3 hardening items — all resolved in this phase.
+
+**1. SEC-001 (HIGH) — Anonymous DoS via unbounded engine calls** (`backend/server.py`):
+- Added `_validate_config` helper: caps `end_year - start_year ≤ 60`, accounts ≤ 50, income_streams ≤ 40.
+- Added grid caps: `/api/strategy-sweep` rejects |starts|·|stops|·|brackets| > 500;
+  `/api/ss-optimizer` caps ages list at 8 and validates age range [62, 70].
+- Added `slowapi` per-IP rate limiting (X-Forwarded-For aware): projection 30/min, sweep 15/min,
+  strategy-sweep 10/min, ss-optimizer 15/min, MC 30/min, scenarios POST 30/min, insights 10/min,
+  chat 30/min, global 300/min.
+- Pydantic validators on `n_trials` (50-2000), `history` (≤ 40 turns), `message` (≤ 2000 chars),
+  `content` (≤ 4000 chars/turn), `brackets` (0-99%), `ages` (62-70).
+
+**2. SEC-002 (MEDIUM) — Anonymous read/delete of financial PII** (`backend/server.py`,
+`frontend/src/lib/api.js`):
+- Every `/api/scenarios*` route now requires an `X-Session-Token: <uuidv4>` header via a
+  `require_session` FastAPI dependency (401 without, 401 for malformed).
+- `Scenario` model gains an `owner_token` field; queries scope by `{"owner_token": token}`.
+- Frontend mints a UUIDv4 into `localStorage['roth-planner-session-token']` on first load (via
+  `getSessionToken()`) and stamps it via an axios request interceptor on every API call.
+- Cross-session isolation verified end-to-end: session A's scenarios are invisible to session B
+  (404 on GET/DELETE, missing from LIST).
+
+**3. SEC-003 (LOW) — Raw internal error text leaked** (`backend/server.py`):
+- All `raise HTTPException(status_code=400, detail=str(e))` replaced with generic messages
+  ("Projection request could not be processed", etc.); full trace still `logging.exception`'d
+  server-side. Same treatment for the LLM streaming error paths.
+
+**4. P3 hardening** (`backend/server.py`):
+- `SecurityHeadersMiddleware`: sets X-Content-Type-Options: nosniff, X-Frame-Options: DENY,
+  Referrer-Policy: strict-origin-when-cross-origin, Strict-Transport-Security: max-age=31536000;
+  includeSubDomains, and Permissions-Policy.
+- CORS tightened: explicit allowlist via `CORS_ORIGINS` env (default = preview URL + localhost:3000);
+  `allow_credentials=True` when specific origins, auto-disabled when `*` is used.
+- Removed unused `python-jose` dependency (had known algorithm-confusion CVEs; safe to drop
+  since the app has no JWT/auth code).
+
+**Testing**:
+- `backend/tests/test_phase19_security_hardening.py` — 11 HTTP tests covering all SEC/P3 fixes.
+- Testing agent iteration_19.json: **100% PASS** — backend 16/16, frontend 100%, 0 console errors.
+- Regression: all 72 pre-existing pytest cases still pass; math and legacy metrics byte-identical.
+
+## Backlog / Next (updated 2026-07-03, post-Phase-19)
+- P1: **Account aggregation** (Plaid / Yodlee) — the last "Boldin wins" gap.
+- P2: Per-owner conversion *routing* (physically deposit into same-owner Roth account, not just
+  ledger attribution).
+- P2: Correlated inflation-return draws (copula / correlation matrix).
+- P3: Regime-switching stochastic inflation.
+- P3: Migrate axios usage to a dedicated `axios.create()` instance so the interceptor is scoped
+  (currently registered on the global axios).
+
+
 ### Phase 18 — Monte Carlo v2.1 + Per-Owner Roth Attribution + Strategy Tie Note (2026-07-02)
 
 **1. Monte Carlo v2.1 — Stochastic Inflation** (`backend/montecarlo.py`, `POST /api/montecarlo`):
