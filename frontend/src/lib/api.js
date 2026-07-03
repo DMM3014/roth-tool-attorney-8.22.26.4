@@ -4,6 +4,36 @@ import * as XLSX from "xlsx";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
 
+// Anonymous per-browser session token (SEC-002): scopes saved scenarios so one
+// visitor cannot read or delete another's plans. Minted once on first load,
+// persisted in localStorage. UUIDv4 format required by the backend.
+const SESSION_KEY = "roth-planner-session-token";
+const uuidv4 = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  // Fallback for older browsers
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+export const getSessionToken = () => {
+  if (typeof window === "undefined") return "";
+  let tok = window.localStorage.getItem(SESSION_KEY);
+  if (!tok) {
+    tok = uuidv4();
+    window.localStorage.setItem(SESSION_KEY, tok);
+  }
+  return tok;
+};
+// Axios interceptor: attach the session token on every request. Backend uses it for
+// scenarios; other endpoints ignore it — cheap and consistent.
+axios.interceptors.request.use((cfg) => {
+  cfg.headers = cfg.headers || {};
+  cfg.headers["X-Session-Token"] = getSessionToken();
+  return cfg;
+});
+
 export const fetchDefaults = () => axios.get(`${API}/defaults`).then((r) => r.data);
 export const fetchStates = () => axios.get(`${API}/states`).then((r) => r.data);
 

@@ -1,13 +1,18 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import os
+import re
 import json
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Any, Dict, List, Optional
 import uuid
 from datetime import datetime, timezone
@@ -28,7 +33,80 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+# ---------- Security limits (SEC-001) ----------
+MAX_PROJECTION_YEARS = 60          # cap plan horizon
+MAX_SWEEP_GRID_CELLS = 500         # start × stop × bracket cells for /api/strategy-sweep
+MAX_SS_AGES = 8                    # /api/ss-optimizer sweep breadth
+MAX_MC_TRIALS = 2000               # already enforced in engine but re-checked here
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _bad_request(msg: str):
+    """Uniform 400 for size / range / shape violations."""
+    raise HTTPException(status_code=400, detail=msg)
+
+
+def _validate_config(config: dict) -> None:
+    """Cap engine inputs to prevent DoS via oversized projection horizons."""
+    if not isinstance(config, dict):
+        _bad_request("config must be an object")
+    proj = config.get("projection") or {}
+    start = proj.get("start_year")
+    end = proj.get("end_year")
+    if not isinstance(start, int) or not isinstance(end, int):
+        _bad_request("projection.start_year and end_year must be integers")
+    if end < start:
+        _bad_request("projection.end_year must be >= start_year")
+    if end - start > MAX_PROJECTION_YEARS:
+        _bad_request(f"projection horizon capped at {MAX_PROJECTION_YEARS} years")
+    accts = config.get("accounts")
+    if accts is not None and len(accts) > 50:
+        _bad_request("accounts list capped at 50 entries")
+    streams = config.get("income_streams")
+    if streams is not None and len(streams) > 40:
+        _bad_request("income_streams list capped at 40 entries")
+
+
+# ---------- Session scoping (SEC-002) ----------
+async def require_session(x_session_token: Optional[str] = Header(default=None)) -> str:
+    """Every scenario read/write must present an anonymous per-browser session token
+    (a UUIDv4 minted by the frontend and kept in localStorage). This scopes saved
+    plans so one visitor cannot read or delete another's data."""
+    if not x_session_token or not UUID_RE.match(x_session_token):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-Session-Token")
+    return x_session_token.lower()
+
+
+# ---------- Rate limiting (SEC-001 hardening) ----------
+def _client_ip(request: Request) -> str:
+    """Use X-Forwarded-For (set by ingress) so limits are per real client, not per ingress IP."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_client_ip, default_limits=["300/minute"])
+
 app = FastAPI()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ---------- Security headers (P3 hardening) ----------
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        resp = await call_next(request)
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        return resp
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
@@ -53,12 +131,22 @@ class Scenario(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     config: Dict[str, Any]
+    owner_token: Optional[str] = None       # UUIDv4 stamp of the browser session that owns this plan
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 class ScenarioCreate(BaseModel):
     name: str
     config: Dict[str, Any]
+
+    @field_validator("name")
+    @classmethod
+    def _name_bounds(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("name required")
+        if len(v) > 120:
+            raise ValueError("name capped at 120 chars")
+        return v.strip()
 
 
 class InsightRequest(BaseModel):
@@ -69,11 +157,32 @@ class ChatTurn(BaseModel):
     role: str
     content: str
 
+    @field_validator("content")
+    @classmethod
+    def _content_bounds(cls, v: str) -> str:
+        if len(v) > 4000:
+            raise ValueError("chat content capped at 4000 chars per turn")
+        return v
+
 
 class InsightChatRequest(BaseModel):
     summary: Dict[str, Any]
     history: List[ChatTurn] = []
     message: str
+
+    @field_validator("history")
+    @classmethod
+    def _history_bounds(cls, v: List[ChatTurn]) -> List[ChatTurn]:
+        if len(v) > 40:
+            raise ValueError("chat history capped at 40 turns")
+        return v
+
+    @field_validator("message")
+    @classmethod
+    def _message_bounds(cls, v: str) -> str:
+        if len(v) > 2000:
+            raise ValueError("message capped at 2000 chars")
+        return v
 
 
 class AssetClass(BaseModel):
@@ -102,6 +211,13 @@ class MonteCarloRequest(BaseModel):
     inflation: Optional[InflationSpec] = None
     seed: Optional[int] = None
 
+    @field_validator("n_trials")
+    @classmethod
+    def _trials_bounds(cls, v):
+        if v < 50 or v > MAX_MC_TRIALS:
+            raise ValueError(f"n_trials must be in [50, {MAX_MC_TRIALS}]")
+        return v
+
 
 class StrategySweepRequest(BaseModel):
     config: Dict[str, Any]
@@ -112,10 +228,41 @@ class StrategySweepRequest(BaseModel):
     irmaa_cap: Optional[int] = None
     max_annual: float = 0.0
 
+    @field_validator("start_years", "stop_years")
+    @classmethod
+    def _year_list_bounds(cls, v):
+        if v is None:
+            return v
+        if len(v) > 40:
+            raise ValueError("year list capped at 40 entries")
+        return v
+
+    @field_validator("brackets")
+    @classmethod
+    def _brackets_bounds(cls, v):
+        if v is None:
+            return v
+        if len(v) > 12:
+            raise ValueError("brackets list capped at 12 entries")
+        if any(not (0.0 <= x <= 0.99) for x in v):
+            raise ValueError("bracket values must lie in [0, 0.99]")
+        return v
+
 
 class SsOptimizerRequest(BaseModel):
     config: Dict[str, Any]
     ages: Optional[List[int]] = None
+
+    @field_validator("ages")
+    @classmethod
+    def _ages_bounds(cls, v):
+        if v is None:
+            return v
+        if len(v) > MAX_SS_AGES:
+            raise ValueError(f"ages list capped at {MAX_SS_AGES} entries")
+        if any(not (62 <= x <= 70) for x in v):
+            raise ValueError("ages must lie in [62, 70]")
+        return v
 
 
 # ---------- Routes ----------
@@ -145,25 +292,36 @@ async def tax_optimize(req: OptimizeRequest):
 
 
 @api_router.post("/projection")
-async def projection(req: ProjectionRequest):
+@limiter.limit("30/minute")
+async def projection(request: Request, req: ProjectionRequest):
+    _validate_config(req.config)
     try:
         return run_projection(req.config)
-    except Exception as e:
+    except Exception:
         logging.exception("projection failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Projection request could not be processed")
 
 
 @api_router.post("/sweep")
-async def sweep(req: ProjectionRequest):
+@limiter.limit("15/minute")
+async def sweep(request: Request, req: ProjectionRequest):
+    _validate_config(req.config)
     try:
         return sweep_brackets(req.config)
-    except Exception as e:
+    except Exception:
         logging.exception("sweep failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bracket sweep request could not be processed")
 
 
 @api_router.post("/strategy-sweep")
-async def strategy_sweep_endpoint(req: StrategySweepRequest):
+@limiter.limit("10/minute")
+async def strategy_sweep_endpoint(request: Request, req: StrategySweepRequest):
+    _validate_config(req.config)
+    # Cap the sweep grid: |start_years| * |stop_years| * |brackets| ≤ MAX_SWEEP_GRID_CELLS.
+    if req.start_years and req.stop_years and req.brackets:
+        cells = len(req.start_years) * len(req.stop_years) * len(req.brackets)
+        if cells > MAX_SWEEP_GRID_CELLS:
+            _bad_request(f"sweep grid capped at {MAX_SWEEP_GRID_CELLS} cells (got {cells})")
     try:
         return strategy_sweep(
             req.config,
@@ -171,18 +329,20 @@ async def strategy_sweep_endpoint(req: StrategySweepRequest):
             brackets=req.brackets, include_phased=req.include_phased,
             irmaa_cap=req.irmaa_cap, max_annual=req.max_annual,
         )
-    except Exception as e:
+    except Exception:
         logging.exception("strategy_sweep failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Strategy sweep request could not be processed")
 
 
 @api_router.post("/ss-optimizer")
-async def ss_optimizer_endpoint(req: SsOptimizerRequest):
+@limiter.limit("15/minute")
+async def ss_optimizer_endpoint(request: Request, req: SsOptimizerRequest):
+    _validate_config(req.config)
     try:
         return sweep_ss_claims(req.config, req.ages)
-    except Exception as e:
+    except Exception:
         logging.exception("ss_optimizer failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Social Security optimizer request could not be processed")
 
 
 MC_TTL_SECONDS = 3600
@@ -198,7 +358,9 @@ async def _mc_indexes():
 
 
 @api_router.post("/montecarlo")
-async def start_montecarlo(req: MonteCarloRequest):
+@limiter.limit("30/minute")
+async def start_montecarlo(request: Request, req: MonteCarloRequest):
+    _validate_config(req.config)
     job_id = str(uuid.uuid4())
     await db.mc_jobs.insert_one({
         "job_id": job_id, "status": "running", "result": None, "error": None,
@@ -213,9 +375,9 @@ async def start_montecarlo(req: MonteCarloRequest):
         try:
             res = await asyncio.to_thread(run_montecarlo, req.config, req.n_trials, assets, shock, req.seed, inflation)
             await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "done", "result": res}})
-        except Exception as e:
+        except Exception:
             logging.exception("montecarlo failed")
-            await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "error", "error": str(e)}})
+            await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "error", "error": "Simulation failed"}})
 
     asyncio.create_task(worker())
     return {"job_id": job_id, "status": "running"}
@@ -230,34 +392,46 @@ async def montecarlo_status(job_id: str):
 
 
 @api_router.post("/scenarios", response_model=Scenario)
-async def create_scenario(req: ScenarioCreate):
-    sc = Scenario(name=req.name, config=req.config)
+@limiter.limit("30/minute")
+async def create_scenario(request: Request, req: ScenarioCreate,
+                          owner_token: str = Depends(require_session)):
+    _validate_config(req.config)
+    sc = Scenario(name=req.name, config=req.config, owner_token=owner_token)
     await db.scenarios.insert_one(sc.model_dump())
     return sc
 
 
 @api_router.get("/scenarios", response_model=List[Scenario])
-async def list_scenarios():
-    docs = await db.scenarios.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+async def list_scenarios(owner_token: str = Depends(require_session)):
+    docs = await db.scenarios.find(
+        {"owner_token": owner_token}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
     return docs
 
 
 @api_router.get("/scenarios/{sid}", response_model=Scenario)
-async def get_scenario(sid: str):
-    doc = await db.scenarios.find_one({"id": sid}, {"_id": 0})
+async def get_scenario(sid: str, owner_token: str = Depends(require_session)):
+    if not UUID_RE.match(sid):
+        raise HTTPException(status_code=400, detail="Invalid scenario id")
+    doc = await db.scenarios.find_one({"id": sid, "owner_token": owner_token}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Scenario not found")
     return doc
 
 
 @api_router.delete("/scenarios/{sid}")
-async def delete_scenario(sid: str):
-    await db.scenarios.delete_one({"id": sid})
+async def delete_scenario(sid: str, owner_token: str = Depends(require_session)):
+    if not UUID_RE.match(sid):
+        raise HTTPException(status_code=400, detail="Invalid scenario id")
+    res = await db.scenarios.delete_one({"id": sid, "owner_token": owner_token})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Scenario not found")
     return {"deleted": sid}
 
 
 @api_router.post("/insights")
-async def insights(req: InsightRequest):
+@limiter.limit("10/minute")
+async def insights(request: Request, req: InsightRequest):
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
 
@@ -305,9 +479,9 @@ async def insights(req: InsightRequest):
                     yield ev.content
                 elif isinstance(ev, StreamDone):
                     break
-        except Exception as e:
+        except Exception:
             logging.exception("insight stream failed")
-            yield f"\n[Error generating insights: {e}]"
+            yield "\n[Sorry, insights are temporarily unavailable. Please try again.]"
 
     return StreamingResponse(
         gen(),
@@ -317,7 +491,8 @@ async def insights(req: InsightRequest):
 
 
 @api_router.post("/insights/chat")
-async def insights_chat(req: InsightChatRequest):
+@limiter.limit("30/minute")
+async def insights_chat(request: Request, req: InsightChatRequest):
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
 
@@ -362,9 +537,9 @@ async def insights_chat(req: InsightChatRequest):
                     yield ev.content
                 elif isinstance(ev, StreamDone):
                     break
-        except Exception as e:
+        except Exception:
             logging.exception("insight chat stream failed")
-            yield f"\n[Error answering that: {e}]"
+            yield "\n[Sorry, I couldn't process that question right now. Please try again.]"
 
     return StreamingResponse(
         gen(),
@@ -374,12 +549,19 @@ async def insights_chat(req: InsightChatRequest):
 
 
 app.include_router(api_router)
+
+# ---------- CORS (P3: explicit allowlist) ----------
+_default_origins = "https://roth-retirement-tool.preview.emergentagent.com,http://localhost:3000"
+_allow_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", _default_origins).split(",") if o.strip()]
+# When credentials=True the browser requires a specific origin, not '*'. If '*' is explicitly
+# configured we drop credentials to keep the browser accepting the response.
+_allow_credentials = "*" not in _allow_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=_allow_credentials,
+    allow_origins=_allow_origins,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Session-Token", "X-Forwarded-For"],
 )
 
 logging.basicConfig(level=logging.INFO,

@@ -24,7 +24,11 @@ if 'preview' not in BASE_URL and 'http' not in BASE_URL:
 @pytest.fixture(scope="module")
 def client():
     s = requests.Session()
-    s.headers.update({"Content-Type": "application/json"})
+    s.headers.update({
+        "Content-Type": "application/json",
+        # Per-test-run session token (SEC-002: scenarios are per-session).
+        "X-Session-Token": str(uuid.uuid4()),
+    })
     return s
 
 
