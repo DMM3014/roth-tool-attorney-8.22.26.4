@@ -742,3 +742,13 @@ Two P2 refinements requested by user ("go with recommendation" = auto-create Rot
 - P2: Regime-switching stochastic inflation (macro regime advanced modeling).
 - P3: Migrate global axios interceptors to a dedicated `axios.create()` instance.
 - Idea: read-only shareable scenario links (CFP sharing without exposing session token).
+
+### Phase 20b — One-Click "2022-Style Stagflation" Preset (2026-07-03)
+- `MonteCarlo.jsx` only (frontend; backend untouched): `STAGFLATION` preset constant + "Stress preset"
+  box (`mc-stagflation-card`) between Trials and Return shock. One click sets shock ON (−15% × 2 yrs),
+  stochastic inflation ON (5.5% ± 3%), correlations ON with 2022 diversification-failure matrix
+  (stocks↔bonds +0.60, stocks↔infl −0.50, bonds↔infl −0.60, cash↔infl +0.70) + sonner toast.
+- Derived `stagApplied` state (epsilon float compare): ACTIVE badge + button flips to
+  "Clear stagflation preset" (reverts everything to baseline); editing ANY preset value drops the badge.
+- Amber results banner (`mc-stagflation-banner`) labels runs that used the preset — shareable talking point.
+- Testing agent iteration 22: 6/6 acceptance criteria pass on public preview (100% frontend).

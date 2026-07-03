@@ -96,10 +96,11 @@ export const MonteCarlo = ({ scenario, onResult }) => {
     setCorr((p) => ({ ...p, [k]: Math.max(-0.99, Math.min(0.99, parseFloat(v) || 0)) }));
 
   // "2022-style stagflation" preset — derived so it stays honest if the user tweaks anything
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
   const stagApplied =
-    shockOn && shockRate === STAGFLATION.shock.rate && shockYears === STAGFLATION.shock.years &&
-    inflOn && inflMean === STAGFLATION.inflation.mean && inflVol === STAGFLATION.inflation.vol &&
-    corrOn && CORR_ROWS.every(([k]) => corr[k] === STAGFLATION.corr[k]);
+    shockOn && near(shockRate, STAGFLATION.shock.rate) && shockYears === STAGFLATION.shock.years &&
+    inflOn && near(inflMean, STAGFLATION.inflation.mean) && near(inflVol, STAGFLATION.inflation.vol) &&
+    corrOn && CORR_ROWS.every(([k]) => near(corr[k], STAGFLATION.corr[k]));
   const toggleStagflation = () => {
     if (stagApplied) {
       setShockOn(false); setShockRate(-0.15); setShockYears(2);
