@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame } from "lucide-react";
+import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, RotateCcw } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,19 @@ const DEFAULT_ASSETS = {
   bonds: { weight: 0.3, mean: 0.04, vol: 0.06 },
   cash: { weight: 0.1, mean: 0.03, vol: 0.01 },
 };
+// Long-run US annual historical pairwise correlations (Gaussian copula defaults)
+const DEFAULT_CORR = {
+  stocks_bonds: 0.15, stocks_cash: 0.0, bonds_cash: 0.2,
+  stocks_inflation: -0.2, bonds_inflation: -0.3, cash_inflation: 0.55,
+};
+const CORR_ROWS = [
+  ["stocks_bonds", "Stocks ↔ Bonds"],
+  ["stocks_cash", "Stocks ↔ Cash"],
+  ["bonds_cash", "Bonds ↔ Cash"],
+  ["stocks_inflation", "Stocks ↔ Inflation"],
+  ["bonds_inflation", "Bonds ↔ Inflation"],
+  ["cash_inflation", "Cash ↔ Inflation"],
+];
 
 export const MonteCarlo = ({ scenario, onResult }) => {
   const [assets, setAssets] = useState(DEFAULT_ASSETS);
@@ -28,6 +41,8 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const [inflOn, setInflOn] = useState(false);
   const [inflMean, setInflMean] = useState(scenario?.projection?.general_inflation ?? 0.03);
   const [inflVol, setInflVol] = useState(0.015);
+  const [corrOn, setCorrOn] = useState(false);
+  const [corr, setCorr] = useState(DEFAULT_CORR);
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
@@ -46,6 +61,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
         inflation: { enabled: inflOn, mean: inflMean, vol: inflVol },
+        correlation: { enabled: corrOn, ...corr },
       });
       setRes(out);
       onResult?.(out);
@@ -61,6 +77,9 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const seq = res?.sequence_risk;
   const shock = res?.shock;
   const infl_res = res?.inflation;
+  const corr_res = res?.correlation;
+  const setCorrVal = (k, v) =>
+    setCorr((p) => ({ ...p, [k]: Math.max(-0.99, Math.min(0.99, parseFloat(v) || 0)) }));
 
   // Real ("today's dollars") view: discount each year's percentile at plan inflation.
   const infl = scenario?.projection?.general_inflation ?? 0.03;
@@ -237,8 +256,8 @@ export const MonteCarlo = ({ scenario, onResult }) => {
             </Card>
           </div>
 
-          {/* Sequence-of-returns risk + optional shock + optional inflation */}
-          <div className={`grid grid-cols-1 ${shock || infl_res ? "lg:grid-cols-2" : ""} gap-6`}>
+          {/* Sequence-of-returns risk + optional shock + optional inflation + optional correlation */}
+          <div className={`grid grid-cols-1 ${shock || infl_res || corr_res ? "lg:grid-cols-2" : ""} gap-6`}>
             <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-seq-card">
               <div className="flex items-center gap-2 mb-1">
                 <Activity className="h-4 w-4 text-[#C87941]" />
@@ -285,6 +304,36 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                   </span>{" "}(the P90 tail).
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-2">Higher realized inflation scales your outflows (expenses + taxes) per trial — the fan chart above already reflects this stress.</p>
+              </Card>
+            )}
+
+            {corr_res && (
+              <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-corr-result">
+                <div className="flex items-center gap-2 mb-1">
+                  <Link2 className="h-4 w-4 text-[#4A6741]" />
+                  <h3 className="font-display text-base font-bold tracking-tight">
+                    Correlated Draws{corr_res.includes_inflation ? " (incl. inflation)" : " (assets only)"}
+                  </h3>
+                </div>
+                {corr_res.adjusted_to_psd && (
+                  <p className="text-[11px] text-[#C87941] mb-2" data-testid="mc-corr-adjusted">
+                    Your matrix was internally inconsistent — repaired to the nearest valid correlation matrix (shown below).
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                  {CORR_ROWS.filter(([k]) => corr_res.matrix_used[k] != null).map(([k, label]) => (
+                    <div key={k} className="flex items-center justify-between text-xs border-b border-[#F3F1EC] py-1" data-testid={`mc-corr-res-${k}`}>
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="font-medium">
+                        {corr_res.matrix_used[k].toFixed(2)}
+                        <span className="text-muted-foreground font-normal"> · realized {corr_res.realized[k].toFixed(2)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  One correlated Gaussian-copula draw drives every asset class{corr_res.includes_inflation ? " and inflation" : ""} — e.g. high-inflation years now coincide with weaker bond returns, compounding the stress realistically.
+                </p>
               </Card>
             )}
           </div>

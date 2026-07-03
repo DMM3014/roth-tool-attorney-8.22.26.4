@@ -290,7 +290,7 @@ def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10,
     return rows, round(total, 2), round(sleeves.cum_ira_tax, 2)
 
 
-def _compute_legacy(cfg: dict, final: dict) -> dict:
+def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dict:
     """Estate at second death + SECURE Act 10-year inherited-account horizon."""
     lc = cfg.get("legacy", {})
     settlement_pct = lc.get("estate_settlement_pct", 0.01)
@@ -304,7 +304,7 @@ def _compute_legacy(cfg: dict, final: dict) -> dict:
     heir_ltcg_rate = lc.get("heir_ltcg_rate", 0.188 + lc.get("heir_state_rate", 0.0))
     div_yield = cfg.get("dividend_yield", 0.02)
     mortgage = cfg.get("mortgage_balance", 0.0)
-    accounts = cfg["accounts"]
+    accounts = accounts if accounts is not None else cfg["accounts"]
 
     end_nw = final.get("net_worth", 0)
     end_trad = final.get("traditional", 0)
@@ -403,6 +403,7 @@ class YearFlows:
     roth_withdraw: float
     conversion: float
     surplus: float
+    conv_deposits: dict = None   # {roth_account_id: amount} — same-owner routing
 
 
 def _apply_year_flows(plan, bal, basis, flows):
@@ -439,7 +440,10 @@ def _apply_year_flows(plan, bal, basis, flows):
         bal[rid] -= t
         rem -= t
     if flows.conversion > 0 and acct["roth"]:
-        bal[acct["roth"][0]] += flows.conversion
+        # route each converted dollar to the source-IRA owner's own Roth account
+        deposits = flows.conv_deposits or {acct["roth"][0]: flows.conversion}
+        for rid, amt in deposits.items():
+            bal[rid] += amt
     # reinvest surplus (after-tax) — default to taxable brokerage (gross return), add basis
     if flows.surplus > 0:
         if plan.surplus_sweep_to == "Taxable" and acct["taxable"]:
@@ -520,12 +524,14 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
 
 
 def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
-                       ledger: list | None = None) -> dict:
+                       ledger: list | None = None, auto_accounts: list | None = None,
+                       accounts: list | None = None) -> dict:
     """Roll year rows up into summary totals + the legacy block + Roth compliance."""
     final = rows[-1] if rows else {}
     total_early_penalty = round(sum(w.get("penalty_10pct", 0.0) for w in (warnings or [])), 2)
     return {
         "rows": rows,
+        "auto_accounts": auto_accounts or [],
         "summary": {
             "years": len(rows),
             "total_roth_converted": round(sum(r["roth_conversion"] for r in rows), 2),
@@ -537,7 +543,7 @@ def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
             "ending_real_estate": final.get("real_estate", 0),
             "roth_early_penalty_total": total_early_penalty,
         },
-        "legacy": _compute_legacy(cfg, final),
+        "legacy": _compute_legacy(cfg, final, accounts=accounts),
         "roth_compliance": {
             "warnings": warnings or [],
             "conversions_ledger": ledger or [],
@@ -588,6 +594,24 @@ class Plan:
     taxable_set: set
     rmd_reserve_id: Any
     acct: dict
+    auto_accounts: list
+
+
+def _auto_roth_accounts(accounts: list) -> list:
+    """Per-owner conversion routing: every IRA owner needs a same-owner Roth to receive
+    their converted dollars. Synthesize a $0 Roth IRA (same return as the owner's IRA)
+    for any Client/Spouse IRA owner without one. Never mutates the caller's config."""
+    ira_owners = {a.get("owner", "Client") for a in accounts if a["tax_type"] == "Tax-Deferred"}
+    roth_owners = {a.get("owner", "Client") for a in accounts if a["tax_type"] == "Tax-Free"}
+    autos = []
+    for owner in ("Client", "Spouse"):
+        if owner in ira_owners and owner not in roth_owners:
+            r = next(a["return"] for a in accounts
+                     if a["tax_type"] == "Tax-Deferred" and a.get("owner", "Client") == owner)
+            autos.append({"id": f"ROTH-AUTO-{owner.upper()}", "owner": owner,
+                          "name": f"{owner} Roth IRA (auto-created)", "tax_type": "Tax-Free",
+                          "beginning_balance": 0.0, "cost_basis": 0.0, "return": r})
+    return autos
 
 
 def _parse_plan(cfg: dict) -> Plan:
@@ -598,7 +622,8 @@ def _parse_plan(cfg: dict) -> Plan:
     irmaa_cap = roth.get("irmaa_tier_cap")  # None = no cap; int tier (0=base/no surcharge)
     if irmaa_cap in ("", "None", "none"):
         irmaa_cap = None
-    accounts = cfg["accounts"]
+    auto_accounts = _auto_roth_accounts(cfg["accounts"])
+    accounts = list(cfg["accounts"]) + auto_accounts
     cash_ids = [a["id"] for a in accounts if a["tax_type"] == "Cash"]
     taxable_ids = [a["id"] for a in accounts if a["tax_type"] == "Taxable"]
     ira_ids = [a["id"] for a in accounts if a["tax_type"] == "Tax-Deferred"]
@@ -640,6 +665,7 @@ def _parse_plan(cfg: dict) -> Plan:
         rmd_reserve_id=(ira_ids[0] if ira_ids else None),
         acct={"cash": cash_ids, "taxable": taxable_ids, "ira": ira_ids,
               "roth": roth_ids, "other": other_ids, "taxable_set": taxable_set},
+        auto_accounts=auto_accounts,
     )
 
 
@@ -902,9 +928,15 @@ def run_projection(cfg: dict) -> dict:
         # A Roth withdrawal is attributed to the source-Roth-account's owner (their age).
         client_age = _age(plan.client_dob, year)
         spouse_age = (_age(plan.spouse_dob, year) if plan.has_spouse else None)
+        conv_deposits = {}
         if conversion > 0:
             # Attribute per-source-IRA (drain client IRA first, then spouse — matches
-            # _apply_year_flows drain order after RMDs come out first).
+            # _apply_year_flows drain order after RMDs come out first). Each owner's
+            # converted dollars are physically routed to THEIR OWN Roth account.
+            roth_by_owner = {}
+            for rid in plan.roth_ids:
+                roth_by_owner.setdefault(owner_map.get(rid, "Client"), rid)
+            default_roth = plan.roth_ids[0] if plan.roth_ids else None
             rem_conv = conversion
             for iid in plan.ira_ids:
                 if rem_conv <= 0:
@@ -920,7 +952,13 @@ def run_projection(cfg: dict) -> dict:
                     "year": year, "owner": src_owner, "amount": round(take, 2),
                     "remaining": round(take, 2), "owner_age_at_conversion": owner_age_at_conv,
                 })
+                target = roth_by_owner.get(src_owner, default_roth)
+                if target is not None:
+                    conv_deposits[target] = conv_deposits.get(target, 0.0) + take
                 rem_conv -= take
+            # residual (source balances thinner than the solved conversion): default Roth
+            if rem_conv > 1e-9 and default_roth is not None:
+                conv_deposits[default_roth] = conv_deposits.get(default_roth, 0.0) + rem_conv
         if roth_withdraw > 0:
             # Attribute per-Roth-account withdrawal (mirrors _apply_year_flows drain
             # order: acct["roth"] list — typically ROTC (client) before ROTS (spouse)).
@@ -988,7 +1026,8 @@ def run_projection(cfg: dict) -> dict:
         # EOY = BOY×(1+r) ± flows convention; current-year flows do not compound)
         _grow_balances(bal, plan.accounts, plan.div_yield)
         flows = YearFlows(cash_need=cash_need, rmd_by=rmd_by, ira_draw=conversion + ira_withdraw,
-                          wd=wd, roth_withdraw=roth_withdraw, conversion=conversion, surplus=surplus)
+                          wd=wd, roth_withdraw=roth_withdraw, conversion=conversion, surplus=surplus,
+                          conv_deposits=conv_deposits)
         _apply_year_flows(plan, bal, basis, flows)
 
         calc = YearCalc(
@@ -1002,7 +1041,8 @@ def run_projection(cfg: dict) -> dict:
 
         client_alive_prev, spouse_alive_prev = status.client_alive, status.spouse_alive
 
-    return _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger)
+    return _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger,
+                              auto_accounts=plan.auto_accounts, accounts=plan.accounts)
 
 
 def sweep_brackets(cfg: dict) -> dict:

@@ -33,10 +33,11 @@ export const DetailCashflow = ({ scenario }) => {
   const lastYear = rows.length ? rows[rows.length - 1].year : 2062;
   const postRows = data.legacy?.post_death_rows || [];
 
-  // group accounts by tax type, in display order
+  // group accounts by tax type, in display order (incl. backend auto-created same-owner Roths)
+  const allAccts = [...(scenario.accounts || []), ...(data.auto_accounts || [])];
   const groups = TYPE_GROUPS.map((g) => ({
     ...g,
-    accts: (scenario.accounts || []).filter((a) => a.tax_type === g.type),
+    accts: allAccts.filter((a) => a.tax_type === g.type),
   })).filter((g) => g.accts.length > 0);
 
   // ---------- Account Detail table ----------

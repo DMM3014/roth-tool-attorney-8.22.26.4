@@ -1,0 +1,40 @@
+{
+  "summary": "Backend Phase 20 (routing + Gaussian copula) is fully working: 10/10 local pytest and 7/7 HTTP tests against the public preview URL pass. Frontend Monte Carlo correlation UI is MISSING — the request specifies data-testid mc-corr-card / mc-corr-toggle / 6 mc-corr-<pair> inputs / mc-corr-reset with clamped setCorrVal, but MonteCarlo.jsx only has DEFAULT_CORR/CORR_ROWS/corrOn state and the mc-corr-result output card. There is no UI to toggle corrOn (defaults false) or edit the correlation matrix, so users cannot access the new feature from the browser. Baseline MC (shock, inflation toggles), Multi-Year Projection, and Detail/Cashflow tabs all render and function normally.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MonteCarlo.jsx", "issue": "Correlation input UI missing entirely — no mc-corr-card, mc-corr-toggle, mc-corr-<pair> inputs, or mc-corr-reset button rendered. corrOn state defaults to false with no way for the user to enable it, so mc-corr-result can never appear via the UI.", "selector": "[data-testid='mc-corr-card']", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "Monte Carlo correlated draws", "issue": "Backend supports correlation (verified via HTTP tests) but frontend cannot send correlation.enabled=true because the toggle UI does not exist. End-to-end feature is broken from the user's perspective.", "affected_selectors": ["[data-testid='mc-corr-toggle']", "[data-testid='mc-corr-stocks_bonds']", "[data-testid='mc-corr-reset']", "[data-testid='mc-corr-result']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase20_http_public.py",
+    "/app/test_reports/pytest/phase20_http_public.xml",
+    "/app/test_reports/pytest/phase20_results.xml"
+  ],
+  "action_items": [
+    "Add the missing correlation control block to MonteCarlo.jsx between the mc-inflation-card div and the mc-run Button (~line 212): a div with data-testid='mc-corr-card' containing a Switch bound to corrOn with data-testid='mc-corr-toggle'; when corrOn, render 6 numeric Inputs iterating CORR_ROWS with data-testid={`mc-corr-${key}`}, value={corr[key]}, and onChange handler setCorrVal(key,v) that clamps to [-0.99, 0.99]; plus a 'Reset to historical defaults' Button with data-testid='mc-corr-reset' that calls setCorr(DEFAULT_CORR). Ensure default values (0.15, 0, 0.2, -0.2, -0.3, 0.55) are prefilled from DEFAULT_CORR.",
+    "Verify mc-corr-result card labels 3-pair only (assets only) when inflation toggle is off — backend already handles this correctly."
+  ],
+  "critical_code_review_comments": [
+    "MonteCarlo.jsx: dead-code / half-shipped feature — CORR_ROWS, DEFAULT_CORR, corrOn, setCorr, corr state and the mc-corr-result render block are all present, but the input controls that would let the user turn corrOn on and edit corr[] were never rendered. Looks like the JSX block was accidentally dropped before commit.",
+    "MonteCarlo.jsx: no setCorrVal helper defined — will need to add one that clamps to [-0.99, 0.99] per requirements.",
+    "Backend server.py CorrelationSpec: bounds correctly enforced (verified 422 on stocks_bonds=1.5)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase20_http_public.py (new HTTP regression test file, 7 tests, all passing)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "60%"},
+  "test_credentials": "N/A (public endpoints, no auth required for /api/projection and /api/montecarlo)",
+  "seed_data_creation": "None — used GET /api/defaults + inline mutations",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend phase 20 is verified end-to-end via /app/backend/tests/test_phase20_http_public.py — re-run with `pytest backend/tests/test_phase20_http_public.py -o addopts=''` (default addopts uses xdist which the file doesn't declare). Frontend needs the mc-corr-card block added; once added, retest: (1) toggle ON reveals 6 prefilled inputs + reset, (2) entering 5 clamps to 0.99, (3) run with corr ON + inflation ON → mc-corr-result appears with 6 mc-corr-res-<pair> rows and includes '(incl. inflation)', (4) run with corr ON + inflation OFF → 3 pairs, label '(assets only)', (5) run with corr OFF → mc-corr-result absent.",
+  "rca of the issue": "MonteCarlo.jsx contains all the state (corrOn, corr, setCorr) and the display card (mc-corr-result) needed for the correlated-draws feature, but the JSX input block (mc-corr-card with toggle + 6 numeric inputs + reset button) was never added to the render tree. Likely the developer added the state, the API wiring (line 64 passes correlation to runMonteCarlo), and the result renderer but forgot to commit the control panel. Mitigation: insert the missing block between the mc-inflation-card div (ends line 212) and the mc-run Button (line 214)."
+}

@@ -1,5 +1,6 @@
-"""Monte Carlo v2.1 — locks the deterministic conversion schedule and randomizes returns
-+ (v2.1) stochastic inflation on the spending side.
+"""Monte Carlo v2.2 — locks the deterministic conversion schedule and randomizes returns
++ (v2.1) stochastic inflation on the spending side
++ (v2.2) optional Gaussian-copula correlation across stocks/bonds/cash/inflation draws.
 
 v2 adds:
   * per-asset-class volatility via a GLOBAL stocks/bonds/cash allocation (each class has its own
@@ -42,6 +43,33 @@ DEFAULT_ASSETS = {
     "cash": {"weight": 0.10, "mean": 0.03, "vol": 0.01},
 }
 
+# Long-run US historical pairwise correlations (annual): order stocks, bonds, cash, inflation.
+DEFAULT_CORR = {
+    "stocks_bonds": 0.15, "stocks_cash": 0.00, "bonds_cash": 0.20,
+    "stocks_inflation": -0.20, "bonds_inflation": -0.30, "cash_inflation": 0.55,
+}
+_CORR_PAIRS = [("stocks_bonds", 0, 1), ("stocks_cash", 0, 2), ("bonds_cash", 1, 2),
+               ("stocks_inflation", 0, 3), ("bonds_inflation", 1, 3), ("cash_inflation", 2, 3)]
+
+
+def _corr_setup(corr, k):
+    """Build the k×k correlation matrix (k=3 assets-only, k=4 with inflation) from the
+    six pairwise entries, repair to the nearest PSD matrix if needed (eigenvalue clipping
+    + unit-diagonal rescale), and return (matrix_used, cholesky_L, was_adjusted)."""
+    R = np.eye(k)
+    for key, i, j in _CORR_PAIRS:
+        if i < k and j < k:
+            v = max(-0.99, min(0.99, float(corr.get(key, DEFAULT_CORR[key]))))
+            R[i, j] = R[j, i] = v
+    w, V = np.linalg.eigh(R)
+    adjusted = bool(w.min() < 1e-8)
+    if adjusted:
+        w = np.clip(w, 1e-8, None)
+        R = V @ np.diag(w) @ V.T
+        d = np.sqrt(np.diag(R))
+        R = R / np.outer(d, d)
+    return R, np.linalg.cholesky(R), adjusted
+
 
 def _liquid_start(config):
     return float(sum(a.get("beginning_balance", 0.0)
@@ -56,8 +84,11 @@ def _flows_split(rows):
     return ext, out
 
 
-def _portfolio_factors(assets, n, T, rng):
-    """Allocation-weighted gross-return factors (n x T) blended from independent per-class draws."""
+def _portfolio_factors(assets, n, T, rng, z=None):
+    """Allocation-weighted gross-return factors (n x T) blended from per-class draws.
+
+    `z` (n×T×3 standard normals, already correlated) overrides the independent draws
+    when the Gaussian-copula correlation mode is on."""
     classes = ["stocks", "bonds", "cash"]
     weights = np.array([max(0.0, assets[c]["weight"]) for c in classes], dtype=float)
     wsum = weights.sum() or 1.0
@@ -66,19 +97,22 @@ def _portfolio_factors(assets, n, T, rng):
     for i, c in enumerate(classes):
         m, s = float(assets[c]["mean"]), max(1e-6, float(assets[c]["vol"]))
         mu = np.log(1.0 + m) - 0.5 * s * s
-        g += weights[i] * np.exp(rng.normal(mu, s, size=(n, T)))
+        zi = z[:, :, i] if z is not None else rng.normal(size=(n, T))
+        g += weights[i] * np.exp(mu + s * zi)
     port_mean = float(np.dot(weights, [assets[c]["mean"] for c in classes]))
     port_vol = float(np.sqrt(np.dot(weights ** 2, [assets[c]["vol"] ** 2 for c in classes])))
     return g, weights, port_mean, port_vol
 
 
-def _inflation_factors(inflation, n, T, rng, det_mean):
+def _inflation_factors(inflation, n, T, rng, det_mean, z=None):
     """Return (multiplier[n,T], mean_used, vol_used, cum_summary).
 
     Multiplier at year t = ∏_{s≤t}(1+π_s) / (1+det_mean)^(t+1)   (t is 0-indexed here).
     So the LHS scales the deterministic (already-inflated) outflow to what it WOULD have been
     if realized inflation ran at π_s instead of det_mean.  When inflation is None or vol<=0
     the multiplier is 1.0 everywhere (backward-compatible with v2).
+    `z` (n×T standard normals, already correlated with the asset draws) overrides the
+    independent draws when the Gaussian-copula correlation mode is on.
     """
     if not inflation or not inflation.get("enabled", True) or float(inflation.get("vol", 0.0)) <= 0.0:
         return np.ones((n, T), dtype=float), None, None, None
@@ -86,7 +120,8 @@ def _inflation_factors(inflation, n, T, rng, det_mean):
     vol = float(inflation.get("vol", 0.015))
     # lognormal draws of (1 + π_t): mean of ln(1+π) ≈ mean - 0.5*vol^2
     mu_ln = np.log(1.0 + mean) - 0.5 * vol * vol
-    draws = np.exp(rng.normal(mu_ln, vol, size=(n, T)))     # (1 + π_t) per trial per year
+    zi = z if z is not None else rng.normal(size=(n, T))
+    draws = np.exp(mu_ln + vol * zi)                         # (1 + π_t) per trial per year
     cum_actual = np.cumprod(draws, axis=1)                  # ∏(1+π)
     cum_expected = np.array([(1.0 + det_mean) ** (t + 1) for t in range(T)])
     m = cum_actual / cum_expected                            # relative multiplier
@@ -187,7 +222,8 @@ def _shock_run(shock, g, liquid0, ext_w, out_w, ext_n, out_n, infl_mult, T, base
     }
 
 
-def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inflation=None):
+def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inflation=None,
+                   correlation=None):
     n = int(max(50, min(n_trials, 2000)))
     assets = assets or DEFAULT_ASSETS
 
@@ -201,10 +237,36 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inf
     ext_n, out_n = _flows_split(rows_n)
 
     rng = np.random.default_rng(seed)
-    g, weights, port_mean, port_vol = _portfolio_factors(assets, n, T, rng)
-
     det_infl = float(config.get("projection", {}).get("general_inflation", 0.03))
-    infl_mult, infl_mean, infl_vol, cum_summary = _inflation_factors(inflation, n, T, rng, det_infl)
+
+    # Gaussian copula: one correlated standard-normal draw across stocks/bonds/cash
+    # (+ inflation when stochastic inflation is on), mapped to each lognormal marginal.
+    corr_info = None
+    z_assets = z_infl = None
+    if correlation and correlation.get("enabled"):
+        infl_active = bool(inflation and inflation.get("enabled", True)
+                           and float(inflation.get("vol", 0.0)) > 0.0)
+        k = 4 if infl_active else 3
+        R, L, adjusted = _corr_setup(correlation, k)
+        z = rng.standard_normal(size=(n, T, k)) @ L.T
+        z_assets = z[:, :, :3]
+        z_infl = z[:, :, 3] if infl_active else None
+        flat = z.reshape(-1, k)
+        realized = np.corrcoef(flat, rowvar=False)
+        corr_info = {
+            "enabled": True,
+            "includes_inflation": infl_active,
+            "adjusted_to_psd": adjusted,
+            "matrix_used": {key: round(float(R[i, j]), 4)
+                            for key, i, j in _CORR_PAIRS if i < k and j < k},
+            "realized": {key: round(float(realized[i, j]), 4)
+                         for key, i, j in _CORR_PAIRS if i < k and j < k},
+        }
+
+    g, weights, port_mean, port_vol = _portfolio_factors(assets, n, T, rng, z=z_assets)
+
+    infl_mult, infl_mean, infl_vol, cum_summary = _inflation_factors(
+        inflation, n, T, rng, det_infl, z=z_infl)
 
     paths_w, dep_w = _simulate(liquid0, ext_w, out_w, g, infl_mult)
     paths_n, dep_n = _simulate(liquid0, ext_n, out_n, g, infl_mult)
@@ -222,6 +284,7 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inf
         "sequence_risk": _sequence_risk(g, paths_w, dep_w, T),
         "shock": None,
         "inflation": None,
+        "correlation": corr_info,
     }
 
     if infl_vol is not None:

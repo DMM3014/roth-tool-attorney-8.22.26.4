@@ -203,12 +203,33 @@ class InflationSpec(BaseModel):
     vol: float = 0.015     # 1.5% inflation vol ≈ post-1990 US CPI stdev
 
 
+class CorrelationSpec(BaseModel):
+    """Gaussian-copula pairwise correlations across stocks/bonds/cash/inflation draws.
+    Defaults ≈ long-run US annual history. Repaired to nearest PSD matrix server-side."""
+    enabled: bool = False
+    stocks_bonds: float = 0.15
+    stocks_cash: float = 0.0
+    bonds_cash: float = 0.20
+    stocks_inflation: float = -0.20
+    bonds_inflation: float = -0.30
+    cash_inflation: float = 0.55
+
+    @field_validator("stocks_bonds", "stocks_cash", "bonds_cash",
+                     "stocks_inflation", "bonds_inflation", "cash_inflation")
+    @classmethod
+    def _corr_bounds(cls, v):
+        if v < -0.99 or v > 0.99:
+            raise ValueError("correlations must be within [-0.99, 0.99]")
+        return v
+
+
 class MonteCarloRequest(BaseModel):
     config: Dict[str, Any]
     n_trials: int = 500
     assets: Optional[Dict[str, AssetClass]] = None
     shock: Optional[ShockSpec] = None
     inflation: Optional[InflationSpec] = None
+    correlation: Optional[CorrelationSpec] = None
     seed: Optional[int] = None
 
     @field_validator("n_trials")
@@ -370,10 +391,12 @@ async def start_montecarlo(request: Request, req: MonteCarloRequest):
     assets = {k: v.model_dump() for k, v in req.assets.items()} if req.assets else None
     shock = req.shock.model_dump() if req.shock else None
     inflation = req.inflation.model_dump() if req.inflation else None
+    correlation = req.correlation.model_dump() if req.correlation else None
 
     async def worker():
         try:
-            res = await asyncio.to_thread(run_montecarlo, req.config, req.n_trials, assets, shock, req.seed, inflation)
+            res = await asyncio.to_thread(run_montecarlo, req.config, req.n_trials, assets, shock,
+                                          req.seed, inflation, correlation)
             await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "done", "result": res}})
         except Exception:
             logging.exception("montecarlo failed")

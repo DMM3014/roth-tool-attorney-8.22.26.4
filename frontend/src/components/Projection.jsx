@@ -211,7 +211,7 @@ const RothComplianceCard = ({ compliance }) => {
         </table>
       </div>
       <p className="text-[10px] text-muted-foreground mt-2">
-        Per-conversion 5-year clock tracked per owner (client vs spouse). Oldest-conversion-first drawdown. Consult a CPA before executing.
+        Per-conversion 5-year clock tracked per owner (client vs spouse); each conversion is deposited into the source-IRA owner's own Roth account. Oldest-conversion-first drawdown. Consult a CPA before executing.
       </p>
     </Card>
   );
