@@ -704,3 +704,41 @@ plus P3 hardening items — all resolved in this phase.
   `<WhitePaper print />` appendix via `body.print-whitepaper` class + `window.print()`, page-break before it.
 - Verified via screenshot: White Paper tab renders (title, summary box, §3 "Two Forces", §4/§6, references);
   Analytics loads clean with all 5 toolbar buttons. (Frontend-only change; no backend/tax-engine touch.)
+
+### Phase 20 — Per-Owner Conversion Routing + Correlated MC Draws (2026-07-03)
+Two P2 refinements requested by user ("go with recommendation" = auto-create Roth + editable 6-value grid):
+- **(A) Per-owner conversion routing** (`backend/projection.py`):
+  - Converted dollars now PHYSICALLY deposit into the source-IRA owner's own Roth account
+    (Client IRA → Client Roth, Spouse IRA → Spouse Roth), matching the per-owner 5-year-clock ledger.
+  - `_auto_roth_accounts()`: if an IRA owner has no Roth, a $0 Roth (`ROTH-AUTO-CLIENT`/`ROTH-AUTO-SPOUSE`,
+    same return as the owner's IRA) is synthesized at plan-build time (config never mutated). Reported in
+    projection result key `auto_accounts`. Also fixes old silent-drop when a plan had NO Roth accounts.
+  - `YearFlows.conv_deposits` dict; `_apply_year_flows` deposits per target Roth; residual → default Roth.
+  - `_aggregate_results`/`_compute_legacy` take accounts override so legacy math sees auto accounts.
+  - Frontend: `DetailCashflow.jsx` merges `data.auto_accounts` into the account-detail table groups;
+    Roth compliance card note updated to mention same-owner routing.
+  - Default scenario totals PROVEN unchanged (all default conversions are client-sourced); golden regenerated
+    (only new `auto_accounts` key + `correlation` key in MC section).
+- **(B) Correlated inflation-return draws — Monte Carlo v2.2** (`backend/montecarlo.py`, `server.py`,
+  `frontend/src/components/MonteCarlo.jsx`):
+  - Gaussian copula: one correlated standard-normal draw across stocks/bonds/cash (+ inflation when
+    stochastic inflation on) mapped to each lognormal marginal. `DEFAULT_CORR` = long-run US history
+    (sb +0.15, sc 0, bc +0.20, si −0.20, bi −0.30, ci +0.55).
+  - `_corr_setup()`: nearest-PSD repair via eigenvalue clipping + unit-diag rescale; reports `adjusted_to_psd`.
+  - `CorrelationSpec` Pydantic model (each pair bounded [−0.99, 0.99], 422 otherwise); result includes
+    `correlation: {enabled, includes_inflation, adjusted_to_psd, matrix_used, realized}`.
+  - Disabled path RNG-identical to v2.1 (verified: same-seed results byte-identical) — backward compatible.
+  - UI: "Correlated draws" toggle card (`mc-corr-card`) with 6 editable inputs (clamped ±0.99) +
+    "Reset to historical defaults"; results show "Correlated Draws" card (`mc-corr-result`) with
+    requested · realized pairs and "(incl. inflation)"/"(assets only)" variants + PSD-repair notice.
+- **Tests**: `tests/test_phase20_routing_and_copula.py` (10 engine tests) +
+  `tests/test_phase20_http_public.py` (7 HTTP tests, added by testing agent). Testing agent iterations
+  20 (backend 100%; found control-card JSX lost to a parallel-edit race — re-added) and 21 (frontend 100%).
+  NOTE: running the full live-HTTP test suite twice within a minute trips Phase-19 slowapi rate limits
+  (429s) — expected behavior, pace suite runs.
+
+## Backlog / Next (updated 2026-07-03, post-Phase-20)
+- P1: **Account aggregation** (Plaid / Yodlee) — the last "Boldin wins" gap.
+- P2: Regime-switching stochastic inflation (macro regime advanced modeling).
+- P3: Migrate global axios interceptors to a dedicated `axios.create()` instance.
+- Idea: read-only shareable scenario links (CFP sharing without exposing session token).
