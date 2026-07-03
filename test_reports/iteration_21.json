@@ -1,0 +1,23 @@
+{
+  "summary": "Phase 20 retest — frontend Monte Carlo correlation UI now fully working. mc-corr-card block is rendered with the toggle, and once enabled displays the 6 prefilled numeric inputs plus a Reset button. Clamp-on-edit and reset behaviors work as specified. All three run scenarios (corr ON+infl ON, corr ON+infl OFF, corr OFF) produce the expected mc-corr-result behavior; baseline gauge/fan/sequence still render when corr is OFF (regression clean). Backend intentionally not retested per request.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_20.json"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MonteCarlo.jsx setCorrVal correctly clamps to [-0.99, 0.99] via Math.max/Math.min; verified '5' input clamps to 0.99 and reset restores DEFAULT_CORR (0.15 etc).",
+    "Header text branches on corr_res.includes_inflation for '(incl. inflation)' vs '(assets only)' — both variants observed live."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (skipped per request)", "frontend": "100%"},
+  "test_credentials": "N/A",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 20 correlated-draws feature fully verified end-to-end on public preview URL. Test evidence: mc-corr-card+mc-corr-toggle present; 6 prefilled inputs (0.15/0/0.2/-0.2/-0.3/0.55); mc-corr-stocks_bonds entered 5 -> clamps to 0.99; mc-corr-reset restores 0.15; Run corr ON+infl ON -> header 'Correlated Draws (incl. inflation)' with 6 mc-corr-res-<pair> rows; Run corr ON+infl OFF -> header 'Correlated Draws (assets only)' with 3 rows (stocks_bonds/stocks_cash/bonds_cash); Run corr OFF -> mc-corr-result absent; mc-gauge-card, mc-fan-card, mc-seq-card all still render (baseline regression clean).",
+  "rca of the issue": "Previous iteration's missing mc-corr-card JSX block has been correctly re-added at lines 214-240 of MonteCarlo.jsx between mc-inflation-card and mc-run. setCorrVal helper is defined at line 81 and properly clamps values."
+}

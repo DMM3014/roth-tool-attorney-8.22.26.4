@@ -211,6 +211,34 @@ export const MonteCarlo = ({ scenario, onResult }) => {
               </p>
             </div>
 
+            <div className="rounded-lg border border-[#EBE8E0] p-3" data-testid="mc-corr-card">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs flex items-center gap-1.5"><Link2 className="h-3.5 w-3.5 text-[#4A6741]" /> Correlated draws</Label>
+                <Switch checked={corrOn} onCheckedChange={setCorrOn} data-testid="mc-corr-toggle" />
+              </div>
+              {corrOn && (
+                <>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 mt-3">
+                    {CORR_ROWS.map(([k, label]) => (
+                      <div key={k}>
+                        <Label className="text-[10px] text-muted-foreground">{label}</Label>
+                        <Input type="number" step={0.05} min={-0.99} max={0.99} value={corr[k]} data-testid={`mc-corr-${k}`}
+                          onChange={(e) => setCorrVal(k, e.target.value)} className="h-8 text-right bg-white" />
+                      </div>
+                    ))}
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setCorr(DEFAULT_CORR)} data-testid="mc-corr-reset"
+                    className="mt-2 h-7 w-full gap-1.5 text-[11px] text-[#4A6741] hover:text-[#3B5234]">
+                    <RotateCcw className="h-3 w-3" /> Reset to historical defaults
+                  </Button>
+                </>
+              )}
+              <p className="text-[10px] text-muted-foreground mt-2">
+                Gaussian copula across stocks / bonds / cash{corrOn ? " / inflation" : ""} draws.
+                Inflation pairs apply only when stochastic inflation is on. Invalid matrices are repaired to the nearest valid one.
+              </p>
+            </div>
+
             <Button onClick={run} disabled={running} data-testid="mc-run"
               className="w-full gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
               {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
