@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, RotateCcw } from "lucide-react";
+import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, RotateCcw, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,17 @@ const CORR_ROWS = [
   ["cash_inflation", "Cash ↔ Inflation"],
 ];
 
+// One-click "2022 replay": stocks −18%, bonds −13%, CPI 8% — stock/bond diversification
+// failed (correlation flipped positive) while inflation punished both.
+const STAGFLATION = {
+  shock: { rate: -0.15, years: 2 },
+  inflation: { mean: 0.055, vol: 0.03 },
+  corr: {
+    stocks_bonds: 0.6, stocks_cash: 0.0, bonds_cash: 0.2,
+    stocks_inflation: -0.5, bonds_inflation: -0.6, cash_inflation: 0.7,
+  },
+};
+
 export const MonteCarlo = ({ scenario, onResult }) => {
   const [assets, setAssets] = useState(DEFAULT_ASSETS);
   const [shockOn, setShockOn] = useState(false);
@@ -45,6 +57,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const [corr, setCorr] = useState(DEFAULT_CORR);
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState(null);
+  const [resStag, setResStag] = useState(false);
   const [err, setErr] = useState(null);
   const [realDollars, setRealDollars] = useState(false);
 
@@ -64,6 +77,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
         correlation: { enabled: corrOn, ...corr },
       });
       setRes(out);
+      setResStag(stagApplied);
       onResult?.(out);
     } catch (e) {
       setErr("Simulation failed. Please try again.");
@@ -80,6 +94,27 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const corr_res = res?.correlation;
   const setCorrVal = (k, v) =>
     setCorr((p) => ({ ...p, [k]: Math.max(-0.99, Math.min(0.99, parseFloat(v) || 0)) }));
+
+  // "2022-style stagflation" preset — derived so it stays honest if the user tweaks anything
+  const stagApplied =
+    shockOn && shockRate === STAGFLATION.shock.rate && shockYears === STAGFLATION.shock.years &&
+    inflOn && inflMean === STAGFLATION.inflation.mean && inflVol === STAGFLATION.inflation.vol &&
+    corrOn && CORR_ROWS.every(([k]) => corr[k] === STAGFLATION.corr[k]);
+  const toggleStagflation = () => {
+    if (stagApplied) {
+      setShockOn(false); setShockRate(-0.15); setShockYears(2);
+      setInflOn(false); setInflMean(scenario?.projection?.general_inflation ?? 0.03); setInflVol(0.015);
+      setCorrOn(false); setCorr(DEFAULT_CORR);
+      toast("Stagflation preset cleared", { description: "Shock, inflation and correlations back to baseline." });
+    } else {
+      setShockOn(true); setShockRate(STAGFLATION.shock.rate); setShockYears(STAGFLATION.shock.years);
+      setInflOn(true); setInflMean(STAGFLATION.inflation.mean); setInflVol(STAGFLATION.inflation.vol);
+      setCorrOn(true); setCorr(STAGFLATION.corr);
+      toast.success("2022-style stagflation preset applied", {
+        description: "2-yr −15% return shock · 5.5% ±3% inflation · stock/bond diversification failure (+0.60).",
+      });
+    }
+  };
 
   // Real ("today's dollars") view: discount each year's percentile at plan inflation.
   const infl = scenario?.projection?.general_inflation ?? 0.03;
@@ -164,6 +199,27 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                 <span className="text-[10px] text-muted-foreground">fixed · validated</span>
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">Locked to 500 trials — the validated setting for this model.</p>
+            </div>
+
+            <div className={`rounded-lg border p-3 transition-colors ${stagApplied ? "border-[#C87941] bg-[#FBF3EC]" : "border-[#EBE8E0]"}`} data-testid="mc-stagflation-card">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <AlertTriangle className={`h-3.5 w-3.5 ${stagApplied ? "text-[#C87941]" : "text-muted-foreground"}`} />
+                  Stress preset
+                </Label>
+                {stagApplied && <span className="text-[10px] font-semibold text-[#C87941] uppercase tracking-wide" data-testid="mc-stagflation-active">Active</span>}
+              </div>
+              <Button variant="outline" size="sm" onClick={toggleStagflation} data-testid="mc-stagflation-preset"
+                className={`mt-2 h-8 w-full gap-1.5 text-[11px] rounded-full ${stagApplied
+                  ? "border-[#C87941] text-[#C87941] hover:bg-[#C87941]/10"
+                  : "border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/10"}`}>
+                <Flame className="h-3 w-3" />
+                {stagApplied ? "Clear stagflation preset" : "2022-style stagflation"}
+              </Button>
+              <p className="text-[10px] text-muted-foreground mt-2">
+                One click replays 2022: −15% returns for 2 yrs, 5.5% ± 3% inflation, and stock/bond
+                diversification failure (correlation +0.60) with inflation punishing both (−0.50 / −0.60).
+              </p>
             </div>
 
             <div className="rounded-lg border border-[#EBE8E0] p-3">
@@ -258,6 +314,15 @@ export const MonteCarlo = ({ scenario, onResult }) => {
 
       {res && (
         <>
+          {resStag && (
+            <div className="flex items-center gap-2 rounded-lg border border-[#C87941]/40 bg-[#FBF3EC] px-4 py-2.5" data-testid="mc-stagflation-banner">
+              <Flame className="h-4 w-4 text-[#C87941] shrink-0" />
+              <p className="text-xs text-[#7A4A28]">
+                <span className="font-semibold">2022-style stagflation stress:</span> these results assume a 2-year −15% return
+                shock, 5.5% ± 3% inflation, and failed stock/bond diversification (+0.60) — a deliberately punishing "2022 replay".
+              </p>
+            </div>
+          )}
           {/* Headline: gauge + with/without */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="p-6 border-[#EBE8E0] shadow-none flex flex-col items-center justify-center" data-testid="mc-gauge-card">

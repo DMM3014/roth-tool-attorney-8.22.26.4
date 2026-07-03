@@ -1,0 +1,38 @@
+{
+  "summary": "Frontend-only verification of the new '2022-style stagflation' one-click preset on the Monte Carlo tab. All 6 acceptance criteria pass end-to-end on the public preview URL.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_evidence": {
+    "card_placement": "mc-stagflation-card sits between mc-trials (top≈322px) and mc-shock-toggle (top≈561px) — order verified by getBoundingClientRect.",
+    "initial_button_label": "'2022-style stagflation' (no ACTIVE badge before click).",
+    "after_preset_click": {
+      "toast": "'2022-style stagflation preset applied · 2-yr −15% return shock · 5.5% ±3% inflation · stock/bond diversification failure (+0.60).'",
+      "active_badge": "mc-stagflation-active present",
+      "button_label": "'Clear stagflation preset'",
+      "toggles": {"mc-shock-toggle": "checked", "mc-inflation-toggle": "checked", "mc-corr-toggle": "checked"},
+      "values": {"mc-shock-rate": "-15", "mc-shock-years": "2", "mc-inflation-mean": "5.5", "mc-inflation-vol": "3", "mc-corr-stocks_bonds": "0.6", "mc-corr-stocks_cash": "0", "mc-corr-bonds_cash": "0.2", "mc-corr-stocks_inflation": "-0.5", "mc-corr-bonds_inflation": "-0.6", "mc-corr-cash_inflation": "0.7"}
+    },
+    "run_with_preset": "Results rendered in ~15s. mc-stagflation-banner visible above results with correct 2022-style stress copy. mc-corr-result header is 'Correlated Draws (incl. inflation)'. mc-corr-res-stocks_bonds row shows '0.60 · realized 0.59' (requested 0.60 matches preset).",
+    "derived_state_honesty": "Manually editing mc-corr-stocks_bonds from 0.6 → 0.3 removes ACTIVE badge and button reverts to '2022-style stagflation'. Verified.",
+    "clear_preset": "Re-applying then clicking again fires 'Stagflation preset cleared' toast; all three toggles return to unchecked; mc-corr defaults restored (stocks_bonds=0.15 confirmed).",
+    "regression_plain_run": "With no preset (all toggles off), simulation completes and renders mc-gauge-card, mc-compare-card, mc-fan-card, mc-seq-card, mc-hist-card. mc-stagflation-banner, mc-shock-card, mc-inflation-result, mc-corr-result are all absent as expected."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Derived stagApplied at MonteCarlo.jsx:99 uses strict === on floats (e.g. inflMean === 0.055). Works today because the preset writes those exact literals, but any future refactor that routes preset values through a percent<->decimal round-trip (like the current onChange parsers) could introduce sub-epsilon drift and silently drop the ACTIVE badge. Consider a small tolerance (Math.abs(a-b) < 1e-9) for robustness.",
+    "Minor: shockOn=true with corrOn=true but inflOn=false is a valid partial-preset state, yet toggling only inflation off from an ACTIVE preset leaves the shock/corr values that the user probably wants preserved — current clear() resets everything. Acceptable per spec but worth documenting."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (skipped per request)", "frontend": "100%"},
+  "test_credentials": "N/A",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 22 verified the stagflation preset feature 100% on public preview. Selectors used: mc-stagflation-card, mc-stagflation-preset, mc-stagflation-active, mc-stagflation-banner, mc-shock-toggle, mc-inflation-toggle, mc-corr-toggle, mc-shock-rate/years, mc-inflation-mean/vol, mc-corr-<pair>, mc-corr-res-<pair>, mc-run, mc-gauge-card, mc-fan-card, mc-seq-card, mc-hist-card, mc-compare-card. Monte Carlo backend job completes in ~10-20s. slowapi rate limit tolerated 3 runs comfortably.",
+  "rca of the issue": "No issue found — feature ships as specified."
+}
