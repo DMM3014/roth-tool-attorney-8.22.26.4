@@ -778,3 +778,37 @@ verified intact; fixed the 1 MEDIUM + 4 LOW/P3 items below. All in `backend/serv
   MC session-scoping + BOLA + no-leak, malformed job id, NaN/Inf/out-of-range 422, CSP header.
   Golden snapshot unchanged (no math touched). Frontend regression (iter 23): all MC flows +
   Scenarios CRUD work under the new session-gating (100%).
+
+### Phase 22 — Monte Carlo v3.0: Anchor-to-Plan, Historical Bootstrap, Failure Anatomy (2026-07-03)
+User reported a disconnect: conservative asset-rich couple showed ~22% MC failure while the deterministic
+plan never fails. ROOT CAUSE: MC ignored the plan's account returns (blended 6.67%) and hard-coded generic
+60/30/10 lognormal assumptions (6.30% mean, ~11% vol) → systematic downward bias + unchosen volatility.
+Secondary optics issue: all depleted trials stacked into the histogram's $0 bin, making failure look like
+the modal outcome. User picked research-backed fixes 1+2+4 (skipped regime-switching for now).
+- **(1) Anchor-to-plan (default ON)**: `_plan_return()` = liquid-weighted account return; lognormal class
+  means rescaled so blended GEOMETRIC mean ≈ plan (arith target = plan + σ²/2); historical engine recenters
+  sampled factors by (1+plan)/geom. Result reports `plan_return` + `anchor` block; UI shows
+  "Plan return 6.67% · simulated mean 7.3% · anchored" (mc-anchor-info). Default success 93% → ~97.6%.
+  `anchor_to_plan=False` reproduces v2.2 exactly.
+- **(2) Historical engine** (`engine="historical"`): stationary block bootstrap (Politis-Romano, expected
+  block 10 yrs) over `/app/backend/historical_data.py` — Damodaran S&P500/10yr-Tbond/3mo-Tbill + BLS Dec-Dec
+  CPI, 1928-2024 (97 yrs). Same-calendar-year sampling preserves real cross-correlations/fat tails/mean
+  reversion (Anarkulova-Cederburg-O'Doherty method). Copula spec ignored (embedded in data); historical CPI
+  drives outflows when stochastic inflation ON. UI: engine pill toggle; mean/vol inputs disabled; corr card
+  shows "handled by the data" note.
+- **(4) Guardrail + failure anatomy**: `guardrail={enabled, cut_pct}` cuts EXPENSES (never taxes) in years
+  following a portfolio loss (Guyton-Klinger-lite); reports success with/without + median trimmed years
+  (mc-guardrail-info chip). `_summarize` adds `failure` block (median/p10/p90 depletion year, years
+  unfunded) → "Failure Anatomy" card (mc-failure-card); histogram is now SURVIVORS-ONLY with depleted
+  count reported separately (mc-hist-depleted-note).
+- **API**: MonteCarloRequest += engine ("lognormal"|"historical", validated), anchor_to_plan (default true),
+  GuardrailSpec (cut_pct ≤ 0.5, allow_inf_nan=False).
+- **Test infra**: `tests/conftest.py` auto-retries 429s (rate limits are intentional) with escape hatches
+  for X-Forwarded-For / X-Test-Expect-429 tests; legacy MC HTTP test files updated with session tokens.
+- **Testing**: `tests/test_phase22_engine.py` (14 tests) — anchor math, unanchored v2.2 reproduction,
+  dataset integrity spot-checks (2008 stocks −36.55%, 2022 bonds −17.83%, 1979 CPI 13.3%), bootstrap
+  continuation rate ~0.9, guardrail monotonicity, failure-block consistency, survivor histogram. FULL suite
+  143/143 pass. Golden regenerated (only MC section: anchor default + new fields; tax/projection untouched).
+  Frontend iteration 24: 100%, no bugs.
+- Deferred/backlog: regime-switching engine (option 3); MonteCarlo.jsx approaching 700-line split threshold
+  (extract MonteCarloResults.jsx); useMemo planReturn.
