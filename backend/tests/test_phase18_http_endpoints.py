@@ -10,16 +10,18 @@ import time
 import pytest
 import requests
 
+MC_HDRS = {"X-Session-Token": "7c1e4b90-2d3f-4a5b-8c6d-9e0f1a2b3c4d"}
+
 
 def _run_mc(payload, poll_timeout=180):
-    r = requests.post(f"{BASE_URL}/api/montecarlo", json=payload, timeout=30)
+    r = requests.post(f"{BASE_URL}/api/montecarlo", json=payload, headers=MC_HDRS, timeout=30)
     assert r.status_code == 200
     body = r.json()
     if "job_id" in body:
         job_id = body["job_id"]
         deadline = time.time() + poll_timeout
         while time.time() < deadline:
-            s = requests.get(f"{BASE_URL}/api/montecarlo/{job_id}", timeout=30)
+            s = requests.get(f"{BASE_URL}/api/montecarlo/{job_id}", headers=MC_HDRS, timeout=30)
             assert s.status_code == 200
             js = s.json()
             if js.get("status") == "done":

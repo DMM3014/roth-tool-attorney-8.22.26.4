@@ -1,0 +1,23 @@
+{
+  "summary": "Phase 22 Monte Carlo frontend tested end-to-end via Playwright against preview URL. All 5 requested features verified: default anchored statistical run (~97.6% success, up from old ~93%), historical 1928-2024 engine with disabled mean/vol inputs and correlation 'handled by data' note, spending guardrail lift, failure anatomy card (via stagflation run — 36.6% deplete, median 2054), and full regression (stagflation flips engine from Historical→Statistical, correlation card returns, stochastic inflation card, sequence/fan/hist/shock/inflation/correlation result cards all render, nominal/today's-$ toggle functions). No frontend issues found.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "MonteCarlo.jsx is 615 lines — approaching the 700-line split threshold; consider extracting the results section (engine info strip, gauge, seq/failure/shock/inflation/corr cards, fan, histogram) into a separate MonteCarloResults.jsx.",
+    "planReturn IIFE at line 74-79 recomputes on every render; low cost but could be useMemo'd if scenario.accounts grows."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (not tested per instructions)", "frontend": "100%"},
+  "test_credentials": "None required (X-Session-Token auto-injected).",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 22 MC UI is fully working. Observed values on default couple: Statistical+anchored=97.6% success, plan return 6.7%, simulated mean 7.3%; Historical+anchored=97.6%; Historical+anchored+guardrail(10%)=97.8%→98.2% lift; Stagflation preset (auto-flips Historical→Statistical): 63.4% success, 36.6% deplete, median failure year 2054, Failure Anatomy + hist-depleted-note both render. Anchor-off historical run still had 100% success (wealthy default couple, no depletion — expected). Rate limit paced: 5 runs total across 3 browser sessions.",
+  "rca of the issue": "N/A — no bugs found. Backend fix (anchoring to plan return + historical bootstrap + guardrail + failure anatomy) surfaces correctly in the UI and resolves the original disconnect (deterministic plan never fails vs. MC ~22% failure). Anchored default now shows ~97.6% success matching the plan's own return assumption."
+}

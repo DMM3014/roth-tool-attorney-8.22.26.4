@@ -241,6 +241,13 @@ class CorrelationSpec(BaseModel):
     cash_inflation: float = Field(default=0.55, ge=-0.99, le=0.99, allow_inf_nan=False)
 
 
+class GuardrailSpec(BaseModel):
+    """Spending flexibility (Guyton-Klinger-lite): cut discretionary expenses by cut_pct
+    in any year following a portfolio loss. Taxes are never flexible."""
+    enabled: bool = False
+    cut_pct: float = Field(default=0.10, ge=0.0, le=0.5, allow_inf_nan=False)
+
+
 class MonteCarloRequest(BaseModel):
     config: Dict[str, Any]
     n_trials: int = 500
@@ -248,7 +255,17 @@ class MonteCarloRequest(BaseModel):
     shock: Optional[ShockSpec] = None
     inflation: Optional[InflationSpec] = None
     correlation: Optional[CorrelationSpec] = None
+    engine: str = "lognormal"
+    anchor_to_plan: bool = True
+    guardrail: Optional[GuardrailSpec] = None
     seed: Optional[int] = None
+
+    @field_validator("engine")
+    @classmethod
+    def _engine_ok(cls, v):
+        if v not in ("lognormal", "historical"):
+            raise ValueError("engine must be 'lognormal' or 'historical'")
+        return v
 
     @field_validator("n_trials")
     @classmethod
@@ -412,11 +429,13 @@ async def start_montecarlo(request: Request, req: MonteCarloRequest,
     shock = req.shock.model_dump() if req.shock else None
     inflation = req.inflation.model_dump() if req.inflation else None
     correlation = req.correlation.model_dump() if req.correlation else None
+    guardrail = req.guardrail.model_dump() if req.guardrail else None
 
     async def worker():
         try:
             res = await asyncio.to_thread(run_montecarlo, req.config, req.n_trials, assets, shock,
-                                          req.seed, inflation, correlation)
+                                          req.seed, inflation, correlation,
+                                          req.engine, req.anchor_to_plan, guardrail)
             await db.mc_jobs.update_one({"job_id": job_id}, {"$set": {"status": "done", "result": res}})
         except Exception:
             logging.exception("montecarlo failed")

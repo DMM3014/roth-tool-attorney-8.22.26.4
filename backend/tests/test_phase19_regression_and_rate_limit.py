@@ -94,7 +94,9 @@ def test_strategy_sweep_rate_limit(client):
     # Use a tiny/quick payload that hits validation early to avoid slow runs
     payload = {"config": cfg, "start_years": [2026], "stop_years": [2050], "brackets": [0.24], "include_phased": False}
     for i in range(20):
-        r = client.post(f"{BASE_URL}/api/strategy-sweep", json=payload, timeout=60)
+        # X-Test-Expect-429 tells conftest NOT to auto-retry — this test must SEE the 429.
+        r = client.post(f"{BASE_URL}/api/strategy-sweep", json=payload,
+                        headers={"X-Test-Expect-429": "1"}, timeout=60)
         codes.append(r.status_code)
         if r.status_code == 429:
             saw_429 = True

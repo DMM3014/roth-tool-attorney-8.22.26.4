@@ -6,6 +6,7 @@ v2 uses a per-asset-class allocation (stocks/bonds/cash) instead of a single
 
 import os
 import time
+import uuid
 import requests
 import pytest
 
@@ -29,6 +30,9 @@ def defaults():
     return r.json()
 
 
+HDRS = {"X-Session-Token": str(uuid.uuid4())}
+
+
 def _assets(stock_vol):
     """All-stock allocation with a tunable volatility (isolates the vol mechanic)."""
     return {
@@ -41,7 +45,7 @@ def _assets(stock_vol):
 def _poll(job_id, timeout=45):
     deadline = time.time() + timeout
     while time.time() < deadline:
-        r = requests.get(f"{BASE_URL}/api/montecarlo/{job_id}", timeout=30)
+        r = requests.get(f"{BASE_URL}/api/montecarlo/{job_id}", headers=HDRS, timeout=30)
         assert r.status_code == 200, r.text
         body = r.json()
         if body["status"] in ("done", "error"):
@@ -53,7 +57,7 @@ def _poll(job_id, timeout=45):
 def _start(config, **kwargs):
     payload = {"config": config, "n_trials": 250}
     payload.update(kwargs)
-    r = requests.post(f"{BASE_URL}/api/montecarlo", json=payload, timeout=30)
+    r = requests.post(f"{BASE_URL}/api/montecarlo", json=payload, headers=HDRS, timeout=30)
     assert r.status_code == 200, r.text
     js = r.json()
     assert "job_id" in js and js["status"] == "running"
@@ -143,7 +147,7 @@ def test_shock_lowers_success(defaults):
 # ------------ unknown job_id -> 404 ------------
 
 def test_unknown_job_returns_404():
-    r = requests.get(f"{BASE_URL}/api/montecarlo/does-not-exist-xyz", timeout=30)
+    r = requests.get(f"{BASE_URL}/api/montecarlo/{uuid.uuid4()}", headers=HDRS, timeout=30)
     assert r.status_code == 404
 
 

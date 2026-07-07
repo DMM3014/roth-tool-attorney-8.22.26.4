@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, RotateCcw, AlertTriangle } from "lucide-react";
+import { Dices, Loader2, Play, TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, RotateCcw, AlertTriangle, Anchor, LifeBuoy, History } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ const ASSET_ROWS = [
   ["cash", "Cash"],
 ];
 const TRIALS = 500;
+const LIQUID_TYPES = ["Cash", "Taxable", "Tax-Deferred", "Tax-Free"];
 const DEFAULT_ASSETS = {
   stocks: { weight: 0.6, mean: 0.08, vol: 0.18 },
   bonds: { weight: 0.3, mean: 0.04, vol: 0.06 },
@@ -55,6 +56,10 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const [inflVol, setInflVol] = useState(0.015);
   const [corrOn, setCorrOn] = useState(false);
   const [corr, setCorr] = useState(DEFAULT_CORR);
+  const [engine, setEngine] = useState("lognormal");
+  const [anchorOn, setAnchorOn] = useState(true);
+  const [grOn, setGrOn] = useState(false);
+  const [grCut, setGrCut] = useState(10); // percent
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState(null);
   const [resStag, setResStag] = useState(false);
@@ -65,6 +70,14 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   const setAsset = (cls, field, v) =>
     setAssets((p) => ({ ...p, [cls]: { ...p[cls], [field]: parseFloat(v) || 0 } }));
 
+  // The plan's own liquid-weighted return assumption — the anchor for the simulation.
+  const planReturn = (() => {
+    const liq = (scenario?.accounts || []).filter((a) => LIQUID_TYPES.includes(a.tax_type));
+    const tot = liq.reduce((s, a) => s + (a.beginning_balance || 0), 0);
+    if (!tot) return null;
+    return liq.reduce((s, a) => s + (a.beginning_balance || 0) * (a.return || 0), 0) / tot;
+  })();
+
   const run = async () => {
     setRunning(true);
     setErr(null);
@@ -74,7 +87,10 @@ export const MonteCarlo = ({ scenario, onResult }) => {
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
         inflation: { enabled: inflOn, mean: inflMean, vol: inflVol },
-        correlation: { enabled: corrOn, ...corr },
+        correlation: { enabled: corrOn && engine === "lognormal", ...corr },
+        engine,
+        anchor_to_plan: anchorOn,
+        guardrail: { enabled: grOn, cut_pct: grCut / 100 },
       });
       setRes(out);
       setResStag(stagApplied);
@@ -98,6 +114,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   // "2022-style stagflation" preset — derived so it stays honest if the user tweaks anything
   const near = (a, b) => Math.abs(a - b) < 1e-9;
   const stagApplied =
+    engine === "lognormal" &&
     shockOn && near(shockRate, STAGFLATION.shock.rate) && shockYears === STAGFLATION.shock.years &&
     inflOn && near(inflMean, STAGFLATION.inflation.mean) && near(inflVol, STAGFLATION.inflation.vol) &&
     corrOn && CORR_ROWS.every(([k]) => near(corr[k], STAGFLATION.corr[k]));
@@ -108,6 +125,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
       setCorrOn(false); setCorr(DEFAULT_CORR);
       toast("Stagflation preset cleared", { description: "Shock, inflation and correlations back to baseline." });
     } else {
+      setEngine("lognormal");
       setShockOn(true); setShockRate(STAGFLATION.shock.rate); setShockYears(STAGFLATION.shock.years);
       setInflOn(true); setInflMean(STAGFLATION.inflation.mean); setInflVol(STAGFLATION.inflation.vol);
       setCorrOn(true); setCorr(STAGFLATION.corr);
@@ -172,13 +190,15 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                       </td>
                       <td className="px-2 py-1.5">
                         <Input type="number" step={0.5} value={+(assets[k].mean * 100).toFixed(1)} data-testid={`mc-m-${k}`}
+                          disabled={engine === "historical"}
                           onChange={(e) => setAsset(k, "mean", (parseFloat(e.target.value) || 0) / 100)}
-                          className="h-8 text-right bg-white" />
+                          className="h-8 text-right bg-white disabled:opacity-40" />
                       </td>
                       <td className="px-2 py-1.5">
                         <Input type="number" step={0.5} value={+(assets[k].vol * 100).toFixed(1)} data-testid={`mc-v-${k}`}
+                          disabled={engine === "historical"}
                           onChange={(e) => setAsset(k, "vol", (parseFloat(e.target.value) || 0) / 100)}
-                          className="h-8 text-right bg-white" />
+                          className="h-8 text-right bg-white disabled:opacity-40" />
                       </td>
                     </tr>
                   ))}
@@ -187,6 +207,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
             </div>
             <p className={`text-[10px] mt-1 ${Math.abs(weightSum - 1) > 0.001 ? "text-[#C87941]" : "text-muted-foreground"}`} data-testid="mc-weight-note">
               Allocation totals {Math.round(weightSum * 100)}% (auto-normalized on run).
+              {engine === "historical" && <span className="text-[#4A6741] font-medium"> Historical engine: weights blend real 1928–2024 class returns — means/vols come from the data.</span>}
               {res && <> Blended portfolio · <span className="font-medium text-[#4A6741]">{fmtPct(res.portfolio_mean)} mean</span>, {fmtPct(res.portfolio_vol)} vol · liquid start {fmtUSD(res.liquid_start)}.</>}
             </p>
           </div>
@@ -200,6 +221,40 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                 <span className="text-[10px] text-muted-foreground">fixed · validated</span>
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">Locked to 500 trials — the validated setting for this model.</p>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Return engine</Label>
+              <div className="mt-1 flex rounded-full border border-[#EBE8E0] bg-[#F9F8F6] p-0.5" data-testid="mc-engine-toggle">
+                <button onClick={() => setEngine("lognormal")} data-testid="mc-engine-lognormal"
+                  className={`flex-1 px-2 py-1.5 text-[11px] font-medium rounded-full transition-colors ${engine === "lognormal" ? "bg-[#4A6741] text-white" : "text-muted-foreground hover:text-[#4A6741]"}`}>
+                  Statistical
+                </button>
+                <button onClick={() => setEngine("historical")} data-testid="mc-engine-historical"
+                  className={`flex-1 px-2 py-1.5 text-[11px] font-medium rounded-full transition-colors flex items-center justify-center gap-1 ${engine === "historical" ? "bg-[#4A6741] text-white" : "text-muted-foreground hover:text-[#4A6741]"}`}>
+                  <History className="h-3 w-3" /> Historical 1928–2024
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {engine === "historical"
+                  ? "Block-bootstrap resampling of real US stock / bond / bill / CPI history — fat tails, mean reversion and 1970s / 2022-style stagflation come from actual data (Anarkulova-Cederburg-O'Doherty method)."
+                  : "Lognormal draws from the class means / vols above."}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-[#EBE8E0] p-3" data-testid="mc-anchor-card">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <Anchor className="h-3.5 w-3.5 text-[#4A6741]" />
+                  Anchor to plan return{planReturn != null ? ` (${(planReturn * 100).toFixed(2)}%)` : ""}
+                </Label>
+                <Switch checked={anchorOn} onCheckedChange={setAnchorOn} data-testid="mc-anchor-toggle" />
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2">
+                Re-centers the simulation so its median growth matches the blended return your accounts already assume —
+                the deterministic plan and this simulation then answer the same question, with volatility layered on top.
+                Off = raw {engine === "historical" ? "historical" : "class"} means (may quietly diverge from your plan).
+              </p>
             </div>
 
             <div className={`rounded-lg border p-3 transition-colors ${stagApplied ? "border-[#C87941] bg-[#FBF3EC]" : "border-[#EBE8E0]"}`} data-testid="mc-stagflation-card">
@@ -249,7 +304,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                 <Label className="text-xs flex items-center gap-1.5"><Flame className="h-3.5 w-3.5 text-[#C87941]" /> Stochastic inflation</Label>
                 <Switch checked={inflOn} onCheckedChange={setInflOn} data-testid="mc-inflation-toggle" />
               </div>
-              {inflOn && (
+              {inflOn && engine !== "historical" && (
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <div>
                     <Label className="text-[10px] text-muted-foreground">Mean %/yr</Label>
@@ -264,16 +319,25 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                 </div>
               )}
               <p className="text-[10px] text-muted-foreground mt-2">
-                Applies a per-trial cumulative CPI multiplier to outflows (expenses + taxes). Off = deterministic inflation.
+                {engine === "historical"
+                  ? "ON = each trial's outflows track the CPI of its sampled historical years (jointly with returns). OFF = deterministic plan inflation."
+                  : "Applies a per-trial cumulative CPI multiplier to outflows (expenses + taxes). Off = deterministic inflation."}
               </p>
             </div>
 
             <div className="rounded-lg border border-[#EBE8E0] p-3" data-testid="mc-corr-card">
               <div className="flex items-center justify-between">
                 <Label className="text-xs flex items-center gap-1.5"><Link2 className="h-3.5 w-3.5 text-[#4A6741]" /> Correlated draws</Label>
-                <Switch checked={corrOn} onCheckedChange={setCorrOn} data-testid="mc-corr-toggle" />
+                {engine === "lognormal" && <Switch checked={corrOn} onCheckedChange={setCorrOn} data-testid="mc-corr-toggle" />}
               </div>
-              {corrOn && (
+              {engine === "historical" ? (
+                <p className="text-[10px] text-muted-foreground mt-2" data-testid="mc-corr-historical-note">
+                  Handled by the data: sampling real calendar years keeps the true stock / bond / cash / inflation
+                  co-movements (e.g. 1974 and 2022, when bonds fell WITH stocks while inflation spiked).
+                </p>
+              ) : (
+                <>
+                  {corrOn && (
                 <>
                   <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 mt-3">
                     {CORR_ROWS.map(([k, label]) => (
@@ -290,9 +354,30 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                   </Button>
                 </>
               )}
+                  <p className="text-[10px] text-muted-foreground mt-2">
+                    Gaussian copula across stocks / bonds / cash{corrOn ? " / inflation" : ""} draws.
+                    Inflation pairs apply only when stochastic inflation is on. Invalid matrices are repaired to the nearest valid one.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-[#EBE8E0] p-3" data-testid="mc-guardrail-card">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs flex items-center gap-1.5"><LifeBuoy className="h-3.5 w-3.5 text-[#4A6741]" /> Spending guardrail</Label>
+                <Switch checked={grOn} onCheckedChange={setGrOn} data-testid="mc-guardrail-toggle" />
+              </div>
+              {grOn && (
+                <div className="mt-3">
+                  <Label className="text-[10px] text-muted-foreground">Cut discretionary spending after a loss year by %</Label>
+                  <Input type="number" step={5} min={0} max={50} value={grCut} data-testid="mc-guardrail-cut"
+                    onChange={(e) => setGrCut(Math.max(0, Math.min(50, parseFloat(e.target.value) || 0)))}
+                    className="h-8 text-right bg-white" />
+                </div>
+              )}
               <p className="text-[10px] text-muted-foreground mt-2">
-                Gaussian copula across stocks / bonds / cash{corrOn ? " / inflation" : ""} draws.
-                Inflation pairs apply only when stochastic inflation is on. Invalid matrices are repaired to the nearest valid one.
+                Real retirees trim spending after bad markets (Guyton-Klinger guardrails). When on, expenses — never
+                taxes — are cut in any year that follows a portfolio loss, and the success-rate lift is reported.
               </p>
             </div>
 
@@ -324,6 +409,24 @@ export const MonteCarlo = ({ scenario, onResult }) => {
               </p>
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2 text-[11px]" data-testid="mc-engine-info">
+            <span className="rounded-full border border-[#EBE8E0] bg-[#F9F8F6] px-3 py-1">
+              Engine: <span className="font-semibold">{res.engine === "historical" ? `Historical bootstrap (${res.historical?.years_span})` : "Statistical (lognormal)"}</span>
+            </span>
+            {res.plan_return != null && (
+              <span className="rounded-full border border-[#EBE8E0] bg-[#F9F8F6] px-3 py-1" data-testid="mc-anchor-info">
+                Plan return <span className="font-semibold">{fmtPct(res.plan_return)}</span> · simulated mean <span className="font-semibold">{fmtPct(res.portfolio_mean)}</span>
+                {res.anchor?.enabled
+                  ? <span className="text-[#4A6741] font-semibold"> · anchored to plan</span>
+                  : <span className="text-[#C87941] font-semibold"> · NOT anchored</span>}
+              </span>
+            )}
+            {res.guardrail?.enabled && (
+              <span className="rounded-full border border-[#EBE8E0] bg-[#F9F8F6] px-3 py-1" data-testid="mc-guardrail-info">
+                Guardrail −{Math.round(res.guardrail.cut_pct * 100)}% after loss years: success {fmtPct(res.guardrail.success_without_guardrail)} → <span className="font-semibold text-[#4A6741]">{fmtPct(res.guardrail.success_with_guardrail)}</span> · median {res.guardrail.median_cut_years} trimmed yrs
+              </span>
+            )}
+          </div>
           {/* Headline: gauge + with/without */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card className="p-6 border-[#EBE8E0] shadow-none flex flex-col items-center justify-center" data-testid="mc-gauge-card">
@@ -351,7 +454,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           </div>
 
           {/* Sequence-of-returns risk + optional shock + optional inflation + optional correlation */}
-          <div className={`grid grid-cols-1 ${shock || infl_res || corr_res ? "lg:grid-cols-2" : ""} gap-6`}>
+          <div className={`grid grid-cols-1 ${shock || infl_res || corr_res || wc.failure ? "lg:grid-cols-2" : ""} gap-6`}>
             <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-seq-card">
               <div className="flex items-center gap-2 mb-1">
                 <Activity className="h-4 w-4 text-[#C87941]" />
@@ -366,6 +469,25 @@ export const MonteCarlo = ({ scenario, onResult }) => {
               </p>
               <p className="text-[11px] text-muted-foreground mt-2">A bad start early in retirement is far more damaging than the same losses later — this measures that exposure automatically.</p>
             </Card>
+
+            {wc.failure && (
+              <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-failure-card">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle className="h-4 w-4 text-[#C87941]" />
+                  <h3 className="font-display text-base font-bold tracking-tight">Failure Anatomy — When Do Bad Paths Run Dry?</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-bold text-[#C87941]" data-testid="mc-failure-pct">{fmtPct(wc.failure.pct)}</span> of trials deplete.
+                  Half of those stay funded until <span className="font-bold text-[#1A1A1A]" data-testid="mc-failure-median-year">{wc.failure.median_year}</span>
+                  {scenario?.household?.client_dob_year && <> (client age {wc.failure.median_year - scenario.household.client_dob_year})</>}
+                  {" "}— typically leaving <span className="font-bold text-[#C87941]">{wc.failure.median_years_unfunded} of the final years unfunded</span> (horizon ends {wc.failure.horizon_end}).
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  Earliest failures (worst decile) hit by {wc.failure.p10_year}; the slowest 10% hang on past {wc.failure.p90_year}.
+                  Failure is rarely a cliff at the start — knowing <span className="font-medium">when</span> it bites tells you how much time you'd have to adjust spending.
+                </p>
+              </Card>
+            )}
 
             {shock && (
               <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-shock-card">
@@ -471,7 +593,10 @@ export const MonteCarlo = ({ scenario, onResult }) => {
               <h3 className="font-display text-base font-bold tracking-tight">Ending Portfolio Distribution</h3>
             </div>
             <p className="text-[11px] text-muted-foreground mb-3">
-              Final liquid portfolio across all trials (clipped at P90; last bar is the upside tail). <span className="font-medium text-[#C87941]">{wc.ending.depleted} of {res.n_trials} trials ({fmtPct(wc.ending.depleted_pct)}) deplete to $0.</span>
+              Final liquid portfolio across <span className="font-medium">surviving trials only</span> (clipped at their P90; last bar is the upside tail).
+              {wc.ending.depleted > 0
+                ? <span className="font-medium text-[#C87941]" data-testid="mc-hist-depleted-note"> {wc.ending.depleted} of {res.n_trials} trials ({fmtPct(wc.ending.depleted_pct)}) depleted — reported in the Failure Anatomy card, not stacked into a misleading $0 bar.</span>
+                : <span className="font-medium text-[#4A6741]"> No trials depleted.</span>}
             </p>
             <EndingHistogram histogram={wc.histogram} />
           </Card>
