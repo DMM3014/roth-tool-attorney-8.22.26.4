@@ -30,16 +30,19 @@ export const getSessionToken = () => {
   }
   return tok;
 };
-// Axios interceptor: attach the session token on every request. Backend uses it for
-// scenarios; other endpoints ignore it — cheap and consistent.
-axios.interceptors.request.use((cfg) => {
+// Dedicated axios instance so the session-token interceptor is scoped to our API
+// calls only — never leaks onto third-party axios usage (or usage from other tabs
+// / packages that also import axios). Every helper below uses `http` instead of
+// the global `axios`.
+const http = axios.create({ baseURL: API });
+http.interceptors.request.use((cfg) => {
   cfg.headers = cfg.headers || {};
   cfg.headers["X-Session-Token"] = getSessionToken();
   return cfg;
 });
 
-export const fetchDefaults = () => axios.get(`${API}/defaults`).then((r) => r.data);
-export const fetchStates = () => axios.get(`${API}/states`).then((r) => r.data);
+export const fetchDefaults = () => http.get(`/defaults`).then((r) => r.data);
+export const fetchStates = () => http.get(`/states`).then((r) => r.data);
 
 // Two configs for the "deplete IRA now vs. leave it for the children" comparison:
 // fund the conversion tax / spending IRA-first (deplete) vs Taxable-first (leave IRA).
@@ -60,26 +63,31 @@ export const fundingCompareConfigs = (scenario, gainPct) => {
     leaveIra: mk("Cash → Taxable → IRA → Roth"),
   };
 };
-export const runProjection = (config) => axios.post(`${API}/projection`, { config }).then((r) => r.data);
-export const runSweep = (config) => axios.post(`${API}/sweep`, { config }).then((r) => r.data);
+export const runProjection = (config) => http.post(`/projection`, { config }).then((r) => r.data);
+export const runSweep = (config) => http.post(`/sweep`, { config }).then((r) => r.data);
 export const runStrategySweep = (config, opts = {}) =>
-  axios.post(`${API}/strategy-sweep`, { config, ...opts }).then((r) => r.data);
+  http.post(`/strategy-sweep`, { config, ...opts }).then((r) => r.data);
 export const runSsOptimizer = (config, ages) =>
-  axios.post(`${API}/ss-optimizer`, { config, ages }).then((r) => r.data);
+  http.post(`/ss-optimizer`, { config, ages }).then((r) => r.data);
 export const optimizeConversion = (inputs, target_rate, max_conversion = 0) =>
-  axios.post(`${API}/tax/optimize`, { inputs, target_rate, max_conversion }).then((r) => r.data);
-export const computeYearTax = (inputs) => axios.post(`${API}/tax/year`, { inputs }).then((r) => r.data);
-export const listScenarios = () => axios.get(`${API}/scenarios`).then((r) => r.data);
-export const saveScenario = (name, config) => axios.post(`${API}/scenarios`, { name, config }).then((r) => r.data);
-export const deleteScenario = (id) => axios.delete(`${API}/scenarios/${id}`).then((r) => r.data);
+  http.post(`/tax/optimize`, { inputs, target_rate, max_conversion }).then((r) => r.data);
+export const computeYearTax = (inputs) => http.post(`/tax/year`, { inputs }).then((r) => r.data);
+export const listScenarios = () => http.get(`/scenarios`).then((r) => r.data);
+export const saveScenario = (name, config) => http.post(`/scenarios`, { name, config }).then((r) => r.data);
+export const deleteScenario = (id) => http.delete(`/scenarios/${id}`).then((r) => r.data);
+export const enableScenarioShare = (id) => http.post(`/scenarios/${id}/share`).then((r) => r.data.share_token);
+export const revokeScenarioShare = (id) => http.delete(`/scenarios/${id}/share`).then((r) => r.data);
+// Public read-only fetch — no session token required (the share_token IS the capability).
+export const fetchSharedScenario = (shareToken) =>
+  http.get(`/scenarios/share/${shareToken}`).then((r) => r.data);
 
 export const startMonteCarlo = (config, opts) =>
-  axios.post(`${API}/montecarlo`, { config, ...opts }).then((r) => r.data.job_id);
+  http.post(`/montecarlo`, { config, ...opts }).then((r) => r.data.job_id);
 // poll until status is done/error (or timeout)
 export const runMonteCarlo = async (config, opts = {}) => {
   const jobId = await startMonteCarlo(config, opts);
   for (let i = 0; i < 86; i++) {
-    const job = await axios.get(`${API}/montecarlo/${jobId}`).then((r) => r.data);
+    const job = await http.get(`/montecarlo/${jobId}`).then((r) => r.data);
     if (job.status === "done") return job.result;
     if (job.status === "error") throw new Error(job.error || "Monte Carlo failed");
     await new Promise((res) => setTimeout(res, 700));

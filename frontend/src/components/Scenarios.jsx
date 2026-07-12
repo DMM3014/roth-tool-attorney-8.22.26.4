@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save, Trash2, FolderInput, Users, FileSpreadsheet, FileDown } from "lucide-react";
+import { Save, Trash2, FolderInput, Users, FileSpreadsheet, FileDown, Share2, Copy, Check, Link2Off } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   listScenarios, saveScenario, deleteScenario, fmtUSD,
+  enableScenarioShare, revokeScenarioShare,
   runProjection, pvSeries, buildPvSheets, downloadWorkbook, downloadCSV,
 } from "@/lib/api";
 import { PvNetWorthChart, RothConversionsChart, PvNetToFamilyChart } from "@/components/AnalyticsCharts";
@@ -65,6 +66,35 @@ export const Scenarios = ({ scenario, setScenario }) => {
   };
   const load = (sc) => { setScenario(sc.config); toast.success(`Loaded "${sc.name}"`); };
   const del = async (id) => { await deleteScenario(id); toast.success("Deleted"); refresh(); };
+  const enableShare = async (id) => {
+    try {
+      const token = await enableScenarioShare(id);
+      const url = `${window.location.origin}/?share=${token}`;
+      await navigator.clipboard?.writeText(url).catch(() => {});
+      toast.success("Read-only share link copied", { description: "Anyone with this link can view (not edit) the plan." });
+      refresh();
+    } catch {
+      toast.error("Could not generate share link");
+    }
+  };
+  const revokeShare = async (id) => {
+    try {
+      await revokeScenarioShare(id);
+      toast.success("Share link revoked", { description: "The old link no longer works." });
+      refresh();
+    } catch {
+      toast.error("Could not revoke share link");
+    }
+  };
+  const copyShareUrl = async (token) => {
+    const url = `${window.location.origin}/?share=${token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Copy failed — select the URL manually");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -104,17 +134,31 @@ export const Scenarios = ({ scenario, setScenario }) => {
         <div className="space-y-2" data-testid="scenarios-list">
           {items.length === 0 && <p className="text-sm text-muted-foreground">No saved scenarios yet.</p>}
           {items.map((sc) => (
-            <div key={sc.id} className="flex items-center justify-between rounded-lg border border-[#EBE8E0] p-3 hover:-translate-y-0.5 transition-transform duration-200">
-              <div>
-                <p className="font-medium text-sm">{sc.name}</p>
-                <p className="text-xs text-muted-foreground">{sc.config?.household?.client_name} · ends {fmtUSD(sc.config?.accounts?.reduce((a, x) => a + x.beginning_balance, 0))}</p>
+            <div key={sc.id} className="rounded-lg border border-[#EBE8E0] p-3 hover:-translate-y-0.5 transition-transform duration-200">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-sm truncate">{sc.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{sc.config?.household?.client_name} · ends {fmtUSD(sc.config?.accounts?.reduce((a, x) => a + x.beginning_balance, 0))}</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => load(sc)} data-testid={`load-${sc.id}`}>Load</Button>
+                  {sc.share_token
+                    ? <Button size="sm" variant="ghost" onClick={() => revokeShare(sc.id)} data-testid={`unshare-${sc.id}`}
+                        title="Revoke share link" className="text-[#4A6741]">
+                        <Link2Off className="h-4 w-4" />
+                      </Button>
+                    : <Button size="sm" variant="ghost" onClick={() => enableShare(sc.id)} data-testid={`share-${sc.id}`}
+                        title="Create read-only share link" className="text-[#4A6741]">
+                        <Share2 className="h-4 w-4" />
+                      </Button>}
+                  <Button size="sm" variant="ghost" onClick={() => del(sc.id)} data-testid={`del-${sc.id}`}>
+                    <Trash2 className="h-4 w-4 text-[#B84A4A]" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => load(sc)} data-testid={`load-${sc.id}`}>Load</Button>
-                <Button size="sm" variant="ghost" onClick={() => del(sc.id)} data-testid={`del-${sc.id}`}>
-                  <Trash2 className="h-4 w-4 text-[#B84A4A]" />
-                </Button>
-              </div>
+              {sc.share_token && (
+                <ShareLinkRow token={sc.share_token} onCopy={() => copyShareUrl(sc.share_token)} testid={`share-url-${sc.id}`} />
+              )}
             </div>
           ))}
         </div>
@@ -126,7 +170,7 @@ export const Scenarios = ({ scenario, setScenario }) => {
           <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#EBE8E0] bg-[#F9F8F6] px-5 py-4" data-testid="scenario-pv-toolbar">
             <div>
               <p className="font-display text-sm font-bold tracking-tight">Present-value results for this scenario</p>
-              <p className="text-[11px] text-muted-foreground">Future net worth, planned conversions & net-to-family in today's dollars. Download the data to reconcile against your source spreadsheet.</p>
+              <p className="text-[11px] text-muted-foreground">Future net worth, planned conversions & net-to-family in today&apos;s dollars. Download the data to reconcile against your source spreadsheet.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button size="sm" variant="outline" onClick={() => downloadData("xlsx")} data-testid="scenario-download-xlsx"
@@ -157,3 +201,23 @@ const Field = ({ label, value, onChange, type = "text", testid }) => (
       onChange={(e) => onChange(e.target.value)} className="mt-1 bg-[#F9F8F6]" />
   </div>
 );
+
+const ShareLinkRow = ({ token, onCopy, testid }) => {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/?share=${token}`;
+  const handle = async () => {
+    await onCopy();
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+  return (
+    <div className="mt-2 flex items-center gap-2 rounded-md border border-[#EBE8E0] bg-[#F1F5EF] px-2 py-1.5" data-testid={testid}>
+      <Share2 className="h-3 w-3 text-[#4A6741] shrink-0" />
+      <span className="text-[11px] font-mono text-muted-foreground truncate flex-1" title={url}>{url}</span>
+      <Button size="sm" variant="ghost" onClick={handle} className="h-6 gap-1 px-2 text-[11px] text-[#4A6741]">
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copied ? "Copied" : "Copy"}
+      </Button>
+    </div>
+  );
+};

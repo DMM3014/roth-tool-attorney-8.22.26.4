@@ -13,6 +13,7 @@ import re
 import json
 import math
 import logging
+import secrets
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
 from typing import Any, Dict, List, Optional
@@ -44,6 +45,7 @@ MAX_POST_DEATH_YEARS = 100         # SECURE-Act horizon is 10; 100 is a generous
 MAX_EXPENSES = 60                  # matches accounts(50)/income_streams(40) style caps
 MAX_CONFIG_NODES = 20000           # total JSON nodes walked by the non-finite scan
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+SHARE_TOKEN_RE = re.compile(r"^[a-zA-Z0-9_-]{22,64}$")  # url-safe base64 of ≥16 secure bytes
 
 
 def _bad_request(msg: str):
@@ -194,7 +196,18 @@ class Scenario(BaseModel):
     name: str
     config: Dict[str, Any]
     owner_token: Optional[str] = None       # UUIDv4 stamp of the browser session that owns this plan
+    share_token: Optional[str] = None       # opaque public read-only handle (nullable = not shared)
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class SharedScenario(BaseModel):
+    """Public shape of a scenario served via /api/scenarios/share/{token}.
+    Deliberately omits owner_token AND the internal id so a viewer can only see the plan
+    payload — never the owner's session token or the primary-key needed to hit the
+    session-scoped endpoints."""
+    name: str
+    config: Dict[str, Any]
+    created_at: str
 
 
 class ScenarioCreate(BaseModel):
@@ -452,6 +465,9 @@ async def _mc_indexes():
     try:
         await db.mc_jobs.create_index("created_at", expireAfterSeconds=MC_TTL_SECONDS)
         await db.mc_jobs.create_index("job_id", unique=True)
+        # Sparse index: only indexes docs that have a non-null share_token (Mongo skips
+        # nulls with `sparse`), so revoked/unshared plans don't crowd the index.
+        await db.scenarios.create_index("share_token", unique=True, sparse=True)
     except Exception:
         logging.exception("failed creating mc_jobs indexes")
 
@@ -537,6 +553,61 @@ async def delete_scenario(sid: str, owner_token: str = Depends(require_session))
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Scenario not found")
     return {"deleted": sid}
+
+
+# ---------- Read-only shareable links ----------
+# The owner mints an opaque `share_token` on their plan; anyone with the URL can view
+# the config read-only via /api/scenarios/share/{token}. The token has enough entropy
+# (16 secure random bytes → 22-char url-safe) that guessing is infeasible. The public
+# endpoint intentionally does not use / expose the owner session token or the internal
+# scenario id — it's a strictly read-only view of {name, config, created_at}.
+
+@api_router.post("/scenarios/{sid}/share")
+@limiter.limit("30/minute")
+async def enable_scenario_share(request: Request, sid: str,
+                                owner_token: str = Depends(require_session)):
+    if not UUID_RE.match(sid):
+        raise HTTPException(status_code=400, detail="Invalid scenario id")
+    doc = await db.scenarios.find_one({"id": sid, "owner_token": owner_token}, {"_id": 0, "share_token": 1})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    token = doc.get("share_token")
+    if not token:
+        token = secrets.token_urlsafe(16)  # ~22 chars, 128-bit entropy
+        await db.scenarios.update_one({"id": sid, "owner_token": owner_token},
+                                      {"$set": {"share_token": token}})
+    return {"share_token": token}
+
+
+@api_router.delete("/scenarios/{sid}/share")
+@limiter.limit("30/minute")
+async def revoke_scenario_share(request: Request, sid: str,
+                                owner_token: str = Depends(require_session)):
+    if not UUID_RE.match(sid):
+        raise HTTPException(status_code=400, detail="Invalid scenario id")
+    res = await db.scenarios.update_one(
+        {"id": sid, "owner_token": owner_token},
+        {"$set": {"share_token": None}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    return {"revoked": sid}
+
+
+@api_router.get("/scenarios/share/{share_token}", response_model=SharedScenario)
+@limiter.limit("60/minute")
+async def get_shared_scenario(request: Request, share_token: str):
+    # No session token required — the share_token IS the capability. Validate its shape
+    # to keep obvious garbage / probing out of the DB query path.
+    if not SHARE_TOKEN_RE.match(share_token):
+        raise HTTPException(status_code=400, detail="Invalid share token")
+    doc = await db.scenarios.find_one(
+        {"share_token": share_token},
+        {"_id": 0, "name": 1, "config": 1, "created_at": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Shared scenario not found")
+    return doc
 
 
 @api_router.post("/insights")
