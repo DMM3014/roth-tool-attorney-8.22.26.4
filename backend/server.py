@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 import os
 import re
 import json
+import math
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
@@ -39,12 +40,36 @@ MAX_PROJECTION_YEARS = 60          # cap plan horizon
 MAX_SWEEP_GRID_CELLS = 500         # start × stop × bracket cells for /api/strategy-sweep
 MAX_SS_AGES = 8                    # /api/ss-optimizer sweep breadth
 MAX_MC_TRIALS = 2000               # already enforced in engine but re-checked here
+MAX_POST_DEATH_YEARS = 100         # SECURE-Act horizon is 10; 100 is a generous hard cap
+MAX_EXPENSES = 60                  # matches accounts(50)/income_streams(40) style caps
+MAX_CONFIG_NODES = 20000           # total JSON nodes walked by the non-finite scan
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 
 def _bad_request(msg: str):
     """Uniform 400 for size / range / shape violations."""
     raise HTTPException(status_code=400, detail=msg)
+
+
+def _reject_non_finite(node) -> None:
+    """SEC-003: stdlib JSON happily parses NaN/Infinity literals inside free-form dicts
+    (typed Pydantic fields already reject them via allow_inf_nan=False). Walk the object
+    iteratively (no recursion-depth attack) with a node budget that doubles as an overall
+    structural size cap."""
+    stack = [node]
+    seen = 0
+    while stack:
+        cur = stack.pop()
+        seen += 1
+        if seen > MAX_CONFIG_NODES:
+            _bad_request("config too large")
+        if isinstance(cur, float):
+            if not math.isfinite(cur):
+                _bad_request("config contains non-finite numbers (NaN/Infinity)")
+        elif isinstance(cur, dict):
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
 
 
 def _validate_config(config: dict) -> None:
@@ -66,6 +91,18 @@ def _validate_config(config: dict) -> None:
     streams = config.get("income_streams")
     if streams is not None and len(streams) > 40:
         _bad_request("income_streams list capped at 40 entries")
+    expenses = config.get("expenses")
+    if expenses is not None and len(expenses) > MAX_EXPENSES:
+        _bad_request(f"expenses list capped at {MAX_EXPENSES} entries")
+    # SEC-001 (audit round 3): post-death horizon drives an O(years) loop per projection
+    # (x500 under strategy-sweep) — hard-cap it before any compute happens.
+    legacy = config.get("legacy") or {}
+    pdy = legacy.get("post_death_years")
+    if pdy is not None:
+        if isinstance(pdy, bool) or not isinstance(pdy, (int, float)) \
+                or not float(pdy).is_integer() or not (0 <= pdy <= MAX_POST_DEATH_YEARS):
+            _bad_request(f"legacy.post_death_years must be an integer between 0 and {MAX_POST_DEATH_YEARS}")
+    _reject_non_finite(config)
 
 
 # ---------- Session scoping (SEC-002) ----------
@@ -144,8 +181,8 @@ class YearTaxRequest(BaseModel):
 
 class OptimizeRequest(BaseModel):
     inputs: Dict[str, Any]
-    target_rate: float = 0.24
-    max_conversion: float = 0.0
+    target_rate: float = Field(default=0.24, ge=0.0, le=1.0, allow_inf_nan=False)
+    max_conversion: float = Field(default=0.0, ge=0.0, le=1e9, allow_inf_nan=False)
 
 
 class ProjectionRequest(BaseModel):
@@ -338,12 +375,16 @@ async def get_states():
 
 
 @api_router.post("/tax/year")
-async def tax_year(req: YearTaxRequest):
+@limiter.limit("60/minute")
+async def tax_year(request: Request, req: YearTaxRequest):
+    _reject_non_finite(req.inputs)
     return compute_year_tax(req.inputs)
 
 
 @api_router.post("/tax/optimize")
-async def tax_optimize(req: OptimizeRequest):
+@limiter.limit("60/minute")
+async def tax_optimize(request: Request, req: OptimizeRequest):
+    _reject_non_finite(req.inputs)
     return optimize_conversion(req.inputs, req.target_rate, req.max_conversion)
 
 
@@ -352,7 +393,8 @@ async def tax_optimize(req: OptimizeRequest):
 async def projection(request: Request, req: ProjectionRequest):
     _validate_config(req.config)
     try:
-        return run_projection(req.config)
+        # heavy sync math runs in a worker thread so it can never block the event loop
+        return await asyncio.to_thread(run_projection, req.config)
     except Exception:
         logging.exception("projection failed")
         raise HTTPException(status_code=400, detail="Projection request could not be processed")
@@ -363,7 +405,7 @@ async def projection(request: Request, req: ProjectionRequest):
 async def sweep(request: Request, req: ProjectionRequest):
     _validate_config(req.config)
     try:
-        return sweep_brackets(req.config)
+        return await asyncio.to_thread(sweep_brackets, req.config)
     except Exception:
         logging.exception("sweep failed")
         raise HTTPException(status_code=400, detail="Bracket sweep request could not be processed")
@@ -379,7 +421,8 @@ async def strategy_sweep_endpoint(request: Request, req: StrategySweepRequest):
         if cells > MAX_SWEEP_GRID_CELLS:
             _bad_request(f"sweep grid capped at {MAX_SWEEP_GRID_CELLS} cells (got {cells})")
     try:
-        return strategy_sweep(
+        return await asyncio.to_thread(
+            strategy_sweep,
             req.config,
             start_years=req.start_years, stop_years=req.stop_years,
             brackets=req.brackets, include_phased=req.include_phased,
@@ -395,7 +438,7 @@ async def strategy_sweep_endpoint(request: Request, req: StrategySweepRequest):
 async def ss_optimizer_endpoint(request: Request, req: SsOptimizerRequest):
     _validate_config(req.config)
     try:
-        return sweep_ss_claims(req.config, req.ages)
+        return await asyncio.to_thread(sweep_ss_claims, req.config, req.ages)
     except Exception:
         logging.exception("ss_optimizer failed")
         raise HTTPException(status_code=400, detail="Social Security optimizer request could not be processed")
