@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { runProjection, fundingCompareConfigs, fmtUSD } from "@/lib/api";
 import { toast } from "sonner";
 
-// The two funding orders we compare. "Deplete IRA now" pulls Traditional first
-// (leaves more Roth + steps up any leftover taxable). "Leave IRA" pulls Taxable
-// first (preserves the tax-deferred bucket but heirs pay ordinary tax on the RMDs).
-const ORDERS = [
-  { key: "leaveIra",   label: "Cash → Taxable → IRA → Roth",   sub: "Preserve IRA / leave for heirs" },
-  { key: "depleteIra", label: "Cash → IRA → Taxable → Roth",   sub: "Deplete IRA now / step-up taxable" },
+// The three funding strategies we compare. "Deplete IRA now" pulls Traditional first
+// (leaves more Roth + steps up any leftover taxable). "Leave IRA" pulls Taxable first
+// (preserves the tax-deferred bucket but heirs pay ordinary tax on the RMDs). "Split"
+// draws from both proportionally at the user's ira_split — often the empirical winner
+// on plans with a large taxable brokerage.
+const orderCols = (iraSplit) => [
+  { key: "leaveIra",   label: "Cash → Taxable → IRA → Roth",  matchOrder: "Cash → Taxable → IRA → Roth", sub: "Preserve IRA / leave for heirs" },
+  { key: "split",      label: `Split IRA & Taxable (${Math.round((iraSplit ?? 0.5) * 100)}%)`, matchOrder: "Split IRA & Taxable", sub: "Blend both draws each year" },
+  { key: "depleteIra", label: "Cash → IRA → Taxable → Roth",  matchOrder: "Cash → IRA → Taxable → Roth", sub: "Deplete IRA now / step-up taxable" },
 ];
 
 const METRICS = [
@@ -27,10 +30,23 @@ const readMetric = (result, m) => {
   return bucket?.[m.key];
 };
 
+// Build the split config inline (fundingCompareConfigs stays focused on the two
+// extreme orders — used elsewhere by Concepts). Deep-copies scenario so the live
+// scenario is never mutated.
+const splitConfig = (scenario) => {
+  const c = JSON.parse(JSON.stringify(scenario));
+  c.withdrawal = c.withdrawal || {};
+  c.withdrawal.funding_order = "Split IRA & Taxable";
+  if (c.withdrawal.ira_split == null) c.withdrawal.ira_split = 0.5;
+  return c;
+};
+
 export const FundingOrderCompare = ({ scenario }) => {
-  const [runs, setRuns] = useState(null);      // { leaveIra: projection, depleteIra: projection }
+  const [runs, setRuns] = useState(null);      // { leaveIra, split, depleteIra }
   const [running, setRunning] = useState(false);
   const currentOrder = scenario?.withdrawal?.funding_order || "Cash → Taxable → IRA → Roth";
+  const iraSplit = scenario?.withdrawal?.ira_split ?? 0.5;
+  const cols = orderCols(iraSplit);
 
   // Any edit to the live scenario invalidates the old comparison. Reset so the user
   // can't misread a stale table against their new plan inputs.
@@ -41,15 +57,14 @@ export const FundingOrderCompare = ({ scenario }) => {
     if (running) return;
     setRunning(true);
     try {
-      // fundingCompareConfigs mutates a deep-copied scenario per order — the live scenario
-      // is untouched. Both runs keep the user's current roth.enabled + target_bracket +
-      // year_targets, so we're comparing funding ORDER holding conversions constant.
+      // Same conversions, same spending, same accounts — only the funding order changes.
       const cfgs = fundingCompareConfigs(scenario);
-      const [leaveIra, depleteIra] = await Promise.all([
+      const [leaveIra, split, depleteIra] = await Promise.all([
         runProjection(cfgs.leaveIra),
+        runProjection(splitConfig(scenario)),
         runProjection(cfgs.depleteIra),
       ]);
-      setRuns({ leaveIra, depleteIra });
+      setRuns({ leaveIra, split, depleteIra });
     } catch {
       toast.error("Funding-order comparison failed. Please try again.");
     } finally {
@@ -57,15 +72,20 @@ export const FundingOrderCompare = ({ scenario }) => {
     }
   };
 
-  // Determine winner cell per row (used to render ★ + delta).
+  // Winner across all three columns.
   const winnerKey = (m) => {
     if (!runs) return null;
-    const a = readMetric(runs.leaveIra, m);
-    const b = readMetric(runs.depleteIra, m);
-    if (a == null || b == null) return null;
-    if (m.higherIsBetter) return a > b ? "leaveIra" : b > a ? "depleteIra" : null;
-    return a < b ? "leaveIra" : b < a ? "depleteIra" : null;
+    const vals = cols.map((o) => ({ key: o.key, v: readMetric(runs[o.key], m) }))
+                     .filter((x) => x.v != null);
+    if (!vals.length) return null;
+    const pick = m.higherIsBetter
+      ? vals.reduce((a, b) => (b.v > a.v ? b : a))
+      : vals.reduce((a, b) => (b.v < a.v ? b : a));
+    return pick.key;
   };
+
+  // The column key that matches the user's currently-selected funding order.
+  const currentKey = cols.find((o) => o.matchOrder === currentOrder)?.key || null;
 
   return (
     <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="funding-order-compare-card">
@@ -76,22 +96,24 @@ export const FundingOrderCompare = ({ scenario }) => {
             <h3 className="font-display text-lg font-bold tracking-tight">Compare Funding Orders</h3>
           </div>
           <p className="text-xs text-muted-foreground mt-1 max-w-3xl">
-            Runs the same plan (same conversions, same spending, same accounts) through both funding
-            strategies so you can see which one wins on the metrics you care about. Cash is always spent first
-            and Roth always last — only the middle two draw sources swap.
+            Runs the same plan (same conversions, same spending, same accounts) through all three
+            funding strategies — the two extremes plus your Split at {Math.round(iraSplit * 100)}% IRA —
+            so you can see which one wins on the metrics you care about. Cash is always spent first
+            and Roth always last.
           </p>
         </div>
         <Button onClick={compare} disabled={running} data-testid="funding-compare-run"
           className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full shrink-0">
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompareArrows className="h-4 w-4" />}
-          {running ? "Running both…" : (runs ? "Re-run comparison" : "Run comparison")}
+          {running ? "Running all three…" : (runs ? "Re-run comparison" : "Run comparison")}
         </Button>
       </div>
 
       {!runs && !running && (
         <p className="text-[11px] text-muted-foreground italic mt-3" data-testid="funding-compare-empty">
-          Click <span className="font-medium">Run comparison</span> above to project both orders. Your current
-          plan uses <span className="font-medium text-[#4A6741]">{currentOrder}</span>.
+          Click <span className="font-medium">Run comparison</span> above to project all three orders. Your current
+          plan uses <span className="font-medium text-[#4A6741]">{currentOrder}</span>
+          {currentOrder === "Split IRA & Taxable" && <> ({Math.round(iraSplit * 100)}% IRA)</>}.
         </p>
       )}
 
@@ -101,8 +123,8 @@ export const FundingOrderCompare = ({ scenario }) => {
             <thead className="bg-[#F9F8F6] text-[11px] text-muted-foreground">
               <tr>
                 <th className="text-left font-semibold px-3 py-2">Metric</th>
-                {ORDERS.map((o) => {
-                  const active = o.label === currentOrder;
+                {cols.map((o) => {
+                  const active = o.key === currentKey;
                   return (
                     <th key={o.key} className="text-right font-semibold px-3 py-2" data-testid={`funding-col-${o.key}`}>
                       <div className="flex flex-col items-end">
@@ -115,31 +137,33 @@ export const FundingOrderCompare = ({ scenario }) => {
                     </th>
                   );
                 })}
-                <th className="text-right font-semibold px-3 py-2">Δ</th>
+                <th className="text-right font-semibold px-3 py-2" data-testid="funding-delta-header">Δ vs your plan</th>
               </tr>
             </thead>
             <tbody>
               {METRICS.map((m) => {
                 const winner = winnerKey(m);
-                const va = readMetric(runs.leaveIra, m);
-                const vb = readMetric(runs.depleteIra, m);
-                const delta = (va != null && vb != null) ? vb - va : null; // depleteIra − leaveIra
-                const deltaCls = delta == null
+                const curV = currentKey ? readMetric(runs[currentKey], m) : null;
+                const winV = winner ? readMetric(runs[winner], m) : null;
+                // Δ = winner − current. Positive means "switching to the winner improves this metric".
+                const delta = (curV != null && winV != null && winner !== currentKey) ? (winV - curV) : 0;
+                const deltaCls = winner == null || winner === currentKey
                   ? "text-muted-foreground"
-                  : (m.higherIsBetter ? (delta > 0 ? "text-[#4A6741]" : delta < 0 ? "text-[#C87941]" : "text-muted-foreground")
-                                       : (delta < 0 ? "text-[#4A6741]" : delta > 0 ? "text-[#C87941]" : "text-muted-foreground"));
+                  : (m.higherIsBetter ? "text-[#4A6741]" : (delta < 0 ? "text-[#4A6741]" : "text-[#C87941]"));
                 return (
                   <tr key={m.key} className="border-t border-[#EBE8E0]" data-testid={`funding-row-${m.key}`}>
                     <td className="px-3 py-2 font-medium">{m.label}</td>
-                    {ORDERS.map((o) => (
+                    {cols.map((o) => (
                       <td key={o.key} className={`px-3 py-2 text-right ${winner === o.key ? "text-[#4A6741] font-bold" : ""}`}
                           data-testid={`funding-${o.key}-${m.key}`}>
                         {winner === o.key && <Trophy className="inline h-3 w-3 mr-1 mb-0.5" />}
-                        {fmtUSD(readMetric(o.key === "leaveIra" ? runs.leaveIra : runs.depleteIra, m))}
+                        {fmtUSD(readMetric(runs[o.key], m))}
                       </td>
                     ))}
                     <td className={`px-3 py-2 text-right font-medium ${deltaCls}`} data-testid={`funding-delta-${m.key}`}>
-                      {delta == null ? "—" : `${delta > 0 ? "+" : ""}${fmtUSD(delta)}`}
+                      {winner == null ? "—" : winner === currentKey
+                        ? "on winner"
+                        : `${delta > 0 ? "+" : ""}${fmtUSD(delta)}`}
                     </td>
                   </tr>
                 );
@@ -151,12 +175,10 @@ export const FundingOrderCompare = ({ scenario }) => {
 
       {runs && (
         <p className="text-[11px] text-muted-foreground mt-3" data-testid="funding-compare-hint">
-          The Δ column is <span className="font-medium">Cash → IRA → Taxable → Roth</span> minus
-          <span className="font-medium"> Cash → Taxable → IRA → Roth</span>. Positive Δ on ending wealth /
-          Roth / heir cash means <span className="font-medium">depleting the IRA first</span> won that row;
-          positive Δ on tax lines means depleting cost <span className="font-medium">more</span> in taxes.
-          Trophy marks the winning cell per row. Change your live funding order in the Roth Conversion
-          Controls card if you want to make one of these strategies your plan.
+          Trophy marks the winning cell per row (best-of-three). The Δ column shows how much each row
+          would change if you switched from your current order to the winning order — &ldquo;on winner&rdquo; means
+          your current pick already wins that row. Change your live funding order (and, for Split, the IRA %)
+          in the Roth Conversion Controls card if you want to adopt a strategy.
         </p>
       )}
     </Card>

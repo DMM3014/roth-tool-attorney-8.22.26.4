@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only verification of 3-column FundingOrderCompare rewrite. All acceptance criteria PASS. Card renders on Multi-Year Projection tab with updated description mentioning 'all three funding strategies' and 'your Split at 50% IRA'. Run comparison triggers 3 parallel /api/projection calls (~10-15s) and renders the funding-compare-table with three column headers: funding-col-leaveIra ('Cash → Taxable → IRA → Roth'), funding-col-split ('Split IRA & Taxable (50%)'), funding-col-depleteIra ('Cash → IRA → Taxable → Roth'). CURRENT pill is attached to funding-col-depleteIra by default (matches DEFAULT_SCENARIO funding_order). Δ header reads 'Δ vs your plan'. All 6 metric rows render with three cells each; each row has exactly 1 trophy on the winning cell (best-of-3) except heir_ira_tax_paid which has 0 (metric is null across all 3 runs — see note). Delta cell shows 'on winner' when depleteIra wins (ending_net_worth) and signed $ delta otherwise. Switching funding-order-select to 'Split IRA & Taxable' clears the table to the empty state automatically (scenarioSig useEffect), reveals ira-split-slider, and after re-run CURRENT pill correctly moves to funding-col-split. Moving ira-split-slider from 50% to 30% updates the ira-split-label live and card description mentions '30%'; table stays reset to empty. Zero console errors, zero page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "heir_ira_tax_paid comparison row", "issue": "All 3 runs return null for heir_ira_tax_paid in the default seeded scenario so the row shows '—' with no trophy and no delta. Likely legacy.heir_ira_tax_paid is only populated when there's a non-zero inherited Traditional balance at 2nd death; with defaults ending IRA depletes fully so field is null. Not a regression from this iteration but worth surfacing.", "affected_selectors": ["funding-delta-heir_ira_tax_paid", "funding-leaveIra-heir_ira_tax_paid"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FundingOrderCompare.jsx: still uses bare `catch {}` (line 68) — no console.error(e), so a failed run only surfaces via a toast with no browser-console diagnostics. Suggest `catch (e) { console.error('funding compare failed', e); toast.error(...); }`.",
+    "FundingOrderCompare.jsx line 149: delta = winV − curV is computed but a hidden edge case exists: if curV is null (e.g., heir_ira_tax_paid null for current column) but winV exists (winner selected among non-null vals), the guard `curV != null && winV != null` correctly falls to 0 and the cell shows '—' via the `winner == null` branch. Good. Consider explicit handling so a partially-null metric still shows the winner's absolute value in a tooltip.",
+    "orderCols label uses `Math.round(iraSplit*100)` — matches the ira-split-label formatting; no drift observed.",
+    "Description text hardcodes 'your Split at N% IRA' regardless of whether the user's current funding_order is actually Split. Fine (it always previews the split column), but a tiny clarifying phrase like 'the Split column uses N% IRA' would reduce ambiguity."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "3-column FundingOrderCompare fully verified. Comparison wall-time ~10-15s with 3 parallel /api/projection calls. Default scenario winners observed: depleteIra wins ending_net_worth; split/leaveIra split the other 4 populated metrics. heir_ira_tax_paid is null across the board on default seed — not a regression. scenarioSig invalidation works (table clears when funding-order-select or ira-split-slider changes). CURRENT pill placement: depleteIra by default → split after selecting 'Split IRA & Taxable' → would go to leaveIra if 'Cash → Taxable → IRA → Roth' is selected."
+}
