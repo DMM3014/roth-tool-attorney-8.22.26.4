@@ -880,6 +880,28 @@ Four refinements requested by user (P1 features from post-Phase-22 backlog).
 - **Frontend testing agent iteration 25**: 100% pass, 0 console errors, all 6 review bullets green.
   Full round-trip verified: save → share → new tab with URL → shared banner + hidden tabs → Exit → revoke.
 
+### Phase 25 — Compare Funding Orders strip on Multi-Year Projection (2026-07-12)
+User asked for a dedicated one-click side-by-side comparison of the two 4-account funding orders on the
+Multi-Year Projection tab (analogous to the Monte Carlo engine-compare strip).
+- **`frontend/src/components/FundingOrderCompare.jsx`** (NEW, 130 lines): self-contained card
+  (`funding-order-compare-card`) with a `Run comparison` button (`funding-compare-run`). Runs both
+  `Cash → Taxable → IRA → Roth` (preserve IRA / leave for heirs) and `Cash → IRA → Taxable → Roth`
+  (deplete IRA now / step-up taxable) via `Promise.all(runProjection, runProjection)` using the existing
+  `fundingCompareConfigs` helper (deep-copies scenario per order — live scenario untouched).
+- **Metrics compared (6 rows)**: ending net worth, lifetime taxes, after-tax to heirs at 2nd-death+10yr,
+  heir income tax on inherited IRA, ending Roth, tax-free Roth to heirs. Each row shows the winning cell
+  bold-green with a trophy icon + a Δ column (depleteIra − leaveIra, sign-aware green/orange). Column
+  headers show a "CURRENT" pill on whichever order matches `scenario.withdrawal.funding_order`.
+- **Auto-stale on scenario edit**: `useEffect([JSON.stringify(scenario)])` resets `runs` — prevents users
+  reading a stale table against new inputs.
+- **Wired into `Projection.jsx`** directly after `SweepPanel` and before `NetWorthChart`.
+- **Testing agent iteration 26**: 100% frontend pass, 0 console errors, all 7 acceptance criteria green
+  (card renders, empty state hint mentions current order, run button fires two /api/projection calls,
+  table renders with 5 trophies visible, CURRENT badge shifts when order is changed in the controls,
+  full regression on other Projection tab elements clean). Applied 2 minor polish items from the review
+  (removed dead ternary, added scenarioSig-invalidated `useEffect` to clear stale runs).
+
+
 ## Backlog / Next (updated 2026-07-12, post-Phase-24)
 - P1: **Account aggregation** (Plaid / Yodlee) — DEFERRED per user request.
 - P3: Regime-switching stochastic inflation (macro regime).

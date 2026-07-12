@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { GitCompareArrows, Loader2, Trophy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,11 @@ export const FundingOrderCompare = ({ scenario }) => {
   const [runs, setRuns] = useState(null);      // { leaveIra: projection, depleteIra: projection }
   const [running, setRunning] = useState(false);
   const currentOrder = scenario?.withdrawal?.funding_order || "Cash → Taxable → IRA → Roth";
+
+  // Any edit to the live scenario invalidates the old comparison. Reset so the user
+  // can't misread a stale table against their new plan inputs.
+  const scenarioSig = JSON.stringify(scenario);
+  useEffect(() => { setRuns(null); }, [scenarioSig]);
 
   const compare = async () => {
     if (running) return;
@@ -134,7 +139,7 @@ export const FundingOrderCompare = ({ scenario }) => {
                       </td>
                     ))}
                     <td className={`px-3 py-2 text-right font-medium ${deltaCls}`} data-testid={`funding-delta-${m.key}`}>
-                      {delta == null ? "—" : `${delta > 0 ? "+" : ""}${fmtUSD(Math.abs(delta) === delta ? delta : delta)}`}
+                      {delta == null ? "—" : `${delta > 0 ? "+" : ""}${fmtUSD(delta)}`}
                     </td>
                   </tr>
                 );
