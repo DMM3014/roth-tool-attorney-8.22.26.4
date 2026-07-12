@@ -6,6 +6,7 @@ import { AIInsights } from "@/components/AIInsights";
 import { useAiSummary } from "@/hooks/useAiSummary";
 import { NetWorthChart, CompositionChart, TaxChart } from "@/components/ProjectionCharts";
 import { BRACKETS, ProjectionControls, SweepPanel, YearTable, LegacyPanels } from "@/components/ProjectionPanels";
+import { FundingOrderCompare } from "@/components/FundingOrderCompare";
 
 export const Projection = ({ scenario, setScenario, mcResult }) => {
   const [withRoth, setWithRoth] = useState(null);
@@ -111,6 +112,8 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
 
       <SweepPanel sweep={sweep} sweeping={sweeping} findOptimal={findOptimal} withRoth={withRoth} />
 
+      <FundingOrderCompare scenario={scenario} />
+
       <NetWorthChart data={chartData} loading={loading} />
       <CompositionChart data={chartData} />
       <TaxChart data={chartData} />
@@ -180,7 +183,7 @@ const RothComplianceCard = ({ compliance }) => {
         The funding order taps Roth <span className="font-medium">before</span> either the 5-year clock on a
         specific conversion, or before the owner reaches age 59½. Each such withdrawal on the
         converted principal incurs a <span className="font-medium">10% penalty</span> under IRC §408A(d)(3)
-        (Boldin's documented blind spot). Estimated penalty: <span className="font-bold text-[#B84A4A]">{fmtUSD(total_early_penalty)}</span>.
+        (Boldin&apos;s documented blind spot). Estimated penalty: <span className="font-bold text-[#B84A4A]">{fmtUSD(total_early_penalty)}</span>.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
@@ -211,7 +214,7 @@ const RothComplianceCard = ({ compliance }) => {
         </table>
       </div>
       <p className="text-[10px] text-muted-foreground mt-2">
-        Per-conversion 5-year clock tracked per owner (client vs spouse); each conversion is deposited into the source-IRA owner's own Roth account. Oldest-conversion-first drawdown. Consult a CPA before executing.
+        Per-conversion 5-year clock tracked per owner (client vs spouse); each conversion is deposited into the source-IRA owner&apos;s own Roth account. Oldest-conversion-first drawdown. Consult a CPA before executing.
       </p>
     </Card>
   );

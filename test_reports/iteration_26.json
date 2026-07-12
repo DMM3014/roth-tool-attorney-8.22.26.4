@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only smoke test of new FundingOrderCompare card on Multi-Year Projection tab. All acceptance criteria pass: card+heading render, empty-state shows default 'Cash → IRA → Taxable → Roth' funding order, Run comparison button triggers Promise.all of two /api/projection runs, table renders with all 6 metric rows, 5 trophy winner icons visible, CURRENT badge correctly attached to depleteIra column (default) and shifts to leaveIra column after switching funding order in ProjectionControls. Regression metrics (metric-lifetime-tax/ending-nw/total-converted/tax-savings) still render. Zero console errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FundingOrderCompare.jsx line 137: `fmtUSD(Math.abs(delta) === delta ? delta : delta)` is a no-op — both branches evaluate to `delta`. The intent looks like signed formatting; fmtUSD already handles negatives so the prepended '+' handles the positive case. Simplify to `${delta > 0 ? '+' : ''}${fmtUSD(delta)}` (removes dead ternary).",
+    "FundingOrderCompare.jsx uses a bare try/catch that swallows the error object (`catch {}`) — a console.error(e) in dev would help diagnose failed Promise.all runs.",
+    "Minor: `runs` is only cleared implicitly on a fresh compare — if user changes funding order the previous comparison table remains stale until Re-run is pressed. Consider resetting `runs` in a useEffect when scenario.withdrawal.funding_order changes, or add a small 'stale' badge."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "FundingOrderCompare card verified end-to-end on Projection tab. Comparison runs in ~5-10s. Default scenario funding_order = 'Cash → IRA → Taxable → Roth' → CURRENT badge on funding-col-depleteIra. Switching to 'Cash → Taxable → IRA → Roth' via funding-order-select correctly moves badge to funding-col-leaveIra. Regression on other Projection tab elements clean."
+}
