@@ -812,3 +812,76 @@ the modal outcome. User picked research-backed fixes 1+2+4 (skipped regime-switc
   Frontend iteration 24: 100%, no bugs.
 - Deferred/backlog: regime-switching engine (option 3); MonteCarlo.jsx approaching 700-line split threshold
   (extract MonteCarloResults.jsx); useMemo planReturn.
+
+
+### Phase 23 — Security Hardening Round 3 (DoS bounds validated) (2026-07-12)
+Post-Phase-22 security-audit fixes applied to `backend/server.py` were previously untested. This phase
+adds the pytest coverage and confirms zero regressions.
+- **`_validate_config` tightened**: caps `legacy.post_death_years ≤ 100` (integer, non-negative — was
+  unbounded, would run an O(years) heir sleeve loop per projection × 500 sweep cells), `expenses` list
+  ≤ 60 entries (matching accounts/streams style caps), rejects bool/float-with-fraction on
+  post_death_years.
+- **NaN/Infinity smuggling**: `_reject_non_finite` walks the free-form config dict iteratively (with a
+  20K-node budget) — now runs on `/api/tax/year`, `/api/tax/optimize`, `/api/projection`, `/api/sweep`,
+  `/api/strategy-sweep`, `/api/ss-optimizer`, `/api/montecarlo`, `/api/scenarios POST`. Prevents typed-Pydantic
+  bypass via free-form dict fields (e.g. `legacy.heir_reinvest_return: NaN`).
+- **Rate limits added**: `/api/tax/year` 60/min, `/api/tax/optimize` 60/min (were unlimited).
+- **`asyncio.to_thread` wrappers**: `run_projection` + `sweep_brackets` + `strategy_sweep` + `sweep_ss_claims`
+  wrapped so heavy synchronous math no longer blocks the event loop under concurrent load.
+- **Tests**: `tests/test_phase23_config_dos.py` (12 tests) — cap enforcement, valid configs still 200,
+  NaN nested rejection on projection + scenarios + tax endpoints. Full suite **155/155 pytest pass**.
+
+### Phase 24 — Read-only Shareable Scenario Links + Engine Compare + Refactors (2026-07-12)
+Four refinements requested by user (P1 features from post-Phase-22 backlog).
+
+**(1) `axios.create()` instance refactor** (`frontend/src/lib/api.js`):
+- Session-token interceptor was on the global `axios` — leaked onto any third-party axios usage. Switched
+  to a dedicated `http = axios.create({ baseURL: API })` instance with a scoped request interceptor. All
+  API helpers migrated (only `api.js` touches axios; verified via grep). AI streaming endpoints continue
+  to use `fetch` (they don't need the session token).
+
+**(2) `MonteCarlo.jsx` split** (615 → 442 lines):
+- Extracted the entire results section (engine info strip + gauge + compare + seq-risk + failure anatomy
+  + shock/inflation/correlation cards + fan chart + histogram) into a new `MonteCarloResults.jsx` (255
+  lines). MonteCarlo.jsx now focuses on the controls form + run/compare buttons + empty-state.
+- Same shared `Stat` sub-component + CORR_ROWS constant duplicated (small — cleaner than exporting).
+
+**(3) Engine comparison strip — one-click Statistical vs Historical** (`frontend/src/components/MonteCarlo.jsx`):
+- New `runCompare()`: runs BOTH engines in parallel via `Promise.all` with the same trial count, anchor
+  setting, guardrail, asset/inflation/shock config, and fixed seed=42 (reproducible). Correlation only
+  applies to the lognormal call (historical embeds real co-movements).
+- New `EngineCompareStrip` card (`mc-engine-compare`) renders under the controls: paired horizontal
+  progress bars (`mc-compare-lognormal`, `mc-compare-historical`), delta chip (`mc-engine-compare-delta`)
+  reading "Historical +X pts" / "-X pts", context-aware explainer text (agrees / historical rosier /
+  historical harsher based on `|delta| < 2pts`).
+- Verified: default couple returns lognormal 97.2% vs historical 98.6% (Historical +1.4 pts) in ~15s.
+
+**(4) Read-only shareable scenario links** (backend + frontend):
+- **Backend**: `Scenario` model gains `share_token: Optional[str]`. Three new endpoints:
+  - `POST /api/scenarios/{sid}/share` (owner-only): mints `secrets.token_urlsafe(16)` (22-char base64url,
+    128-bit entropy); idempotent (re-enable returns same token). Rate-limited 30/min.
+  - `DELETE /api/scenarios/{sid}/share` (owner-only): sets `share_token: null`. Idempotent.
+  - `GET /api/scenarios/share/{share_token}`: PUBLIC (no session token). Returns
+    `SharedScenario{name, config, created_at}` — **NEVER leaks** `owner_token`, `id`, or `share_token`.
+    Rate-limited 60/min. Regex-validates token shape before hitting DB (`[a-zA-Z0-9_-]{22,64}`).
+  - Sparse unique index on `share_token` (skips nulls).
+- **Frontend**:
+  - `api.js` helpers: `enableScenarioShare`, `revokeScenarioShare`, `fetchSharedScenario`.
+  - `Scenarios.jsx`: Share button (`share-{id}`) per row — enables + auto-copies URL to clipboard + toast;
+    inline `ShareLinkRow` (`share-url-{id}`) with the URL + Copy button that flips to 'Copied' briefly;
+    Revoke button (`unshare-{id}`) once shared.
+  - `Planner.jsx`: on mount, `URLSearchParams.get('share')` triggers `fetchSharedScenario`. On success
+    → sets scenario + shows green `shared-view-banner` with plan name + Exit button (`exit-shared-view`);
+    tab-inputs and tab-scenarios triggers/contents are **hidden**. On error → orange `shared-view-error`
+    banner + default scenario loads.
+- **Tests**: `tests/test_phase24_share_links.py` — 11 pytest cases covering owner-only enable/revoke,
+  idempotence, cross-session 404, public GET without session, secret-leak audit (owner_token/id/share_token
+  never in public payload), malformed/unknown token rejection, list endpoint exposes share_token to owner.
+- **Frontend testing agent iteration 25**: 100% pass, 0 console errors, all 6 review bullets green.
+  Full round-trip verified: save → share → new tab with URL → shared banner + hidden tabs → Exit → revoke.
+
+## Backlog / Next (updated 2026-07-12, post-Phase-24)
+- P1: **Account aggregation** (Plaid / Yodlee) — DEFERRED per user request.
+- P3: Regime-switching stochastic inflation (macro regime).
+- Idea: Client-side history.pushState + state reset for `exitShared()` (currently forces window.location.href reload — works but heavier than needed; noted by testing agent, non-blocking).
+- Idea: Show a live "Roth compliance" preview for a shared scenario without letting the viewer edit it.
