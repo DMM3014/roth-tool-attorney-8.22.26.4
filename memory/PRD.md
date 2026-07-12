@@ -903,6 +903,30 @@ Multi-Year Projection tab (analogous to the Monte Carlo engine-compare strip).
 
 
 ## Backlog / Next (updated 2026-07-12, post-Phase-24)
+
+### Phase 25b — Split IRA & Taxable column added to Compare Funding Orders (2026-07-12)
+User asked to extend the FundingOrderCompare card with a third column for the Split funding order at the
+user's current `withdrawal.ira_split` percentage.
+- **3-column layout**: `orderCols(iraSplit)` returns leaveIra / split / depleteIra. Split label reads
+  live `Split IRA & Taxable ({N}%)` from the plan. `splitConfig(scenario)` deep-copies the scenario and
+  sets `funding_order = "Split IRA & Taxable"` (keeps user's `ira_split`, defaults to 0.5 if unset —
+  live scenario never mutated).
+- **`runs` now { leaveIra, split, depleteIra }**; three parallel `runProjection` calls; `winnerKey` picks
+  best-of-three per metric.
+- **Δ column repurposed**: was `depleteIra − leaveIra`; now `Δ vs your plan` = winner − currentSelection,
+  or the literal string `"on winner"` when the user's live funding order already wins that row. Sign-aware
+  color coding retained. Header data-testid: `funding-delta-header`.
+- **CURRENT badge** matches the live `withdrawal.funding_order` string against `matchOrder` on each column
+  (works for all three orders including Split).
+- **Auto-stale still fires** on scenario edits via `scenarioSig` — verified: switching funding-order-select
+  or moving ira-split-slider clears the previous table to the empty state (empty-state text reflects the
+  new order live).
+- **Reviewer polish applied**: `catch (e)` now logs to console for diagnostics (was bare swallow); Split
+  column description slightly reworded for clarity ("the Split column uses N% IRA").
+- **Testing agent iteration 27**: 100% pass, all 9 acceptance criteria green, 0 console errors. Only
+  observation: `heir_ira_tax_paid` renders "—" across all 3 columns on default seed because IRA depletes
+  fully by 2nd death (all 3 orders zero out that field — not a regression).
+
 - P1: **Account aggregation** (Plaid / Yodlee) — DEFERRED per user request.
 - P3: Regime-switching stochastic inflation (macro regime).
 - Idea: Client-side history.pushState + state reset for `exitShared()` (currently forces window.location.href reload — works but heavier than needed; noted by testing agent, non-blocking).

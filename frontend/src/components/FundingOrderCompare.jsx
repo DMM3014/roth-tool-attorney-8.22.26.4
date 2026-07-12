@@ -65,7 +65,8 @@ export const FundingOrderCompare = ({ scenario }) => {
         runProjection(cfgs.depleteIra),
       ]);
       setRuns({ leaveIra, split, depleteIra });
-    } catch {
+    } catch (e) {
+      console.error("funding-order compare failed", e);
       toast.error("Funding-order comparison failed. Please try again.");
     } finally {
       setRunning(false);
@@ -97,9 +98,9 @@ export const FundingOrderCompare = ({ scenario }) => {
           </div>
           <p className="text-xs text-muted-foreground mt-1 max-w-3xl">
             Runs the same plan (same conversions, same spending, same accounts) through all three
-            funding strategies — the two extremes plus your Split at {Math.round(iraSplit * 100)}% IRA —
-            so you can see which one wins on the metrics you care about. Cash is always spent first
-            and Roth always last.
+            funding strategies — the two extremes plus the Split column at {Math.round(iraSplit * 100)}% IRA
+            (from your live plan) — so you can see which one wins on the metrics you care about. Cash is
+            always spent first and Roth always last.
           </p>
         </div>
         <Button onClick={compare} disabled={running} data-testid="funding-compare-run"
