@@ -287,8 +287,9 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                 <Switch checked={anchorOn} onCheckedChange={setAnchorOn} data-testid="mc-anchor-toggle" />
               </div>
               <p className="text-[10px] text-muted-foreground mt-2">
-                Re-centers the simulation so its median growth matches the blended return your accounts already assume —
-                the deterministic plan and this simulation then answer the same question, with volatility layered on top.
+                Re-centers each simulated year on the return path your deterministic plan already implies —
+                as low-yield cash becomes a smaller slice, the anchor drifts up with it, so the simulation median
+                tracks the plan instead of quietly understating it.
                 Off = raw {engine === "historical" ? "historical" : "class"} means (may quietly diverge from your plan).
               </p>
             </div>

@@ -79,7 +79,9 @@ def test_historical_engine_runs_and_reports():
     assert h["historical"]["avg_block_years"] == 10
     # anchored by default: sample geometric ~8.2% recentered onto plan 6.67%
     assert h["anchor"]["enabled"] is True
-    assert abs(h["anchor"]["blended_mean_after"] - 0.0667) < 1e-3
+    assert h["anchor"]["mode"] == "plan_path"
+    # v3.1 path anchor: geometric mean of the plan-implied path (≈6.7% yr-1 → ≈7% late)
+    assert 0.064 <= h["anchor"]["blended_mean_after"] <= 0.073
     # inflation sampled jointly from history
     assert h["inflation"]["source"] == "historical"
     assert 0.0 <= h["with_conversions"]["success"] <= 1.0

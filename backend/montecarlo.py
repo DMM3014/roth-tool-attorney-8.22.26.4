@@ -21,6 +21,10 @@ where g_t is the random portfolio gross-return factor, M_t is the cumulative inf
 (1.0 when inflation is deterministic), and the cashflow terms are taken from the deterministic
 projection (conversion strategy, taxes, RMDs, SS and IRMAA are locked).
 "Success" = the liquid portfolio never depletes through the second death.
+v3.1 — TIME-VARYING ANCHOR: instead of a single flat plan return, the anchor now follows the
+       per-year return path implied by the deterministic projection's own liquid balances
+       (g_t = (L_t - net_flow_t)/L_{t-1}), so the MC median tracks the plan even as the
+       cash/growth mix shifts over the horizon. Percentile reporting extended to P5/P95.
 """
 
 import copy
@@ -30,7 +34,7 @@ from projection import run_projection
 from historical_data import HIST, HIST_YEARS
 
 LIQUID_TAX_TYPES = {"Cash", "Taxable", "Tax-Deferred", "Tax-Free"}
-PCTS = [10, 25, 50, 75, 90]
+PCTS = [5, 10, 25, 50, 75, 90, 95]
 EARLY_YEARS = 3  # window that defines "sequence of returns" risk
 AVG_BLOCK_YEARS = 10  # stationary bootstrap expected block length (ACO 2023 use ~120 months)
 
@@ -82,6 +86,23 @@ def _plan_return(config):
         return None
     return float(sum(a.get("beginning_balance", 0.0) * float(a.get("return", 0.0))
                      for a in accts) / tot)
+
+
+def _plan_return_path(rows, liquid0, flows):
+    """Per-year portfolio growth implied by the deterministic plan's own liquid balances:
+    g_t = (L_t - net_flow_t) / L_{t-1}.  Running the MC recursion at exactly this path
+    reproduces the plan, so anchoring to it keeps the MC median on-plan even as the
+    low-yield cash slice shrinks and the effective blended return drifts upward."""
+    ext, exp, tax = flows
+    liq = np.array([r["cash"] + r["taxable"] + r["traditional"] + r["roth"] for r in rows], dtype=float)
+    prev = np.concatenate(([liquid0], liq[:-1]))
+    net = ext - (exp + tax)
+    ok = prev > 1.0
+    r = np.zeros(liq.size, dtype=float)
+    r[ok] = (liq[ok] - net[ok]) / prev[ok] - 1.0
+    if ok.any() and not ok.all():
+        r[~ok] = float(r[ok].mean())
+    return np.clip(r, -0.90, 1.0)
 
 
 def _normalized_weights(assets):
@@ -286,9 +307,13 @@ def _summarize(paths, ever_dep, dep_idx, years):
         "success_funded": round(success, 4),
         "percentiles": {f"p{p}": [round(float(v), 0) for v in pct[i]] for i, p in enumerate(PCTS)},
         "ending": {
+            "p5": round(float(np.percentile(ending, 5)), 0),
             "p10": round(float(np.percentile(ending, 10)), 0),
+            "p25": round(float(np.percentile(ending, 25)), 0),
             "p50": round(float(np.percentile(ending, 50)), 0),
+            "p75": round(float(np.percentile(ending, 75)), 0),
             "p90": round(float(np.percentile(ending, 90)), 0),
+            "p95": round(float(np.percentile(ending, 95)), 0),
             "mean": round(float(ending.mean()), 0),
             "min": round(float(ending.min()), 0),
             "pct_positive": round(float(np.mean(ending > 0)), 4),
@@ -360,6 +385,9 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inf
     rng = np.random.default_rng(seed)
     det_infl = float(config.get("projection", {}).get("general_inflation", 0.03))
     plan_ret = _plan_return(config)
+    # v3.1: per-year anchor path implied by the with-conversion deterministic plan
+    # (the without-conversion sim shares the same g so the comparison stays paired).
+    path = _plan_return_path(rows_w, liquid0, flows_w) if (anchor_to_plan and plan_ret is not None) else None
     anchor_info = {"enabled": False, "plan_return": (round(plan_ret, 4) if plan_ret is not None else None)}
     corr_info = None
     hist_info = None
@@ -370,12 +398,15 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inf
         # correlations/fat-tails/mean-reversion come from the data (copula spec ignored).
         g, infl_draws, weights, geom, hist_info = _historical_factors(assets, n, T, rng)
         port_mean, port_vol = hist_info["sample_arith_mean"], hist_info["sample_vol"]
-        if anchor_to_plan and plan_ret is not None:
-            g = g * ((1.0 + plan_ret) / geom)
-            anchor_info = {"enabled": True, "plan_return": round(plan_ret, 4),
+        if path is not None:
+            g = g * ((1.0 + path)[None, :] / geom)
+            path_geo = float(np.exp(np.mean(np.log1p(path)))) - 1.0
+            anchor_info = {"enabled": True, "mode": "plan_path", "plan_return": round(plan_ret, 4),
                            "blended_mean_before": round(geom - 1.0, 4),
-                           "blended_mean_after": round(plan_ret, 4)}
-            port_mean = round(port_mean + (plan_ret - (geom - 1.0)), 4)
+                           "blended_mean_after": round(path_geo, 4),
+                           "path_first": round(float(path[0]), 4),
+                           "path_last": round(float(path[-1]), 4)}
+            port_mean = round(port_mean + (path_geo - (geom - 1.0)), 4)
         infl_on = bool(inflation and inflation.get("enabled", True)) if inflation is not None else True
         if infl_on:
             infl_mult, infl_mean, infl_vol, cum_summary = _inflation_factors(
@@ -412,6 +443,16 @@ def run_montecarlo(config, n_trials=500, assets=None, shock=None, seed=None, inf
             }
 
         g, weights, port_mean, port_vol = _portfolio_factors(assets, n, T, rng, z=z_assets)
+        if path is not None and anchor_info.get("enabled"):
+            # flat anchor centered g on plan_ret; re-scale each YEAR onto the plan's path
+            g = g * ((1.0 + path) / (1.0 + plan_ret))[None, :]
+            path_geo = float(np.exp(np.mean(np.log1p(path)))) - 1.0
+            anchor_info.update({
+                "mode": "plan_path",
+                "blended_mean_after": round(anchor_info["blended_mean_after"] + (path_geo - plan_ret), 4),
+                "path_first": round(float(path[0]), 4),
+                "path_last": round(float(path[-1]), 4)})
+            port_mean = port_mean + (path_geo - plan_ret)
         infl_mult, infl_mean, infl_vol, cum_summary = _inflation_factors(
             inflation, n, T, rng, det_infl, z=z_infl)
 

@@ -1,4 +1,4 @@
-import { TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, AlertTriangle } from "lucide-react";
+import { TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, AlertTriangle, Table2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { fmtUSD, fmtPct } from "@/lib/api";
 import { SuccessGauge, SuccessCompareChart, FanChart, EndingHistogram } from "@/components/MonteCarloCharts";
@@ -10,6 +10,16 @@ const CORR_ROWS = [
   ["stocks_inflation", "Stocks ↔ Inflation"],
   ["bonds_inflation", "Bonds ↔ Inflation"],
   ["cash_inflation", "Cash ↔ Inflation"],
+];
+
+const PCT_ROWS = [
+  ["p95", "P95 · Best case"],
+  ["p90", "P90 · Upside"],
+  ["p75", "P75 · Above average"],
+  ["p50", "P50 · Median"],
+  ["p25", "P25 · Below average"],
+  ["p10", "P10 · Downside"],
+  ["p5", "P5 · Severe downside"],
 ];
 
 const Stat = ({ label, value, accent }) => (
@@ -46,6 +56,12 @@ export const MonteCarloResults = ({
   })();
   const endFactor = dfactor(res.years[res.years.length - 1]);
   const endDisp = (v) => (realDollars ? Math.round((v || 0) * endFactor) : v);
+  const milestoneIdx = (() => {
+    const out = [];
+    for (let i = 9; i < res.years.length - 1; i += 10) out.push(i);
+    out.push(res.years.length - 1);
+    return out;
+  })();
 
   return (
     <>
@@ -66,7 +82,7 @@ export const MonteCarloResults = ({
           <span className="rounded-full border border-[#EBE8E0] bg-[#F9F8F6] px-3 py-1" data-testid="mc-anchor-info">
             Plan return <span className="font-semibold">{fmtPct(res.plan_return)}</span> · simulated mean <span className="font-semibold">{fmtPct(res.portfolio_mean)}</span>
             {res.anchor?.enabled
-              ? <span className="text-[#4A6741] font-semibold"> · anchored to plan</span>
+              ? <span className="text-[#4A6741] font-semibold"> · anchored to plan{res.anchor?.mode === "plan_path" ? ` path (${fmtPct(res.anchor.path_first)}→${fmtPct(res.anchor.path_last)})` : ""}</span>
               : <span className="text-[#C87941] font-semibold"> · NOT anchored</span>}
           </span>
         )}
@@ -233,6 +249,53 @@ export const MonteCarloResults = ({
           <Stat label={`Median ending (P50)${realDollars ? " · today's $" : ""}`} value={fmtUSD(endDisp(wc.ending.p50))} accent />
           <Stat label={`Upside ending (P90)${realDollars ? " · today's $" : ""}`} value={fmtUSD(endDisp(wc.ending.p90))} />
         </div>
+      </Card>
+
+      {/* Percentile outcomes table */}
+      <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-percentile-table-card">
+        <div className="flex items-center gap-2 mb-1">
+          <Table2 className="h-4 w-4 text-[#4A6741]" />
+          <h3 className="font-display text-base font-bold tracking-tight">Range of Outcomes by Percentile</h3>
+        </div>
+        <p className="text-[11px] text-muted-foreground mb-3">
+          Liquid portfolio in <span className="font-medium">{realDollars ? "today's" : "nominal (future)"} dollars</span> at each milestone,
+          with your Roth conversions. P50 is the median trial — half the simulated futures land above it, half below.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" data-testid="mc-percentile-table">
+            <thead>
+              <tr className="border-b border-[#EBE8E0]">
+                <th className="text-left py-2 pr-4 text-[10px] label-cap text-muted-foreground font-medium">Percentile</th>
+                {milestoneIdx.map((i) => (
+                  <th key={i} className="text-right py-2 px-3 text-[10px] label-cap text-muted-foreground font-medium">
+                    {res.years[i]}{i === res.years.length - 1 ? " · End" : ""}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {PCT_ROWS.filter(([k]) => wc.percentiles[k]).map(([k, label]) => (
+                <tr key={k} data-testid={`mc-pct-row-${k}`}
+                  className={`border-b border-[#F3F1EC] ${k === "p50" ? "bg-[#F4F7F2]" : ""}`}>
+                  <td className={`py-2 pr-4 text-xs whitespace-nowrap ${k === "p50" ? "font-bold text-[#4A6741]" : "text-muted-foreground"}`}>{label}</td>
+                  {milestoneIdx.map((i) => (
+                    <td key={i} className={`py-2 px-3 text-right tabular-nums ${k === "p50" ? "font-bold text-[#4A6741]" : ""}`}>
+                      {fmtUSD(Math.round(wc.percentiles[k][i] * (realDollars ? dfactor(res.years[i]) : 1)))}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-2">
+          {res.anchor?.enabled
+            ? <>The median is anchored to your plan&apos;s year-by-year return path ({fmtPct(res.anchor.path_first ?? res.plan_return)} → {fmtPct(res.anchor.path_last ?? res.plan_return)} as cash becomes a smaller slice) — </>
+            : <>Anchor is OFF, so the central tendency follows the raw engine means and may diverge from your plan — </>}
+          {realDollars
+            ? <>figures are discounted at {fmtPct(infl)} inflation to today&apos;s purchasing power.</>
+            : <>figures are future dollars; use the &ldquo;Today&apos;s $&rdquo; toggle above to discount them.</>}
+        </p>
       </Card>
 
       {/* Ending distribution */}

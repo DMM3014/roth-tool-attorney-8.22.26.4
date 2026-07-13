@@ -958,3 +958,23 @@ search different spaces. Added a lightweight in-app explainer.
   each pill wraps its own `<TooltipProvider delayDuration={150}>` for scoped behavior.
 - Lint-clean; no test agent run needed (small isolated additions with no logic changes).
 
+
+### Phase 25e — Monte Carlo v3.1: time-varying plan-path anchor + percentile-dollars table (2026-07-12)
+User reported "Monte Carlo appears low given the large amount of assets". Root-cause analysis confirmed
+a real ~$9.5M structural understatement: the v3.0 anchor re-centered the whole simulation on a SINGLE
+flat plan return (beginning-balance blend, 6.67%) even though the plan's effective blended return drifts
+toward 7% as the low-yield cash slice shrinks. A further ~$5M median gap vs plan is genuine
+volatility-cashflow interaction (kept — it's real risk).
+- **`montecarlo.py` v3.1**: new `_plan_return_path()` derives the per-year growth implied by the
+  deterministic plan's own liquid balances (g_t = (L_t − net_flow_t)/L_{t−1}); anchoring the MC to this
+  path makes a zero-vol MC reproduce the plan exactly. Applied to BOTH engines (lognormal: flat anchor
+  then per-year column rescale; historical: per-year rescale of the bootstrap draws). `anchor` block now
+  reports `mode: "plan_path"`, `path_first`, `path_last`. PCTS extended to [5,10,25,50,75,90,95]; `ending`
+  now includes p5/p95. Result on default scenario: median ending $61.5M → $70.5M (plan $76.1M).
+- **`MonteCarloResults.jsx`**: new "Range of Outcomes by Percentile" card (testid
+  `mc-percentile-table-card` / `mc-pct-row-p50` etc.) — P5–P95 rows × decade milestones (2035/2045/2055/
+  End), honors the nominal ↔ today's-$ toggle, P50 row highlighted; anchor pill shows the path range
+  (6.7%→7.0%). `MonteCarlo.jsx` anchor-card copy updated.
+- **Tests**: new `tests/test_phase25_path_anchor.py` (9 tests incl. zero-vol plan reproduction and
+  path-recursion exactness); `test_phase22_engine.py` historical-anchor assertion updated for plan_path.
+  Full suite 175/175 pass; golden snapshot regenerated (`tests/golden_snapshot.py save`).
