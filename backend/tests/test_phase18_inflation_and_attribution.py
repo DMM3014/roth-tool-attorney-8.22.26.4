@@ -119,6 +119,6 @@ def test_warnings_use_owner_not_just_client_age():
 def test_conversion_math_unchanged_by_attribution():
     """Adding per-owner attribution must NOT change any of the headline projection metrics."""
     out = run_projection(copy.deepcopy(DEFAULT_SCENARIO))
-    assert out["summary"]["lifetime_taxes"] == 7765487.89
-    assert out["summary"]["ending_net_worth"] == 81426835.12
-    assert out["legacy"]["after_tax_estate_to_heirs"] == 140350666.22
+    assert out["summary"]["lifetime_taxes"] == 7075325.52
+    assert out["summary"]["ending_net_worth"] == 80238883.64
+    assert out["legacy"]["after_tax_estate_to_heirs"] == 143648209.78

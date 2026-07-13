@@ -93,8 +93,8 @@ def test_projection_per_owner_ledger_and_math(cfg):
     assert r.status_code == 200
     data = r.json()
     # Math regression
-    assert data["summary"]["lifetime_taxes"] == 7765487.89
-    assert data["summary"]["ending_net_worth"] == 81426835.12
+    assert data["summary"]["lifetime_taxes"] == 7075325.52
+    assert data["summary"]["ending_net_worth"] == 80238883.64
     # Per-owner ledger
     ledger = data["roth_compliance"]["conversions_ledger"]
     assert len(ledger) > 0
@@ -120,9 +120,9 @@ def test_strategy_sweep_default_topN_fill32(cfg):
     ranked = data["ranked"]
     assert len(ranked) >= 3
     top = ranked[0]
-    # Winner should be Fill 32% variant near 2062 end (per review: 141.9M legacy)
+    # Winner: phased Fill 32% pre-SS then 24% (no RMD-age-stop default: 143.7M legacy)
     assert "Fill 32%" in top["label"]
-    assert 141_000_000 <= top["after_tax_estate"] <= 143_000_000
+    assert 143_000_000 <= top["after_tax_estate"] <= 145_000_000
 
 
 # ---------- SS optimizer regression ----------

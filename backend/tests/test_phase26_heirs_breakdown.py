@@ -63,8 +63,10 @@ class TestHeirsBreakdown:
         of the IRA to after-tax taxable during life."""
         leave = copy.deepcopy(defaults)
         leave.setdefault("withdrawal", {})["funding_order"] = "Cash → Taxable → IRA → Roth"
+        leave["roth"]["stop_at_rmd_age"] = True
         deplete = copy.deepcopy(defaults)
         deplete.setdefault("withdrawal", {})["funding_order"] = "Cash → IRA → Taxable → Roth"
+        deplete["roth"]["stop_at_rmd_age"] = True
         r1 = client.post(f"{BASE_URL}/api/projection", json={"config": leave}, timeout=60).json()["legacy"]
         r2 = client.post(f"{BASE_URL}/api/projection", json={"config": deplete}, timeout=60).json()["legacy"]
         assert r2["ira_post_tax_to_heirs"] < r1["ira_post_tax_to_heirs"]

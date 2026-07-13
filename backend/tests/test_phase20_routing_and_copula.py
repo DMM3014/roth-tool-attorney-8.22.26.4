@@ -43,13 +43,14 @@ def test_spouse_conversions_land_in_spouse_roth():
 
 
 def test_default_scenario_unchanged_totals():
-    """Default: all conversions are client-sourced; totals must match the ledger."""
+    """Default (no RMD-age stop): both spouses' IRAs get converted; totals must match the ledger."""
     r = run_projection(copy.deepcopy(DEFAULT_SCENARIO))
     led = r["roth_compliance"]["conversions_ledger"]
-    assert all(entry["owner"] == "Client" for entry in led)
+    assert all(entry["owner"] in ("Client", "Spouse") for entry in led)
+    assert any(entry["owner"] == "Spouse" for entry in led)
     assert abs(sum(entry["amount"] for entry in led)
                - r["summary"]["total_roth_converted"]) < 1.0
-    assert r["rows"][-1]["account_balances"]["ROTS"] == 0.0
+    assert r["rows"][-1]["account_balances"]["ROTS"] > 0.0
     assert r["auto_accounts"] == []
 
 

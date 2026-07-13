@@ -1045,3 +1045,24 @@ Draft changes (`WHITEPAPER_v2_DRAFT.md`): new §5.5 realization-sensitivity tabl
 subtitle + What-Changed list + §5.4/§5.6 + conclusion rules rewritten to demote funding-order and
 32%-target to assumption-dependent; added ref [^11] (IRS recharacterization repeal).
 Still PENDING: user approval to publish v2 into the app (WhitePaper.jsx + WHITEPAPER.md).
+
+### Phase 27c — Default changed: conversions no longer stop at RMD age; analysis re-run (2026-07-13)
+User: "Default should not stop Conversions at RMD age" + asked whether the analysis used current defaults
+(it did — the old default had stop_at_rmd_age: true).
+- **`defaults.py`**: roth.stop_at_rmd_age True → False. (Engine fallback in projection.py untouched;
+  v9_scenario1.py pins True explicitly so V9 reconciliation is unaffected.)
+- **Consequence**: default scenario now fully retires BOTH IRAs before 2nd death under every conversion
+  program (heir IRA tax $5.64M → $0; spouse conversions appear in ledger; ROTS > 0 at end).
+- **Tests**: updated 9 regressions — new pins lifetime_taxes 7075325.52, ending_net_worth 80238883.64,
+  ATEE 143648209.78; strategy-sweep band 143–145M, best kind now "phased" ("Fill 32% pre-SS, 24% after");
+  test_phase20 default ledger now asserts Client+Spouse owners and ROTS>0; test_phase26 mix test and
+  test_phase10 heir-rate test pin stop_at_rmd_age=True / roth.enabled=False respectively to keep a
+  residual IRA. Golden snapshot re-saved. **Full suite 179/179 pass.**
+- **Whitepaper draft re-run with corrected default** (all §5 numbers replaced):
+  A noconv 126.09/140.57 (realized/never); B 24-taxable1st conv $10.96M → 146.20/150.29;
+  C 24-ira1st conv $7.42M → 143.65/151.31; D 32 → 145.35/148.41; E 35 → 143.89/146.72.
+  KEY SHIFT: with full runway 24% BEATS 32% under BOTH realization assumptions (the old 32% win was an
+  artifact of the RMD-age deadline — now framed in §5.6 as "the deadline decides the bracket").
+  Convert-vs-nothing: +15.9% realized / +6.9% never. Funding order still flips (±1.8%). MC re-run:
+  24% success 98.2% p5 $7.25M med $73.49M; 32% 98.5%/$8.31M/$72.71M.
+Still PENDING: user approval to publish v2 into the app (WhitePaper.jsx + WHITEPAPER.md).

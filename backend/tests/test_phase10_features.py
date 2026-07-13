@@ -42,6 +42,7 @@ class TestHeirRate:
     def test_changing_heir_rate_changes_inherited_tax(self, client, defaults):
         # Low heir rate
         low_cfg = copy.deepcopy(defaults)
+        low_cfg["roth"]["enabled"] = False
         low_cfg["legacy"]["heir_federal_rate"] = 0.12
         low_cfg["legacy"]["heir_state_rate"] = 0.0
         r_low = client.post(f"{BASE_URL}/api/projection", json={"config": low_cfg}, timeout=60)
@@ -51,6 +52,7 @@ class TestHeirRate:
 
         # High heir rate
         high_cfg = copy.deepcopy(defaults)
+        high_cfg["roth"]["enabled"] = False
         high_cfg["legacy"]["heir_federal_rate"] = 0.37
         high_cfg["legacy"]["heir_state_rate"] = 0.10
         r_high = client.post(f"{BASE_URL}/api/projection", json={"config": high_cfg}, timeout=60)

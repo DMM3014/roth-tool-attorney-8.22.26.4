@@ -44,8 +44,8 @@ def test_projection_has_roth_compliance_and_math_unchanged(scenario):
     # summary early penalty
     assert data["summary"]["roth_early_penalty_total"] == 0
     # regression numbers (allow tiny FP drift)
-    assert abs(data["summary"]["lifetime_taxes"] - 7765487.89) < 1.0
-    assert abs(data["summary"]["ending_net_worth"] - 81426835.12) < 1.0
+    assert abs(data["summary"]["lifetime_taxes"] - 7075325.52) < 1.0
+    assert abs(data["summary"]["ending_net_worth"] - 80238883.64) < 1.0
 
 
 def test_projection_year_targets_differs_from_flat(scenario):

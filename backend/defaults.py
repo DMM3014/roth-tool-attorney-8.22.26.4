@@ -100,7 +100,7 @@ DEFAULT_SCENARIO = {
         "end_year": 2062,
         "target_bracket": 0.24,
         "max_annual": 0.0,
-        "stop_at_rmd_age": True,
+        "stop_at_rmd_age": False,
         "irmaa_tier_cap": None,
     },
     "dividend_yield": 0.02,
