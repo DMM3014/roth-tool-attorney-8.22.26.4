@@ -10,7 +10,7 @@ ordinary income from LTCG and qualified-dividend income.
 - Tax engine matches the source spreadsheet's tax tables / effective rates (2026 base, indexed).
 - BOTH a single-year Roth conversion optimizer AND a multi-year retirement projection.
 - Generic example data (John & Jane Smith).
-- AI insights via Claude Sonnet 4.6 (Emergent LLM key).
+- AI insights via Google Gemini (gemini-2.5-flash) — BYOK: each visitor supplies their own free API key.
 
 ## Architecture
 - **Backend** FastAPI + MongoDB. Faithful Python port of the .xlsm `Tax` + `TaxTables` sheets.
@@ -20,7 +20,7 @@ ordinary income from LTCG and qualified-dividend income.
   - `projection.py` — year-by-year sim: income streams (COLA, survivor%), RMDs, fill-bracket conversions,
     expenses, circular tax↔withdrawal iteration, account growth, survivor filing transition.
   - `defaults.py` — generic DEFAULT_SCENARIO. `server.py` — /api/defaults, /tax/year, /tax/optimize,
-    /projection, /scenarios CRUD, /insights (streaming Claude).
+    /projection, /scenarios CRUD, /insights + /insights/chat (streaming Gemini, BYOK).
 - **Frontend** React + Tailwind + shadcn + Recharts. Earthy "Organic" light theme (Outfit + IBM Plex Sans).
   - Tabs: Single-Year Optimizer (snapshot inputs + bracket slider + before/after breakdown + AI),
     Multi-Year Projection (controls + 3 charts + year table + with/without-conversion comparison + AI),
@@ -1114,6 +1114,18 @@ User approved publishing v2 and asked for a reset button covering all inputs/swi
   exactly (case, realization, and MC tables).
 - NOTE: platform edit-loss glitch recurred (helper block dropped despite reported success) — re-inserted
   via insert_text; verify grep after batches of edits to this file.
-- OPEN QUESTION (user asked): AI Insights (/api/insights, /api/insights/chat) uses EMERGENT_LLM_KEY →
-  draws on the app owner's Emergent universal key balance. User asked about substituting a free engine
-  (e.g., Gemini free tier or visitor BYOK). Awaiting user's choice before implementing.
+### BYOK Google Gemini for AI Insights (DONE — 2026-06 / July session)
+- User chose "option b — users bring their own key", model **gemini-2.5-flash**.
+- Backend (`server.py`): removed EMERGENT_LLM_KEY/emergentintegrations from /api/insights and
+  /api/insights/chat. Both models now require `api_key` (validated, ≤200 chars, never stored/logged).
+  Shared `_gemini_stream()` helper uses `google-genai` async `generate_content_stream` with
+  `system_instruction`, `thinking_budget=0` (2.5-flash is a thinking model — disabled for speed and so
+  max_output_tokens isn't eaten by thinking), max_tokens 800/1000. The stream is PRIMED (first chunk
+  fetched via `anext`) inside the endpoint so key/quota errors raise BEFORE StreamingResponse: invalid
+  key → 401 "Your Gemini API key was rejected…", quota → 429, other → 502.
+- Frontend (`AIInsights.jsx`): key panel (data-testids: gemini-key-panel/-input/-save/-cancel/-link/
+  -error/-change, ai-chat-key) — key kept in localStorage `gemini_api_key` only, sent per request in
+  body. Generate/send disabled without a key; 401 responses reopen the panel with the server message.
+- Tests: `test_planner_api.py::TestInsights` rewritten for BYOK contract (422 missing key, 401 fake key
+  on both endpoints). Suite now 187 passing (run with REACT_APP_BACKEND_URL exported). Verified E2E via
+  curl + screenshots (save-key flow, disabled states, invalid-key error UX).

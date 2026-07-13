@@ -28,6 +28,9 @@ from ss_optimizer import sweep_ss_claims
 from defaults import DEFAULT_SCENARIO
 from states import STATES
 import asyncio
+from google import genai
+from google.genai import types as genai_types
+from google.genai import errors as genai_errors
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -173,7 +176,55 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 api_router = APIRouter(prefix="/api")
 
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+GEMINI_MODEL = "gemini-2.5-flash"
+
+
+def _gemini_http_error(e: Exception) -> HTTPException:
+    code = getattr(e, "code", None)
+    msg = str(e)
+    if code in (401, 403) or "API_KEY_INVALID" in msg or "API key not valid" in msg or "PERMISSION_DENIED" in msg:
+        return HTTPException(status_code=401,
+                             detail="Your Gemini API key was rejected. Check it at aistudio.google.com and try again.")
+    if code == 429 or "RESOURCE_EXHAUSTED" in msg:
+        return HTTPException(status_code=429,
+                             detail="Your Gemini key hit its rate limit or free-tier quota. Wait a minute and try again.")
+    return HTTPException(status_code=502, detail="Gemini is temporarily unavailable. Please try again.")
+
+
+async def _gemini_stream(api_key: str, system: str, prompt: str, max_tokens: int):
+    """Returns a primed text async-generator. Key/quota errors raise before streaming starts."""
+    gclient = genai.Client(api_key=api_key)
+    try:
+        stream = await gclient.aio.models.generate_content_stream(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=max_tokens,
+                thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        first = await anext(stream, None)
+    except HTTPException:
+        raise
+    except genai_errors.APIError as e:
+        raise _gemini_http_error(e)
+    except Exception:
+        logging.exception("gemini stream init failed")
+        raise HTTPException(status_code=502, detail="Gemini is temporarily unavailable. Please try again.")
+
+    async def _iter():
+        try:
+            if first is not None and first.text:
+                yield first.text
+            async for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
+        except Exception:
+            logging.exception("gemini stream failed")
+            yield "\n[Sorry, insights are temporarily unavailable. Please try again.]"
+
+    return _iter()
 
 
 # ---------- Models ----------
@@ -226,6 +277,15 @@ class ScenarioCreate(BaseModel):
 
 class InsightRequest(BaseModel):
     summary: Dict[str, Any]
+    api_key: str
+
+    @field_validator("api_key")
+    @classmethod
+    def _api_key_bounds(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) > 200:
+            raise ValueError("A Gemini API key is required")
+        return v
 
 
 class ChatTurn(BaseModel):
@@ -240,8 +300,7 @@ class ChatTurn(BaseModel):
         return v
 
 
-class InsightChatRequest(BaseModel):
-    summary: Dict[str, Any]
+class InsightChatRequest(InsightRequest):
     history: List[ChatTurn] = []
     message: str
 
@@ -613,11 +672,6 @@ async def get_shared_scenario(request: Request, share_token: str):
 @api_router.post("/insights")
 @limiter.limit("10/minute")
 async def insights(request: Request, req: InsightRequest):
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="LLM key not configured")
-
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
-
     system = (
         "You are a meticulous CFP-level retirement and tax strategist. You analyze "
         "Roth conversion plans. Always respect the strict separation of ORDINARY income "
@@ -646,26 +700,10 @@ async def insights(request: Request, req: InsightRequest):
         "Analyze this retirement & Roth conversion plan and explain the strategy and "
         "trade-offs.\n\nPlan summary (JSON):\n" + json.dumps(req.summary, indent=2)
     )
-    user_msg = UserMessage(text=prompt)
-
-    async def gen():
-        try:
-            chat = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"insights-{uuid.uuid4()}",
-                system_message=system,
-            ).with_model("anthropic", "claude-sonnet-4-6").with_params(max_tokens=450)
-            async for ev in chat.stream_message(user_msg):
-                if isinstance(ev, TextDelta):
-                    yield ev.content
-                elif isinstance(ev, StreamDone):
-                    break
-        except Exception:
-            logging.exception("insight stream failed")
-            yield "\n[Sorry, insights are temporarily unavailable. Please try again.]"
+    stream = await _gemini_stream(req.api_key, system, prompt, max_tokens=800)
 
     return StreamingResponse(
-        gen(),
+        stream,
         media_type="text/plain",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -674,11 +712,6 @@ async def insights(request: Request, req: InsightRequest):
 @api_router.post("/insights/chat")
 @limiter.limit("30/minute")
 async def insights_chat(request: Request, req: InsightChatRequest):
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="LLM key not configured")
-
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
-
     system = (
         "You are a meticulous CFP-level retirement and tax strategist answering a client's "
         "follow-up questions about THEIR specific Roth conversion plan. Respect the strict "
@@ -704,26 +737,10 @@ async def insights_chat(request: Request, req: InsightChatRequest):
         + (f"Earlier in this conversation:\n{transcript}\n" if transcript else "")
         + "Client's question: " + req.message
     )
-    user_msg = UserMessage(text=prompt)
-
-    async def gen():
-        try:
-            chat = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=f"insights-chat-{uuid.uuid4()}",
-                system_message=system,
-            ).with_model("anthropic", "claude-sonnet-4-6").with_params(max_tokens=550)
-            async for ev in chat.stream_message(user_msg):
-                if isinstance(ev, TextDelta):
-                    yield ev.content
-                elif isinstance(ev, StreamDone):
-                    break
-        except Exception:
-            logging.exception("insight chat stream failed")
-            yield "\n[Sorry, I couldn't process that question right now. Please try again.]"
+    stream = await _gemini_stream(req.api_key, system, prompt, max_tokens=1000)
 
     return StreamingResponse(
-        gen(),
+        stream,
         media_type="text/plain",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

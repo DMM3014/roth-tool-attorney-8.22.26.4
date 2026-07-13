@@ -139,23 +139,28 @@ class TestScenariosCRUD:
         assert r.status_code == 404
 
 
-# ---------- /api/insights streaming ----------
+# ---------- /api/insights streaming (BYOK Gemini) ----------
 class TestInsights:
-    def test_insights_streams_text(self, client):
-        summary = {"mode": "single_year", "filing_status": "MFJ",
-                   "recommended_conversion": 82750, "bracket_ceiling": 403550,
-                   "before": {"total_burden": 109000},
-                   "after": {"total_burden": 130000}}
-        r = client.post(f"{BASE_URL}/api/insights", json={"summary": summary},
-                        timeout=90, stream=True)
-        assert r.status_code == 200, r.text
-        assert "text/plain" in r.headers.get("content-type", "")
-        chunks = []
-        for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
-            if chunk:
-                chunks.append(chunk)
-            if sum(len(c) for c in chunks) > 200:
-                break
-        body = "".join(chunks)
-        assert len(body) > 50, f"insights body too short: {body!r}"
-        assert "[Error generating insights" not in body, body
+    SUMMARY = {"mode": "single_year", "filing_status": "MFJ",
+               "recommended_conversion": 82750, "bracket_ceiling": 403550,
+               "before": {"total_burden": 109000},
+               "after": {"total_burden": 130000}}
+
+    def test_insights_requires_api_key(self, client):
+        r = client.post(f"{BASE_URL}/api/insights", json={"summary": self.SUMMARY}, timeout=30)
+        assert r.status_code == 422, r.text
+
+    def test_insights_rejects_invalid_key(self, client):
+        r = client.post(f"{BASE_URL}/api/insights",
+                        json={"summary": self.SUMMARY, "api_key": "AIzaFakeKeyForTest123"},
+                        timeout=60)
+        assert r.status_code == 401, r.text
+        assert "Gemini API key" in r.json()["detail"]
+
+    def test_insights_chat_rejects_invalid_key(self, client):
+        r = client.post(f"{BASE_URL}/api/insights/chat",
+                        json={"summary": self.SUMMARY, "api_key": "AIzaFakeKeyForTest123",
+                              "history": [], "message": "Why 24%?"},
+                        timeout=60)
+        assert r.status_code == 401, r.text
+        assert "Gemini API key" in r.json()["detail"]
