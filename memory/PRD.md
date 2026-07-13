@@ -1028,3 +1028,20 @@ User asked to review the white paper against the program's actual results and dr
   common-rate ceiling demonstrated; limitations section added. Subtitle updated accordingly.
 - **PENDING USER DECISION**: publish v2 into the app (rewrite `WhitePaper.jsx` + `WHITEPAPER.md`) after
   user reviews the draft.
+
+### Phase 27b — Draft revised per user critiques: realization sensitivity + conversion risk (2026-07-13)
+User challenged two draft conclusions; both tested in the engine and folded into the draft:
+1. "Post-death gains are unrealized and may never be realized" — re-scored all cases with post-death
+   appreciation never taxed (computed exactly from post_death_rows sleeve values: roth+trad+taxable_and
+   _reinvested+cash+real_estate). Result: funding-order verdict FLIPS (C $150.07M > B $149.84M) and
+   32%-target loses to 24% ($148.69M vs $149.8M). Robust across both bounds: convert-vs-nothing
+   (+13.0%/+6.6%), never-exceed-common-rate (35% < 32% both ways), heir IRA bill $5.64M→$2.0M.
+2. "Is 32% early worth the risk?" — Monte Carlo 1,000 seed-matched trials: success 98.4% vs 98.7%,
+   p5 ending $8.20M vs $8.92M (32% slightly BETTER left tail — prepaid tax shrinks RMD/dividend/IRMAA
+   outflows in weak states), median $75.4M vs $73.4M (~$2M worse). Front-load: yrs1-5 taxes $689k vs
+   $902k (+31%). Conversions irreversible (TCJA repealed recharacterization).
+Draft changes (`WHITEPAPER_v2_DRAFT.md`): new §5.5 realization-sensitivity table, new §5.7 risk section
+(MC table, "program the floor / harvest the ceiling opportunistically"), §5.8 trimmed limitations,
+subtitle + What-Changed list + §5.4/§5.6 + conclusion rules rewritten to demote funding-order and
+32%-target to assumption-dependent; added ref [^11] (IRS recharacterization repeal).
+Still PENDING: user approval to publish v2 into the app (WhitePaper.jsx + WHITEPAPER.md).
