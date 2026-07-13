@@ -931,3 +931,13 @@ user's current `withdrawal.ira_split` percentage.
 - P3: Regime-switching stochastic inflation (macro regime).
 - Idea: Client-side history.pushState + state reset for `exitShared()` (currently forces window.location.href reload — works but heavier than needed; noted by testing agent, non-blocking).
 - Idea: Show a live "Roth compliance" preview for a shared scenario without letting the viewer edit it.
+
+### Phase 25c — User-configurable Monte Carlo trials (2026-07-12)
+- `MonteCarlo.jsx`: replaced the fixed `TRIALS=500` constant with a user-editable number input
+  (data-testid `mc-trials`), default `DEFAULT_TRIALS=1000`, clamped `[50, 2000]` on change
+  (matches the backend's `MAX_MC_TRIALS` Pydantic bound).
+- Both the primary `run()` and `runCompare()` (engine-compare) use the same `nTrials` state, so
+  the strip's trial count follows the input too.
+- Backend untouched (already validated `n_trials in [50, 2000]` since Phase 19).
+- Curl-verified: `n_trials=1000` → 200, `n_trials=2001` → 422, `n_trials=49` → 422.
+

@@ -14,7 +14,9 @@ const ASSET_ROWS = [
   ["bonds", "Bonds"],
   ["cash", "Cash"],
 ];
-const TRIALS = 500;
+const DEFAULT_TRIALS = 1000;
+const MIN_TRIALS = 50;
+const MAX_TRIALS = 2000;
 const LIQUID_TYPES = ["Cash", "Taxable", "Tax-Deferred", "Tax-Free"];
 const DEFAULT_ASSETS = {
   stocks: { weight: 0.6, mean: 0.08, vol: 0.18 },
@@ -68,6 +70,9 @@ export const MonteCarlo = ({ scenario, onResult }) => {
   // Engine-comparison strip: {lognormal: success, historical: success, plan_return}
   const [compare, setCompare] = useState(null);
   const [comparing, setComparing] = useState(false);
+  // Trial count is user-editable in [50, 2000]; default 1000. Backend Pydantic
+  // also validates the same range so oversized requests never reach the engine.
+  const [nTrials, setNTrials] = useState(DEFAULT_TRIALS);
 
   const weightSum = ASSET_ROWS.reduce((s, [k]) => s + (assets[k].weight || 0), 0);
   const setAsset = (cls, field, v) =>
@@ -86,7 +91,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
     setErr(null);
     try {
       const out = await runMonteCarlo(scenario, {
-        n_trials: TRIALS,
+        n_trials: nTrials,
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
         inflation: { enabled: inflOn, mean: inflMean, vol: inflVol },
@@ -115,7 +120,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
     setErr(null);
     try {
       const shared = {
-        n_trials: TRIALS,
+        n_trials: nTrials,
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
         inflation: { enabled: inflOn, mean: inflMean, vol: inflVol },
@@ -136,7 +141,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
         lognormal: lg,
         historical: hist,
         plan_return: lg.plan_return ?? hist.plan_return ?? null,
-        n_trials: TRIALS,
+        n_trials: nTrials,
         anchored: anchorOn,
       });
     } catch (e) {
@@ -182,7 +187,7 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           <h3 className="font-display text-lg font-bold tracking-tight">Monte Carlo Simulation</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5 max-w-3xl">
-          Locks your plan&apos;s conversion schedule and stress-tests it against {TRIALS} random market paths built from your
+          Locks your plan&apos;s conversion schedule and stress-tests it against {nTrials} random market paths built from your
           stock / bond / cash mix. Success = the liquid portfolio fully funds every year&apos;s spending and never runs out
           through the second death.
         </p>
@@ -238,11 +243,20 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           <div className="space-y-4">
             <div>
               <Label className="text-xs text-muted-foreground">Trials</Label>
-              <div className="mt-1 flex h-10 items-center justify-between rounded-md border border-[#EBE8E0] bg-[#F9F8F6] px-3" data-testid="mc-trials">
-                <span className="text-sm font-medium">500</span>
-                <span className="text-[10px] text-muted-foreground">fixed · validated</span>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Locked to 500 trials — the validated setting for this model.</p>
+              <Input
+                type="number"
+                min={MIN_TRIALS}
+                max={MAX_TRIALS}
+                step={50}
+                value={nTrials}
+                data-testid="mc-trials"
+                onChange={(e) => setNTrials(Math.max(MIN_TRIALS, Math.min(MAX_TRIALS, parseInt(e.target.value) || DEFAULT_TRIALS)))}
+                className="mt-1 h-10 bg-[#F9F8F6] text-right"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Random market paths per run. Allowed range {MIN_TRIALS}–{MAX_TRIALS}; default {DEFAULT_TRIALS}.
+                More trials = tighter percentiles but longer wall time.
+              </p>
             </div>
 
             <div>
