@@ -217,7 +217,7 @@ export const Planner = () => {
             <Concepts scenario={scenario} />
           </TabsContent>
           <TabsContent value="whitepaper">
-            <WhitePaper />
+            <WhitePaper scenario={scenario} />
           </TabsContent>
           <TabsContent value="montecarlo">
             <MonteCarlo scenario={scenario} onResult={setMcResult} />

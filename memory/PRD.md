@@ -1103,3 +1103,17 @@ User approved publishing v2 and asked for a reset button covering all inputs/swi
   ("Second edition", draft designation removed). Draft file `WHITEPAPER_v2_DRAFT.md` retained.
 - ESLint clean on all touched files. UI verified via screenshots (WP tab renders all sections; reset
   flow works with toast).
+
+### Phase 30 — Interactive white paper: "Run this table on YOUR plan" (2026-07-13)
+- `WhitePaper.jsx` now accepts `scenario` (passed from Planner; print version stays static/published).
+- Three RunRow controls: `wp-run-cases` + `wp-run-realization` (shared deterministic run: 5 strategies
+  × 2 realization bounds = 10 parallel /projection calls; fills §5 case table AND §5.5 table, winners
+  bolded dynamically, "YOUR PLAN · LIVE" badge, revert link to published base case) and `wp-run-mc`
+  (2 parallel seed-matched 1,000-trial Monte Carlo jobs → §5.7 table). Live results invalidate on any
+  scenario edit. Verified via screenshots: live values on default plan reproduce published numbers
+  exactly (case, realization, and MC tables).
+- NOTE: platform edit-loss glitch recurred (helper block dropped despite reported success) — re-inserted
+  via insert_text; verify grep after batches of edits to this file.
+- OPEN QUESTION (user asked): AI Insights (/api/insights, /api/insights/chat) uses EMERGENT_LLM_KEY →
+  draws on the app owner's Emergent universal key balance. User asked about substituting a free engine
+  (e.g., Gemini free tier or visitor BYOK). Awaiting user's choice before implementing.

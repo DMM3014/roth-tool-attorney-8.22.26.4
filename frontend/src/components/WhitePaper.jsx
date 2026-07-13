@@ -1,4 +1,8 @@
-import { BookOpen, Sparkles, ListChecks, FlaskConical } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BookOpen, Sparkles, ListChecks, FlaskConical, Play, Loader2, Undo2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { runProjection, runMonteCarlo } from "@/lib/api";
 
 const REFS = [
   { n: 1, text: "Cook, K. A., Meyer, W., & Reichenstein, W. (2015). Tax-Efficient Withdrawal Strategies. Financial Analysts Journal, 71(2), 16–29.", url: "https://ideas.repec.org/a/taf/ufajxx/v71y2015i2p16-29.html" },
@@ -53,7 +57,119 @@ const Tbl = ({ head, rows, testid, note }) => (
 );
 const W = ({ children }) => <span className="font-bold text-[#4A6741]">{children}</span>; // winning cell
 
-export const WhitePaper = ({ print = false }) => {
+const fmtM = (v) => (v == null ? "—" : `$${(v / 1e6).toFixed(2)}M`);
+const fmtPc = (v) => (v == null ? "—" : `${(v * 100).toFixed(1)}%`);
+const TAXABLE_FIRST = "Cash → Taxable → IRA → Roth";
+const IRA_FIRST = "Cash → IRA → Taxable → Roth";
+// The paper's five strategies, expressed as overrides on the reader's own plan:
+// only conversion enablement/target and the funding order change — everything else is theirs.
+const CASE_DEFS = [
+  { key: "A", label: "A. No conversions", mut: (c) => { c.roth = { ...c.roth, enabled: false }; } },
+  { key: "B", label: "B. Convert to 24% · spend taxable first", mut: (c) => { c.roth = { ...c.roth, enabled: true, target_bracket: 0.24 }; c.withdrawal = { ...c.withdrawal, funding_order: TAXABLE_FIRST }; } },
+  { key: "C", label: "C. Convert to 24% · spend IRA first", mut: (c) => { c.roth = { ...c.roth, enabled: true, target_bracket: 0.24 }; c.withdrawal = { ...c.withdrawal, funding_order: IRA_FIRST }; } },
+  { key: "D", label: "D. Convert to 32% · spend taxable first", mut: (c) => { c.roth = { ...c.roth, enabled: true, target_bracket: 0.32 }; c.withdrawal = { ...c.withdrawal, funding_order: TAXABLE_FIRST }; } },
+  { key: "E", label: "E. Convert to 35% · spend taxable first", mut: (c) => { c.roth = { ...c.roth, enabled: true, target_bracket: 0.35 }; c.withdrawal = { ...c.withdrawal, funding_order: TAXABLE_FIRST }; } },
+];
+const caseConfig = (scenario, def, realized) => {
+  const c = JSON.parse(JSON.stringify(scenario));
+  def.mut(c);
+  c.legacy = { ...(c.legacy || {}), heir_gains_realized: realized };
+  return c;
+};
+
+// "run live" control row shown above each results table (app view only, never in print)
+const RunRow = ({ onRun, running, isLive, onRevert, testid, label }) => (
+  <div className="flex flex-wrap items-center gap-3 mt-3 -mb-1">
+    <Button size="sm" variant="outline" onClick={onRun} disabled={running} data-testid={testid}
+      className="gap-1.5 rounded-full border-[#4A6741]/40 text-[#4A6741] hover:bg-[#4A6741]/10 hover:text-[#3B5234] h-7 text-xs">
+      {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+      {running ? "Running on your plan…" : label}
+    </Button>
+    {isLive && (
+      <>
+        <span className="inline-flex items-center rounded-full bg-[#4A6741] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white" data-testid={`${testid}-live-badge`}>
+          YOUR PLAN · LIVE
+        </span>
+        <button onClick={onRevert} data-testid={`${testid}-revert`}
+          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-[#1A1A1A]">
+          <Undo2 className="h-3 w-3" /> Show published base case
+        </button>
+      </>
+    )}
+  </div>
+);
+
+
+export const WhitePaper = ({ print = false, scenario = null }) => {
+  const [live, setLive] = useState(null);       // per-strategy deterministic results
+  const [liveMc, setLiveMc] = useState(null);   // { t24, t32 } Monte Carlo results
+  const [runningCases, setRunningCases] = useState(false);
+  const [runningMc, setRunningMc] = useState(false);
+
+  // editing the plan invalidates previous live runs
+  const scenarioSig = scenario ? JSON.stringify(scenario) : "";
+  useEffect(() => { setLive(null); setLiveMc(null); }, [scenarioSig]);
+
+  const runCases = async () => {
+    if (!scenario || runningCases) return;
+    setRunningCases(true);
+    try {
+      // each strategy is run under both realization bounds (10 projections total)
+      const runs = await Promise.all(
+        CASE_DEFS.flatMap((d) => [
+          runProjection(caseConfig(scenario, d, true)),
+          runProjection(caseConfig(scenario, d, false)),
+        ])
+      );
+      const out = {};
+      CASE_DEFS.forEach((d, i) => {
+        const realized = runs[i * 2], never = runs[i * 2 + 1];
+        out[d.key] = {
+          converted: realized.summary.total_roth_converted,
+          endIra: realized.summary.ending_traditional,
+          endRoth: realized.summary.ending_roth,
+          lifetimeTaxes: realized.summary.lifetime_taxes,
+          heirIraTax: realized.legacy.inherited_ira_tax,
+          atDeath: realized.legacy.after_tax_estate_at_death,
+          plus10Realized: realized.legacy.after_tax_estate_to_heirs,
+          plus10Never: never.legacy.after_tax_estate_to_heirs,
+        };
+      });
+      setLive(out);
+      toast.success("§5 tables recomputed live from your current plan.");
+    } catch (e) {
+      console.error("whitepaper live case runs failed", e);
+      toast.error("Could not run the five strategies on your plan (rate limit or server error). Try again in a minute.");
+    } finally {
+      setRunningCases(false);
+    }
+  };
+
+  const runMc = async () => {
+    if (!scenario || runningMc) return;
+    setRunningMc(true);
+    try {
+      const [r24, r32] = await Promise.all([
+        runMonteCarlo(caseConfig(scenario, CASE_DEFS[1], false), { n_trials: 1000, seed: 42 }),
+        runMonteCarlo(caseConfig(scenario, CASE_DEFS[3], false), { n_trials: 1000, seed: 42 }),
+      ]);
+      const pick = (r) => ({ success: r.with_conversions.success, ...r.with_conversions.ending });
+      setLiveMc({ t24: pick(r24), t32: pick(r32) });
+      toast.success("Monte Carlo comparison recomputed from your plan (1,000 seed-matched trials each).");
+    } catch (e) {
+      console.error("whitepaper live MC failed", e);
+      toast.error("Monte Carlo run failed or timed out. Try again shortly.");
+    } finally {
+      setRunningMc(false);
+    }
+  };
+
+  const liveBest = live && {
+    plus10: Math.max(...CASE_DEFS.map((d) => live[d.key].plus10Realized)),
+    atDeath: Math.max(...CASE_DEFS.map((d) => live[d.key].atDeath)),
+    never: Math.max(...CASE_DEFS.map((d) => live[d.key].plus10Never)),
+  };
+
   return (
     <div className={print ? "whitepaper-print-block" : ""} data-testid={print ? "whitepaper-print" : "whitepaper"}>
       <article className={print ? "max-w-none" : "max-w-3xl mx-auto"}>
@@ -289,18 +405,38 @@ export const WhitePaper = ({ print = false }) => {
           horizon: each year RMDs come out first and conversions fill the remaining headroom up to the target bracket. Dollar figures are nominal
           model outputs, not present values.
         </div>
-        <Tbl
-          testid="whitepaper-case-table"
-          head={["Strategy", "Converted", "IRA at 2nd death", "Roth at 2nd death", "Lifetime taxes", "Heir tax on IRA", "At-death estate", "To heirs (+10 yr)"]}
-          rows={[
-            ["A. No conversions (either order)", "$0", "$12.91M", "$0", "$12.68M", "$5.64M", "$75.29M", "$126.09M"],
-            [<span key="b" className="font-semibold">B. Convert to 24% · spend taxable first</span>, "$10.96M", "$0", "$57.09M", "$6.78M", "$0", "$78.18M", <W key="bw">$146.20M</W>],
-            ["C. Convert to 24% · spend IRA first", "$7.42M", "$0", "$40.95M", "$7.08M", "$0", <W key="cw">$79.44M</W>, "$143.65M"],
-            ["D. Convert to 32% · spend taxable first", "$9.20M", "$0", "$60.93M", "$6.19M", "$0", "$77.01M", "$145.35M"],
-            ["E. Convert to 35% · spend taxable first", "$7.22M", "≈$0", "$61.12M", "$5.53M", "$0", "$76.11M", "$143.89M"],
-          ]}
-          note="A 50/50 split order lands between B and C on the realized ten-year metric: $143.76M. The +10 yr column uses the realized bound; §5.5 re-scores every strategy under never-realized — the planner's default."
-        />
+        {!print && scenario && (
+          <RunRow onRun={runCases} running={runningCases} isLive={!!live} onRevert={() => setLive(null)}
+            testid="wp-run-cases" label="Run this table on YOUR plan" />
+        )}
+        {live ? (
+          <Tbl
+            testid="whitepaper-case-table"
+            head={["Strategy", "Converted", "IRA at 2nd death", "Roth at 2nd death", "Lifetime taxes", "Heir tax on IRA", "At-death estate", "To heirs (+10 yr)"]}
+            rows={CASE_DEFS.map((d) => {
+              const r = live[d.key];
+              return [
+                d.label, fmtM(r.converted), fmtM(r.endIra), fmtM(r.endRoth), fmtM(r.lifetimeTaxes), fmtM(r.heirIraTax),
+                r.atDeath === liveBest.atDeath ? <W key="d">{fmtM(r.atDeath)}</W> : fmtM(r.atDeath),
+                r.plus10Realized === liveBest.plus10 ? <W key="t">{fmtM(r.plus10Realized)}</W> : fmtM(r.plus10Realized),
+              ];
+            })}
+            note="Computed live from your current plan inputs. Each strategy overrides only the conversion enablement/target and the funding order — your ages, income, spending, accounts, taxes, and legacy settings are unchanged. The +10 yr column uses the realized bound; the §5.5 table shows both bounds."
+          />
+        ) : (
+          <Tbl
+            testid="whitepaper-case-table"
+            head={["Strategy", "Converted", "IRA at 2nd death", "Roth at 2nd death", "Lifetime taxes", "Heir tax on IRA", "At-death estate", "To heirs (+10 yr)"]}
+            rows={[
+              ["A. No conversions (either order)", "$0", "$12.91M", "$0", "$12.68M", "$5.64M", "$75.29M", "$126.09M"],
+              [<span key="b" className="font-semibold">B. Convert to 24% · spend taxable first</span>, "$10.96M", "$0", "$57.09M", "$6.78M", "$0", "$78.18M", <W key="bw">$146.20M</W>],
+              ["C. Convert to 24% · spend IRA first", "$7.42M", "$0", "$40.95M", "$7.08M", "$0", <W key="cw">$79.44M</W>, "$143.65M"],
+              ["D. Convert to 32% · spend taxable first", "$9.20M", "$0", "$60.93M", "$6.19M", "$0", "$77.01M", "$145.35M"],
+              ["E. Convert to 35% · spend taxable first", "$7.22M", "≈$0", "$61.12M", "$5.53M", "$0", "$76.11M", "$143.89M"],
+            ]}
+            note="A 50/50 split order lands between B and C on the realized ten-year metric: $143.76M. The +10 yr column uses the realized bound; §5.5 re-scores every strategy under never-realized — the planner's default."
+          />
+        )}
 
         <H3>5.1 The conversion policy is the first-order lever</H3>
         <P>
@@ -344,17 +480,37 @@ export const WhitePaper = ({ print = false }) => {
           dividends, borrow against it, or hold until their own deaths — when §1014 applies <em>again</em>. Re-scoring every strategy with post-death
           appreciation never taxed (annual dividend taxes still apply) brackets the truth:
         </P>
-        <Tbl
-          testid="whitepaper-realization-table"
-          head={["Strategy", "Gains realized at +10 yr", "Gains never realized (default)"]}
-          rows={[
-            ["A. No conversions", "$126.09M", "$140.57M"],
-            ["B. Convert to 24% · spend taxable first", <W key="b">$146.20M</W>, "$150.29M"],
-            ["C. Convert to 24% · spend IRA first", "$143.65M", <W key="c">$151.31M</W>],
-            ["D. Convert to 32% · spend taxable first", "$145.35M", "$148.41M"],
-            ["E. Convert to 35% · spend taxable first", "$143.89M", "$146.72M"],
-          ]}
-        />
+        {!print && scenario && (
+          <RunRow onRun={runCases} running={runningCases} isLive={!!live} onRevert={() => setLive(null)}
+            testid="wp-run-realization" label="Run this table on YOUR plan" />
+        )}
+        {live ? (
+          <Tbl
+            testid="whitepaper-realization-table"
+            head={["Strategy", "Gains realized at +10 yr", "Gains never realized"]}
+            rows={CASE_DEFS.map((d) => {
+              const r = live[d.key];
+              return [
+                d.label,
+                r.plus10Realized === liveBest.plus10 ? <W key="r">{fmtM(r.plus10Realized)}</W> : fmtM(r.plus10Realized),
+                r.plus10Never === liveBest.never ? <W key="n">{fmtM(r.plus10Never)}</W> : fmtM(r.plus10Never),
+              ];
+            })}
+            note="Computed live from your current plan inputs — both realization bounds, same five strategies."
+          />
+        ) : (
+          <Tbl
+            testid="whitepaper-realization-table"
+            head={["Strategy", "Gains realized at +10 yr", "Gains never realized (default)"]}
+            rows={[
+              ["A. No conversions", "$126.09M", "$140.57M"],
+              ["B. Convert to 24% · spend taxable first", <W key="b">$146.20M</W>, "$150.29M"],
+              ["C. Convert to 24% · spend IRA first", "$143.65M", <W key="c">$151.31M</W>],
+              ["D. Convert to 32% · spend taxable first", "$145.35M", "$148.41M"],
+              ["E. Convert to 35% · spend taxable first", "$143.89M", "$146.72M"],
+            ]}
+          />
+        )}
         <ul className="list-disc pl-6 space-y-2 text-[15px] leading-7 text-[#2A2A2A] mb-4">
           <li><span className="font-semibold">Survives — convert.</span> +$20.1M (+15.9%) under full realization; +$9.7M (+6.9%) if no gain is ever realized. No-realization flatters the do-nothing strategy most — and it still loses decisively.</li>
           <li><span className="font-semibold">Survives — the heirs&apos; IRA bill.</span> The $5.64M liability is eliminated under every conversion program, under any behavioral assumption: §1014(c) never shelters the IRA.</li>
@@ -383,16 +539,34 @@ export const WhitePaper = ({ print = false }) => {
           conversion, the family has prepaid 32% tax on wealth that evaporated. The planner&apos;s Monte Carlo engine puts numbers on that worry —
           1,000 seed-matched trials, so both strategies face <em>identical</em> market paths:
         </P>
-        <Tbl
-          testid="whitepaper-mc-table"
-          head={["", "24% target", "32% target"]}
-          rows={[
-            ["Plan success (never depleted)", "98.2%", "98.5%"],
-            ["Ending liquid assets, 5th percentile", "$7.25M", "$8.31M"],
-            ["Ending liquid assets, median", "$73.49M", "$72.71M"],
-            ["Ending liquid assets, mean", "$106.1M", "$104.2M"],
-          ]}
-        />
+        {!print && scenario && (
+          <RunRow onRun={runMc} running={runningMc} isLive={!!liveMc} onRevert={() => setLiveMc(null)}
+            testid="wp-run-mc" label="Run this table on YOUR plan (≈1 min)" />
+        )}
+        {liveMc ? (
+          <Tbl
+            testid="whitepaper-mc-table"
+            head={["", "24% target · taxable first", "32% target · taxable first"]}
+            rows={[
+              ["Plan success (never depleted)", fmtPc(liveMc.t24.success), fmtPc(liveMc.t32.success)],
+              ["Ending liquid assets, 5th percentile", fmtM(liveMc.t24.p5), fmtM(liveMc.t32.p5)],
+              ["Ending liquid assets, median", fmtM(liveMc.t24.p50), fmtM(liveMc.t32.p50)],
+              ["Ending liquid assets, mean", fmtM(liveMc.t24.mean), fmtM(liveMc.t32.mean)],
+            ]}
+            note="Computed live from your current plan: 1,000 seed-matched trials per strategy — both face identical market paths."
+          />
+        ) : (
+          <Tbl
+            testid="whitepaper-mc-table"
+            head={["", "24% target", "32% target"]}
+            rows={[
+              ["Plan success (never depleted)", "98.2%", "98.5%"],
+              ["Ending liquid assets, 5th percentile", "$7.25M", "$8.31M"],
+              ["Ending liquid assets, median", "$73.49M", "$72.71M"],
+              ["Ending liquid assets, mean", "$106.1M", "$104.2M"],
+            ]}
+          />
+        )}
         <ol className="list-decimal pl-6 space-y-2 text-[15px] leading-7 text-[#2A2A2A] mb-4">
           <li><span className="font-semibold">Ruin risk does not increase.</span> Success is statistically identical and the <em>worst</em> outcomes are marginally better under 32%: prepaying the IRA&apos;s tax shrinks future mandatory outflows — RMDs, dividend drag, IRMAA — precisely in the states where the portfolio is weakest. (These figures are nominal and character-blind — a Roth dollar counts the same as an IRA dollar — so they <em>understate</em> the 32% run&apos;s true after-tax position.)</li>
           <li><span className="font-semibold">But there is nothing to buy.</span> The median path surrenders ~$0.8M, and §5.5–5.6 showed the programmatic 32% target <em>losing</em> deterministically under both realization assumptions once the full conversion runway is used.</li>
