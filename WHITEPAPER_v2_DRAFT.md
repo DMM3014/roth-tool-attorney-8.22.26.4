@@ -13,7 +13,7 @@ The first edition made the doctrinal case — from the Code, IRS guidance, and t
 1. **A new empirical section (§5)** reports full model runs on a representative $13M household, quantifying each lever — disciplined by two sensitivity analyses (§5.5 realization behavior, §5.7 market risk).
 2. **The conversion policy is the first‑order decision, and the only robust one.** Bracket‑managed conversions add **+$20.1M (+15.9%)** to what heirs keep under the model's default assumptions — and **+$9.7M (+6.9%)** even if the heirs never realize a single post‑death gain.
 3. **The funding‑order recommendation is demoted — twice.** The first edition argued for spending the IRA and preserving the taxable account. The model first showed the reverse order winning on the ten‑year metric (§5.3–5.4) — and then showed that verdict *flipping back* when post‑death gains are assumed never realized (§5.5). A ≤1.8% lever whose sign depends on the heirs' unknowable behavior is a preference, not a rule.
-4. **The step‑up is a snapshot; the Roth is permanent (§5.4) — but the snapshot's value depends on whether the heirs ever sell.** §1014 erases the tax on appreciation up to death; whether the *next* decade of taxable growth is ever taxed is the pivotal assumption, so this edition reports both bounds.
+4. **The step‑up is a snapshot; the Roth is permanent (§5.4) — but the snapshot's value depends on whether the heirs ever sell.** §1014 erases the tax on appreciation up to death; whether the *next* decade of taxable growth is ever taxed is the pivotal assumption, so this edition reports both bounds — and the planner now exposes it as a Heir‑realization toggle, defaulting to *never realized*.
 5. **The measurement horizon changes the answer (§5.3).** Ranked at the date of the second death, the IRA‑first order wins. Ranked ten years later — after the SECURE drawdown and post‑death compounding — the rankings reverse. A paper that argues for the ten‑year metric must also accept its verdicts.
 6. **The conversion *window*, not ambition, sets the right bracket (§5.6).** With the full plan horizon available, the 24% program converts the entire IRA anyway and beats the 32% program under *both* realization assumptions. Only when a deadline compresses the window — e.g., forcing conversions to stop at RMD age — does filling toward the heirs' ~31.65% rate win. The common‑rate ceiling survives as a hard upper bound: converting *through* the heirs' rate loses everywhere.
 7. **A risk analysis is added (§5.7).** Monte Carlo shows converting to the heirs' rate does not raise ruin risk — but with a full conversion runway it buys nothing in expectation while front‑loading irreversible tax payments. The recommendation: program the lowest bracket that finishes the job; harvest higher brackets opportunistically.
@@ -107,7 +107,7 @@ This is consistent with the peer‑reviewed record. Cook, Meyer, and Reichenstei
 | **D. Convert to 32% · spend taxable first** | $9.20M | $0 | $60.93M | $6.19M | $0 | $77.01M | **$145.35M** |
 | **E. Convert to 35% · spend taxable first** | $7.22M | ≈$0 | $61.12M | $5.53M | $0 | $76.11M | **$143.89M** |
 
-*(A 50/50 split order lands between B and C on the realized ten‑year metric: $143.76M.)*
+*(A 50/50 split order lands between B and C on the realized ten‑year metric: $143.76M. The +10 yr column above uses the realized bound; §5.5 re‑scores every strategy under never‑realized — the planner's default.)*
 
 ### 5.1 The conversion policy is the first‑order lever
 
@@ -115,7 +115,7 @@ Moving from no conversions (A) to a bracket‑managed program (B) raised the hei
 
 ### 5.2 The heirs' liability is the headline number
 
-Unconverted, the IRA compounds to **$12.9M** at the second death and — because §1014(c) denies it any step‑up — arrives as a **$5.64M ordinary‑income tax bill** for children already earning at 32%+ rates. The 24% program cuts that bill to **$2.0M**; the 32% program to **$0.7M**. This is precisely the transfer of the tax from the heirs' 31.65% rate to the parents' controlled 24–32% rates that §4 frames — now with its dollar value attached.
+Unconverted, the IRA compounds to **$12.9M** at the second death and — because §1014(c) denies it any step‑up — arrives as a **$5.64M ordinary‑income tax bill** for children already earning at 32%+ rates. Every bracket‑managed program in the table retires that bill **completely**: given the full plan horizon, even the modest 24% target converts the entire IRA — $10.96M of cumulative conversions once growth is included — before the second death. This is precisely the transfer of the tax from the heirs' 31.65% rate to the parents' controlled 24% rate that §4 frames — executed in full, with its dollar value attached.
 
 ### 5.3 The measurement horizon changes the funding‑order answer
 
@@ -133,9 +133,9 @@ The revised principle: **the §1014 step‑up erases the past; the Roth protects
 
 ### 5.5 Sensitivity: what if the heirs never sell?
 
-The model's default charges the heirs' 23.45% LTCG rate against all post‑death appreciation at the end of the ten‑year horizon — as if the inherited taxable account were liquidated on the last day. That is a conservative bound, not a certainty: **post‑death gains are unrealized and may never be realized.** Heirs can hold the stepped‑up portfolio indefinitely, live on its dividends, borrow against it, or hold until their own deaths — when §1014 applies *again*. Re‑scoring every strategy with post‑death appreciation never taxed (annual dividend taxes still apply — those are actually distributed) brackets the truth:
+The model can score the heirs' decade either way, and the planner now exposes the choice as a **Heir‑realization toggle** (its shipped default: *never realized*). The realized bound charges the heirs' 23.45% LTCG rate against all post‑death appreciation at the end of the ten‑year horizon — as if the inherited taxable account were liquidated on the last day. That is a conservative bound, not a certainty: **post‑death gains are unrealized and may never be realized.** Heirs can hold the stepped‑up portfolio indefinitely, live on its dividends, borrow against it, or hold until their own deaths — when §1014 applies *again*. Re‑scoring every strategy with post‑death appreciation never taxed (annual dividend taxes still apply — those are actually distributed) brackets the truth:
 
-| Strategy | To heirs (+10 yr) · gains realized (default) | To heirs (+10 yr) · gains never realized |
+| Strategy | To heirs (+10 yr) · gains realized | To heirs (+10 yr) · gains never realized (default) |
 |---|---|---|
 | A. No conversions | $126.09M | $140.57M |
 | B. Convert to 24% · spend taxable first | **$146.20M** | $150.29M |

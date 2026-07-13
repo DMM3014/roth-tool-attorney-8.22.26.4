@@ -115,6 +115,7 @@ DEFAULT_SCENARIO = {
         "heir_federal_rate": 0.3165,   # blended Fed+State heir ordinary rate (share-weighted)
         "heir_state_rate": 0.0,
         "heir_ltcg_rate": 0.2345,      # 15% LTCG + 3.8% NIIT + blended heir state
+        "heir_gains_realized": False,
         "step_up_at_death": True,
         "post_death_years": 10,
         "heir_reinvest_return": None,

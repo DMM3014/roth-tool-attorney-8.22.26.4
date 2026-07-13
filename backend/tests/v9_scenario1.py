@@ -108,6 +108,7 @@ V9_SCENARIO_1 = {
         "heir_federal_rate": 0.3165,   # blended Fed+State heir ordinary rate (share-weighted)
         "heir_state_rate": 0.0,
         "heir_ltcg_rate": 0.2345,      # 15% LTCG + 3.8% NIIT + blended heir state
+        "heir_gains_realized": True,   # V9 spreadsheet realizes heirs' gains at horizon end
         "step_up_at_death": True,
         "post_death_years": 10,
         "heir_reinvest_return": None,

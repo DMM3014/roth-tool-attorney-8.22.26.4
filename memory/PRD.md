@@ -1066,3 +1066,24 @@ User: "Default should not stop Conversions at RMD age" + asked whether the analy
   Convert-vs-nothing: +15.9% realized / +6.9% never. Funding order still flips (±1.8%). MC re-run:
   24% success 98.2% p5 $7.25M med $73.49M; 32% 98.5%/$8.31M/$72.71M.
 Still PENDING: user approval to publish v2 into the app (WhitePaper.jsx + WHITEPAPER.md).
+
+### Phase 28 — Heir realization toggle, default = never realized (2026-07-13)
+User: add "Heir realization" toggle (realized at +10yr vs never realized) to Legacy settings and
+Compare Funding Orders; default NOT realized.
+- **`projection.py`**: `_HeirSleeves.gains_realized` gates the three post-death LTCG charges
+  (taxable/reinvest/RE appreciation); dividend drag applies in both modes. `_compute_legacy` reads
+  `legacy.heir_gains_realized` (default False) and echoes it in the payload. NOTE: a corrupted
+  duplicate tail (transport glitch) was truncated from projection.py — file verified via ast.parse.
+- **`defaults.py`**: legacy.heir_gains_realized = False. **`v9_scenario1.py`**: pins True (spreadsheet
+  reconciliation preserved).
+- **Frontend**: `PlanInputs.jsx` new Switch (testid `heir-gains-realized-switch`);
+  `FundingOrderCompare.jsx` header Switch (testid `funding-compare-realization-switch`) that overrides
+  the comparison runs and AUTO RE-RUNS when results are showing; chart caption shows mode
+  (testid `funding-mix-realization-note`).
+- **Regression pins updated** (never-realized default): ATEE 151306744.66; sweep best now
+  "Fill 24% · 2026–2050" single, band 150–152M. Golden re-saved. New `test_phase28_heir_realization.py`
+  (6 tests incl. winner-flip invariant). **Full suite 185/185 pass.**
+- **UI verified via screenshot**: default off → 150.29/149.86/151.31 (IRA-first wins); toggle on →
+  146.20/143.76/143.65 (taxable-first wins, Δ +$2.55M). Matches whitepaper §5.5.
+- Draft labels updated: "(default)" moved to never-realized column; toggle mentioned in §5.5 + item 4.
+Still PENDING: user approval to publish v2 into the app (WhitePaper.jsx + WHITEPAPER.md).

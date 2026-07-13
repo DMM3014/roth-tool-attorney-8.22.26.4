@@ -121,4 +121,4 @@ def test_conversion_math_unchanged_by_attribution():
     out = run_projection(copy.deepcopy(DEFAULT_SCENARIO))
     assert out["summary"]["lifetime_taxes"] == 7075325.52
     assert out["summary"]["ending_net_worth"] == 80238883.64
-    assert out["legacy"]["after_tax_estate_to_heirs"] == 143648209.78
+    assert out["legacy"]["after_tax_estate_to_heirs"] == 151306744.66

@@ -217,6 +217,7 @@ class _HeirSleeves:
     re_r: float
     heir_rate: float
     heir_ltcg_rate: float
+    gains_realized: bool = True
     cum_ira_tax: float = 0.0
 
     def step(self, y, years):
@@ -235,9 +236,12 @@ class _HeirSleeves:
         self.re *= (1 + self.re_r)
         # heirs owe LTCG on post-death appreciation of the taxable/reinvest/home sleeves —
         # tracked per sleeve so we can attribute after-tax value back to Roth / IRA-reinvested / non-retirement.
-        ltcg_taxable  = self.heir_ltcg_rate * max(0.0, self.taxable  - self.taxable0)
-        ltcg_reinvest = self.heir_ltcg_rate * max(0.0, self.reinvest - self.reinvest_basis)
-        ltcg_re       = self.heir_ltcg_rate * max(0.0, self.re       - self.home0)
+        # When gains_realized is False (default), post-death appreciation is never realized
+        # (heirs hold / re-step-up at their own deaths) so no LTCG is charged.
+        rate = self.heir_ltcg_rate if self.gains_realized else 0.0
+        ltcg_taxable  = rate * max(0.0, self.taxable  - self.taxable0)
+        ltcg_reinvest = rate * max(0.0, self.reinvest - self.reinvest_basis)
+        ltcg_re       = rate * max(0.0, self.re       - self.home0)
         accrued_ltcg  = ltcg_taxable + ltcg_reinvest + ltcg_re
         # After-tax attribution buckets (sum == total_to_heirs when inherited_traditional ≈ 0
         # at end of the SECURE horizon; residual trad rolls into ira_post_tax on the final row).
@@ -261,7 +265,7 @@ class _HeirSleeves:
         }
 
 
-def _init_heir_sleeves(final, accounts, heir_rate, settlement_pct, heir_return, heir_ltcg_rate, div_yield):
+def _init_heir_sleeves(final, accounts, heir_rate, settlement_pct, heir_return, heir_ltcg_rate, div_yield, gains_realized):
     """Resolve heir growth rates and the settlement-haircut initial balances."""
     def ret(tax_type, default):
         return next((a["return"] for a in accounts if a["tax_type"] == tax_type), default)
@@ -280,11 +284,12 @@ def _init_heir_sleeves(final, accounts, heir_rate, settlement_pct, heir_return, 
         roth_r=heir_return if override else ret("Tax-Free", 0.07),
         trad_r=heir_return if override else ret("Tax-Deferred", 0.07),
         tax_r=tax_r, cash_r=ret("Cash", 0.03), re_r=ret("Real Estate", 0.035),
-        heir_rate=heir_rate, heir_ltcg_rate=heir_ltcg_rate)
+        heir_rate=heir_rate, heir_ltcg_rate=heir_ltcg_rate, gains_realized=gains_realized)
 
 
 def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10,
-                        heir_return=None, heir_ltcg_rate=0.2345, div_yield=0.02):
+                        heir_return=None, heir_ltcg_rate=0.2345, div_yield=0.02,
+                        gains_realized=False):
     """SECURE Act post-death inherited-account horizon after the 2nd death (matches V9).
 
     - Inherited Roth keeps compounding TAX-FREE (settlement haircut applied at death).
@@ -295,7 +300,7 @@ def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10,
     `heir_return`, if provided, overrides the Roth/Traditional/taxable/reinvest growth rate.
     """
     sleeves = _init_heir_sleeves(final, accounts, heir_rate, settlement_pct,
-                                 heir_return, heir_ltcg_rate, div_yield)
+                                 heir_return, heir_ltcg_rate, div_yield, gains_realized)
     rows = [sleeves.step(y, years) for y in range(1, years + 1)]
     total = rows[-1]["total_to_heirs"] if rows else 0.0
     return rows, round(total, 2), round(sleeves.cum_ira_tax, 2)
@@ -313,6 +318,7 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
     horizon = lc.get("post_death_years", 10)
     heir_return = lc.get("heir_reinvest_return")  # None -> use account returns
     heir_ltcg_rate = lc.get("heir_ltcg_rate", 0.188 + lc.get("heir_state_rate", 0.0))
+    gains_realized = bool(lc.get("heir_gains_realized", False))
     div_yield = cfg.get("dividend_yield", 0.02)
     mortgage = cfg.get("mortgage_balance", 0.0)
     accounts = accounts if accounts is not None else cfg["accounts"]
@@ -331,7 +337,7 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
     # post-death forward value (mirrors the spreadsheet longevity view)
     post_rows, total_10yr, cum_ira_tax = _post_death_horizon(
         final, accounts, heir_ord_rate, settlement_pct, horizon, heir_return,
-        heir_ltcg_rate, div_yield)
+        heir_ltcg_rate, div_yield, gains_realized)
 
     # After-tax attribution: use the FINAL horizon row so the split lines up with total_10yr.
     # These three fields sum to `after_tax_estate_to_heirs` — useful for UI break-out rows.
@@ -360,6 +366,7 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
         "heir_state_rate": lc.get("heir_state_rate"),
         "heir_reinvest_return": heir_return,
         "heir_ltcg_rate": round(heir_ltcg_rate, 4),
+        "heir_gains_realized": gains_realized,
         "step_up_at_death": step_up,
         "horizon_years": horizon,
         "post_death_rows": post_rows,
@@ -1116,4 +1123,3 @@ def sweep_brackets(cfg: dict) -> dict:
         "best": best,
         "metric": "after_tax_estate_to_heirs",
     }
-

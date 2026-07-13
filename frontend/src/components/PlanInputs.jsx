@@ -349,6 +349,15 @@ export const PlanInputs = ({ scenario, setScenario }) => {
               className="mt-1 bg-[#F9F8F6]" />
             <p className="text-[10px] text-muted-foreground mt-1">Growth heirs earn post-death. Blank = use account returns.</p>
           </div>
+          <div className="flex items-center gap-2 pt-5">
+            <Switch checked={!!scenario.legacy.heir_gains_realized}
+              onCheckedChange={(v) => setScenario((p) => ({ ...p, legacy: { ...p.legacy, heir_gains_realized: v } }))}
+              data-testid="heir-gains-realized-switch" />
+            <div>
+              <Label className="text-xs text-muted-foreground">Heirs Realize Gains at Horizon End</Label>
+              <p className="text-[10px] text-muted-foreground">On: LTCG charged on post-death appreciation at the end of the SECURE window. Off (default): gains stay unrealized — heirs hold, spend dividends, or step up again at their own deaths.</p>
+            </div>
+          </div>
           <div className="md:col-span-2 flex items-end">
             <div className="rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 p-3 w-full" data-testid="blended-heir-rate">
               <p className="label-cap text-[#4A6741] text-[10px] mb-1">Blended Heir Rate on Inherited IRA</p>

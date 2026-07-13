@@ -120,9 +120,9 @@ def test_strategy_sweep_default_topN_fill32(cfg):
     ranked = data["ranked"]
     assert len(ranked) >= 3
     top = ranked[0]
-    # Winner: phased Fill 32% pre-SS then 24% (no RMD-age-stop default: 143.7M legacy)
-    assert "Fill 32%" in top["label"]
-    assert 143_000_000 <= top["after_tax_estate"] <= 145_000_000
+    # Winner: Fill 24% single-bracket (never-realized heir gains default: 151.3M legacy)
+    assert "Fill 24%" in top["label"]
+    assert 150_000_000 <= top["after_tax_estate"] <= 152_000_000
 
 
 # ---------- SS optimizer regression ----------

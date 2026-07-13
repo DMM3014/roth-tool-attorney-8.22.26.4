@@ -3,6 +3,7 @@ import { GitCompareArrows, Loader2, Trophy, Info } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, Legend, LabelList } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { runProjection, fundingCompareConfigs, fmtUSD } from "@/lib/api";
 import { toast } from "sonner";
@@ -62,6 +63,7 @@ const splitConfig = (scenario) => {
 export const FundingOrderCompare = ({ scenario }) => {
   const [runs, setRuns] = useState(null);      // { leaveIra, split, depleteIra }
   const [running, setRunning] = useState(false);
+  const [gainsRealized, setGainsRealized] = useState(!!scenario?.legacy?.heir_gains_realized);
   const currentOrder = scenario?.withdrawal?.funding_order || "Cash → Taxable → IRA → Roth";
   const iraSplit = scenario?.withdrawal?.ira_split ?? 0.5;
   const cols = orderCols(iraSplit);
@@ -69,18 +71,26 @@ export const FundingOrderCompare = ({ scenario }) => {
   // Any edit to the live scenario invalidates the old comparison. Reset so the user
   // can't misread a stale table against their new plan inputs.
   const scenarioSig = JSON.stringify(scenario);
-  useEffect(() => { setRuns(null); }, [scenarioSig]);
+  useEffect(() => {
+    setRuns(null);
+    setGainsRealized(!!scenario?.legacy?.heir_gains_realized);
+  }, [scenarioSig]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const compare = async () => {
+  const compare = async (realized = gainsRealized) => {
     if (running) return;
     setRunning(true);
     try {
       // Same conversions, same spending, same accounts — only the funding order changes.
+      // The realization toggle overrides legacy.heir_gains_realized for all three runs.
+      const withRealization = (c) => {
+        c.legacy = { ...(c.legacy || {}), heir_gains_realized: realized };
+        return c;
+      };
       const cfgs = fundingCompareConfigs(scenario);
       const [leaveIra, split, depleteIra] = await Promise.all([
-        runProjection(cfgs.leaveIra),
-        runProjection(splitConfig(scenario)),
-        runProjection(cfgs.depleteIra),
+        runProjection(withRealization(cfgs.leaveIra)),
+        runProjection(withRealization(splitConfig(scenario))),
+        runProjection(withRealization(cfgs.depleteIra)),
       ]);
       setRuns({ leaveIra, split, depleteIra });
     } catch (e) {
@@ -89,6 +99,11 @@ export const FundingOrderCompare = ({ scenario }) => {
     } finally {
       setRunning(false);
     }
+  };
+
+  const toggleRealized = (v) => {
+    setGainsRealized(v);
+    if (runs && !running) compare(v);
   };
 
   // Winner across all three columns.
@@ -121,11 +136,20 @@ export const FundingOrderCompare = ({ scenario }) => {
             always spent first and Roth always last.
           </p>
         </div>
-        <Button onClick={compare} disabled={running} data-testid="funding-compare-run"
-          className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full shrink-0">
-          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompareArrows className="h-4 w-4" />}
-          {running ? "Running all three…" : (runs ? "Re-run comparison" : "Run comparison")}
-        </Button>
+        <div className="flex items-center gap-4 shrink-0">
+          <div className="flex items-center gap-2" data-testid="funding-compare-realization-toggle">
+            <Switch checked={gainsRealized} onCheckedChange={toggleRealized} disabled={running}
+              data-testid="funding-compare-realization-switch" />
+            <span className="text-[11px] leading-tight text-muted-foreground max-w-[130px]">
+              Heir gains realized at +10 yr
+            </span>
+          </div>
+          <Button onClick={() => compare()} disabled={running} data-testid="funding-compare-run"
+            className="gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full shrink-0">
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompareArrows className="h-4 w-4" />}
+            {running ? "Running all three…" : (runs ? "Re-run comparison" : "Run comparison")}
+          </Button>
+        </div>
       </div>
 
       {!runs && !running && (
@@ -221,6 +245,10 @@ export const FundingOrderCompare = ({ scenario }) => {
             <h4 className="font-display text-sm font-bold tracking-tight text-[#1A1A1A]">Where the inheritance ends up</h4>
             <p className="text-[10px] text-muted-foreground">
               Stacked $ mix at end of 10-yr SECURE horizon · totals labeled above each bar
+              {" · "}
+              <span className="font-semibold" data-testid="funding-mix-realization-note">
+                Heir gains {gainsRealized ? "realized at horizon end" : "never realized"}
+              </span>
               {currentKey && (
                 <>
                   {" · "}
