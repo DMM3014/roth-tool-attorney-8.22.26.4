@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
-import { Trophy, Play, Loader2, Sparkles, ArrowUpDown } from "lucide-react";
+import { Trophy, Play, Loader2, Sparkles, ArrowUpDown, HelpCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { runStrategySweep, fmtUSD } from "@/lib/api";
 
@@ -117,10 +118,10 @@ export const StrategyOptimizer = ({ scenario, setScenario }) => {
         <p className="text-xs text-muted-foreground mb-5 max-w-3xl">
           Sweeps <span className="font-medium">start year × stop year × target bracket</span>, plus
           time-varying two-phase schedules pivoting off the SS claim year and the RMD wall
-          (e.g. <span className="font-medium">"fill 32% until SS starts, then 24% after"</span>).
+          (e.g. <span className="font-medium">&ldquo;fill 32% until SS starts, then 24% after&rdquo;</span>).
           Ranks every candidate by <span className="font-medium">after-tax legacy to heirs at 2nd death + horizon</span>
           {" "}(nominal) with lifetime-tax as tiebreaker; sortable by PV of the same legacy.
-          This is the multi-year optimization Boldin's Explorer can't do.
+          This is the multi-year optimization Boldin&apos;s Explorer can&apos;t do.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
@@ -168,6 +169,23 @@ export const StrategyOptimizer = ({ scenario, setScenario }) => {
               <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="h-4 w-4 text-[#4A6741]" />
                 <span className="label-cap text-[#4A6741] text-[10px]">Best strategy</span>
+                <TooltipProvider delayDuration={150}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" aria-label="Why this may differ from Find Optimal Bracket" data-testid="strategy-winner-why"
+                        className="inline-flex items-center gap-1 rounded-full border border-[#4A6741]/40 bg-white px-2 py-0.5 text-[10px] font-medium text-[#4A6741] hover:bg-[#4A6741]/10">
+                        <HelpCircle className="h-3 w-3" /> Why?
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs bg-[#1A1A1A] text-white text-[11px] leading-snug px-3 py-2">
+                      This searches <span className="font-semibold">time-varying phased schedules</span> AND
+                      <span className="font-semibold"> narrower conversion windows</span> — not just a single flat bracket for your whole horizon.
+                      That&apos;s why the answer can be e.g. &ldquo;Fill 32% 2026–2035&rdquo; even when the flat 24% wins the simpler
+                      &ldquo;Find Optimal Bracket&rdquo; sweep on the Projection tab. Both rank by the same metric: highest after-tax to heirs,
+                      tiebreak lowest lifetime tax.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
               <h3 className="font-display text-2xl font-bold tracking-tight" data-testid="strategy-winner-label">{best.label}</h3>
               <p className="text-xs text-muted-foreground mt-1">{kindLabel[best.kind]}</p>
@@ -175,7 +193,7 @@ export const StrategyOptimizer = ({ scenario, setScenario }) => {
                 After-tax legacy (nominal, +horizon): <span className="font-bold text-[#4A6741]">{fmtUSD(best.after_tax_estate)}</span>
               </p>
               <p className="text-xs">
-                Present value (today's $): <span className="font-medium">{fmtUSD(best.after_tax_estate_pv)}</span>
+                Present value (today&apos;s $): <span className="font-medium">{fmtUSD(best.after_tax_estate_pv)}</span>
               </p>
               <p className="text-xs">
                 Vs. no conversion: <span className="font-medium text-[#4A6741]">+{fmtUSD(delta)}</span>
@@ -232,7 +250,7 @@ export const StrategyOptimizer = ({ scenario, setScenario }) => {
                   <th className="px-2">Strategy</th>
                   <th className="px-2">Type</th>
                   <th className="px-2 text-right">After-tax legacy (nominal)</th>
-                  <th className="px-2 text-right">PV (today's $)</th>
+                  <th className="px-2 text-right">PV (today&apos;s $)</th>
                   <th className="px-2 text-right">Total converted</th>
                   <th className="px-2 text-right">Lifetime tax</th>
                   <th className="px-2 text-right">Ending Roth</th>

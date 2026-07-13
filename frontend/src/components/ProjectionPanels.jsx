@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Wand2, Award, Download, Printer, Gift } from "lucide-react";
+import { Wand2, Award, Download, Printer, Gift, HelpCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { downloadCSV, fmtUSD, fmtPct } from "@/lib/api";
 import { LegacyHorizonChart, ConvertCompareChart } from "@/components/ProjectionCharts";
 
@@ -153,7 +154,7 @@ export const SweepPanel = ({ sweep, sweeping, findOptimal, withRoth }) => (
     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
       <div className="flex items-center gap-2">
         <Wand2 className="h-4 w-4 text-[#4A6741]" />
-        <h3 className="font-display text-base font-bold tracking-tight">Find the Bracket That Minimizes Lifetime Tax</h3>
+        <h3 className="font-display text-base font-bold tracking-tight">Find the Best Single-Bracket Strategy</h3>
       </div>
       <div className="flex gap-2">
         <Button onClick={findOptimal} disabled={sweeping} data-testid="find-optimal-button"
@@ -172,11 +173,27 @@ export const SweepPanel = ({ sweep, sweeping, findOptimal, withRoth }) => (
     {!sweep && <p className="text-sm text-muted-foreground">Sweeps every target bracket (and no-conversion) and ranks each by the after-tax estate passed to heirs — then auto-applies the winner.</p>}
     {sweep && (
       <div className="overflow-x-auto">
-        <div className="flex items-center gap-2 mb-3 text-sm">
+        <div className="flex items-center gap-2 mb-3 text-sm flex-wrap">
           <Award className="h-4 w-4 text-[#C87941]" />
           <span className="font-semibold">Optimal:</span>
           <span data-testid="optimal-result" className="font-display font-bold text-[#4A6741]">{sweep.best.label}</span>
           <span className="text-muted-foreground">→ {fmtUSD(sweep.best.after_tax_estate)} to heirs · {fmtUSD(sweep.best.lifetime_taxes)} lifetime tax</span>
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" aria-label="Why this may differ from the Strategy Optimizer" data-testid="sweep-winner-why"
+                  className="inline-flex items-center gap-1 rounded-full border border-[#4A6741]/30 bg-white px-2 py-0.5 text-[10px] font-medium text-[#4A6741] hover:bg-[#4A6741]/10">
+                  <HelpCircle className="h-3 w-3" /> Why?
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs bg-[#1A1A1A] text-white text-[11px] leading-snug px-3 py-2">
+                This picks the best <span className="font-semibold">single flat bracket</span> held constant every year of your
+                current start-to-end window. The <span className="font-semibold">Strategy Optimizer</span> tab searches a wider space —
+                time-varying phased schedules (e.g. 32% pre-SS then 22% after) and narrower conversion windows — so its winner may differ.
+                Both rank by the same metric: highest after-tax to heirs, tiebreak lowest lifetime tax.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         <table className="w-full text-xs">
           <thead className="text-muted-foreground text-right border-b border-[#EBE8E0]">
@@ -260,7 +277,7 @@ export const LegacyPanels = ({ legacy, legacyNo, heirDelta, postCompare, targetI
 
       <Card className="p-6 border-[#EBE8E0] shadow-none lg:col-span-4" data-testid="convert-compare-card">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
-          <h3 className="font-display text-base font-bold tracking-tight">Convert vs. Don't — Heir Value Over {horizon} Years Post-Death</h3>
+          <h3 className="font-display text-base font-bold tracking-tight">Convert vs. Don&apos;t — Heir Value Over {horizon} Years Post-Death</h3>
           <div className={`rounded-full px-4 py-1.5 text-sm font-medium ${heirDelta >= 0 ? "bg-[#4A6741]/10 text-[#4A6741]" : "bg-[#C87941]/10 text-[#C87941]"}`} data-testid="heir-advantage-badge">
             {heirDelta >= 0 ? "Converting helps heirs by " : "Converting costs heirs "}{fmtUSD(Math.abs(heirDelta))}
           </div>

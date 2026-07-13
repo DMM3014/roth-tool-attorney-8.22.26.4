@@ -941,3 +941,20 @@ user's current `withdrawal.ira_split` percentage.
 - Backend untouched (already validated `n_trials in [50, 2000]` since Phase 19).
 - Curl-verified: `n_trials=1000` → 200, `n_trials=2001` → 422, `n_trials=49` → 422.
 
+
+### Phase 25d — "Why these differ" tooltips + heading fix (2026-07-12)
+Users were confused when Find Optimal Bracket (Projection tab) said 24% but the Strategy Optimizer said
+32% — both actually rank by the same metric (max after-tax to heirs, tiebreak lowest lifetime tax) but
+search different spaces. Added a lightweight in-app explainer.
+- **`ProjectionPanels.jsx` (SweepPanel)**: heading renamed from "Find the Bracket That Minimizes Lifetime
+  Tax" (misleading) → "Find the Best Single-Bracket Strategy" (matches the ranking metric copy already in
+  the subtitle). Added `sweep-winner-why` pill (HelpCircle icon) next to the ★ optimal row. Hover reveals
+  a shadcn Tooltip explaining: single-flat-bracket search, note that the Strategy Optimizer tab searches
+  time-varying phased schedules + narrower windows, same ranking metric.
+- **`StrategyOptimizer.jsx`**: added `strategy-winner-why` pill on the Best-strategy card explaining the
+  reverse — this searches phased/windowed schedules, so a "Fill 32% 2026–2035" can beat the flat 24% winner
+  from the simpler Projection-tab sweep. Same ranking metric on both.
+- **Tooltip components** used from `/components/ui/tooltip.jsx` (shadcn Radix); no global provider needed —
+  each pill wraps its own `<TooltipProvider delayDuration={150}>` for scoped behavior.
+- Lint-clean; no test agent run needed (small isolated additions with no logic changes).
+
