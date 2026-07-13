@@ -1010,3 +1010,21 @@ without scanning the numeric rows.
   (dropped in favor of a static caption + ★ suffix — cleaner UX, no `no-unstable-nested-components`
   violation). New testid: `funding-mix-chart-card`.
 - Verified: 9 stacked segments render (3 bars × 3 sleeves). Lint clean. No backend changes needed.
+
+### Phase 27 — White paper v2 draft (empirical edition) + compare-table bug fix (2026-07-13)
+User asked to review the white paper against the program's actual results and draft a revision.
+- **Bug fix — `FundingOrderCompare.jsx`**: the "Heir Income Tax on Inherited IRA" row read a
+  nonexistent `legacy.heir_ira_tax_paid`; corrected to `inherited_ira_tax`. Verified via live UI
+  ($2.02M / $1.99M / $1.98M across the three orders).
+- **Empirical review runs** (defaults, ~$13M household, heirs 31.65% ord / 23.45% LTCG):
+  A) No conversions: IRA $12.9M at 2nd death, heir tax $5.64M, +10yr to heirs $126.09M.
+  B) 24% target + taxable-first: converts $5.69M, Roth $40.1M, +10yr $142.43M (winner of B/C).
+  C) 24% target + IRA-first: converts $3.89M, Roth $29.5M, +10yr $140.35M — wins AT DEATH
+     ($79.18M vs $78.59M) but loses at +10yr → measurement-horizon reversal.
+  D) 32% target (≈ heirs' rate): $144.20M — optimum. E) 35%: $143.89M — over-conversion destroys value.
+- **Draft** at `/app/WHITEPAPER_v2_DRAFT.md`. Key revisions vs v1: new empirical §5 (Cases A–E);
+  §2.3 reframed as bracket-headroom competition (spend the preferential bucket, convert the ordinary
+  bucket — deplete the IRA by conversion, not consumption); "step-up is a snapshot, Roth is permanent";
+  common-rate ceiling demonstrated; limitations section added. Subtitle updated accordingly.
+- **PENDING USER DECISION**: publish v2 into the app (rewrite `WhitePaper.jsx` + `WHITEPAPER.md`) after
+  user reviews the draft.

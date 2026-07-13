@@ -38,7 +38,7 @@ const METRICS = [
   { key: "roth_to_heirs",            label: "↳ Roth (tax-free)",                     from: "legacy", higherIsBetter: true, sub: true },
   { key: "ira_post_tax_to_heirs",    label: "↳ IRA (post-tax, after SECURE)",        from: "legacy", higherIsBetter: true, sub: true },
   { key: "nonretirement_to_heirs",   label: "↳ Taxable + Cash + Real Estate (net of LTCG)", from: "legacy", higherIsBetter: true, sub: true },
-  { key: "heir_ira_tax_paid",        label: "Heir Income Tax on Inherited IRA",      from: "legacy", higherIsBetter: false },
+  { key: "inherited_ira_tax",        label: "Heir Income Tax on Inherited IRA",      from: "legacy", higherIsBetter: false },
   { key: "ending_roth",              label: "Ending Roth (2nd death)",               from: "summary", higherIsBetter: true },
   { key: "tax_free_roth_to_heirs",   label: "Tax-Free Roth to Heirs (+10 yr)",       from: "legacy", higherIsBetter: true },
 ];
