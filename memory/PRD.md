@@ -997,3 +997,16 @@ estate − LTCG on post-death appreciation) — but the label hid it. Made the a
 - **Tests**: new `tests/test_phase26_heirs_breakdown.py` (4 tests: sum invariant, Roth-row equals
   `tax_free_roth_to_heirs`, non-retirement > 0 on defaults, funding-order shifts the component mix).
   Full backend suite 179/179 pass; golden snapshot refreshed for the new additive fields.
+
+
+### Phase 26b — "Where the inheritance ends up" stacked-bar chart (2026-07-13)
+Added a compact stacked-bar chart directly beneath the Compare Funding Orders table (same card, in a
+light-tan panel) so users can *see* the Roth / IRA / Non-retirement mix shift across funding orders
+without scanning the numeric rows.
+- **`FundingOrderCompare.jsx`**: added Recharts `BarChart` with three vertical stacked bars (one per
+  funding order), stacks colored using the app palette (`#4A6741` Roth, `#C87941` IRA post-tax,
+  `#7A9B76` non-retirement). Totals labeled above each bar, ★ marker + "Your plan: …" caption
+  identify the current funding order. Custom-tick component was refactored to keep the file lint-clean
+  (dropped in favor of a static caption + ★ suffix — cleaner UX, no `no-unstable-nested-components`
+  violation). New testid: `funding-mix-chart-card`.
+- Verified: 9 stacked segments render (3 bars × 3 sleeves). Lint clean. No backend changes needed.

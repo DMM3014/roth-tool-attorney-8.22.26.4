@@ -1,10 +1,19 @@
 import { useState, useEffect } from "react";
 import { GitCompareArrows, Loader2, Trophy, Info } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, Legend, LabelList } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { runProjection, fundingCompareConfigs, fmtUSD } from "@/lib/api";
 import { toast } from "sonner";
+
+// Stack colors — reuse the app's earthy palette so this chart reads as part of the family.
+// Roth is the "safe, tax-free" green (primary), IRA post-tax is the warm terracotta (money
+// the heirs pay tax on), and non-retirement is the soft sage that also represents
+// taxable/brokerage on the Net-Worth Composition chart.
+const STACK_COLORS = { roth: "#4A6741", ira: "#C87941", nonret: "#7A9B76" };
+const mAxis = (v) => `$${(v / 1e6).toFixed(0)}M`;
+const shortLabel = (label) => label.replace(/Cash → /, "").replace(/ → Roth$/, "");
 
 // The three funding strategies we compare. "Deplete IRA now" pulls Traditional first
 // (leaves more Roth + steps up any leftover taxable). "Leave IRA" pulls Taxable first
@@ -203,6 +212,56 @@ export const FundingOrderCompare = ({ scenario }) => {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {runs && (
+        <div className="mt-5 rounded-lg border border-[#EBE8E0] bg-[#FBFAF7] p-4" data-testid="funding-mix-chart-card">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
+            <h4 className="font-display text-sm font-bold tracking-tight text-[#1A1A1A]">Where the inheritance ends up</h4>
+            <p className="text-[10px] text-muted-foreground">
+              Stacked $ mix at end of 10-yr SECURE horizon · totals labeled above each bar
+              {currentKey && (
+                <>
+                  {" · "}
+                  <span className="text-[#4A6741] font-semibold">Your plan: {shortLabel(cols.find((c) => c.key === currentKey)?.label || "")}</span>
+                </>
+              )}
+            </p>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              data={cols.map((o) => {
+                const leg = runs[o.key]?.legacy || {};
+                return {
+                  name: shortLabel(o.label) + (o.key === currentKey ? "  ★" : ""),
+                  Roth: leg.roth_to_heirs || 0,
+                  "IRA (post-tax)": leg.ira_post_tax_to_heirs || 0,
+                  "Taxable + Cash + RE": leg.nonretirement_to_heirs || 0,
+                  total: leg.after_tax_estate_to_heirs || 0,
+                };
+              })}
+              margin={{ top: 26, right: 16, left: 8, bottom: 20 }}
+              barCategoryGap="28%"
+            >
+              <CartesianGrid strokeOpacity={0.1} vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} height={36} />
+              <YAxis tickFormatter={mAxis} tick={{ fontSize: 11 }} width={54} />
+              <RTooltip
+                cursor={{ fill: "#4A67410D" }}
+                formatter={(v, n) => [fmtUSD(v), n]}
+                labelFormatter={(l) => l.replace("  ★", "")}
+                contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid #EBE8E0" }}
+              />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} iconType="circle" iconSize={9} />
+              <Bar dataKey="Roth" stackId="mix" fill={STACK_COLORS.roth} isAnimationActive={false} />
+              <Bar dataKey="IRA (post-tax)" stackId="mix" fill={STACK_COLORS.ira} isAnimationActive={false} />
+              <Bar dataKey="Taxable + Cash + RE" stackId="mix" fill={STACK_COLORS.nonret} isAnimationActive={false} radius={[4, 4, 0, 0]}>
+                <LabelList dataKey="total" position="top" formatter={(v) => fmtUSD(v)}
+                  style={{ fontSize: 10, fill: "#1A1A1A", fontWeight: 600 }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
 
