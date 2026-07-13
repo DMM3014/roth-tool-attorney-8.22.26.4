@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
-import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut } from "lucide-react";
+import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut, RotateCcw } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
 import { fetchDefaults, fetchSharedScenario } from "@/lib/api";
 import { Optimizer } from "@/components/Optimizer";
 import { Projection } from "@/components/Projection";
@@ -52,6 +57,17 @@ export const Planner = () => {
     window.location.href = window.location.origin + window.location.pathname;
   };
 
+  // One-click restore: every input and switch across every tab binds to `scenario`,
+  // so re-fetching /api/defaults resets the whole model in a single state swap.
+  const resetToDefaults = () => {
+    fetchDefaults()
+      .then((d) => {
+        setScenario(d);
+        toast.success("Plan reset — all inputs and switches restored to model defaults.");
+      })
+      .catch(() => toast.error("Could not load defaults. Please try again."));
+  };
+
   if (!scenario) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground">
@@ -73,12 +89,41 @@ export const Planner = () => {
               <p className="text-xs text-muted-foreground mt-0.5">Spreadsheet-grade tax engine · ordinary vs. LTCG/dividend separation</p>
             </div>
           </div>
-          <span className="hidden md:flex items-center gap-3">
-            <span className="label-cap text-[#7A9B76]">v9 Longevity Engine</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#4A6741]/30 bg-[#4A6741]/5 px-2.5 py-1 text-[10px] font-medium text-[#4A6741]" data-testid="obbba-badge">
-              <BadgeCheck className="h-3 w-3" /> Current law · OBBBA 2025 (permanent, indexed brackets)
+          <div className="flex items-center gap-3">
+            <span className="hidden md:flex items-center gap-3">
+              <span className="label-cap text-[#7A9B76]">v9 Longevity Engine</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#4A6741]/30 bg-[#4A6741]/5 px-2.5 py-1 text-[10px] font-medium text-[#4A6741]" data-testid="obbba-badge">
+                <BadgeCheck className="h-3 w-3" /> Current law · OBBBA 2025 (permanent, indexed brackets)
+              </span>
             </span>
-          </span>
+            {!sharedInfo && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" data-testid="reset-defaults-btn"
+                    className="gap-1.5 rounded-full border-[#C87941]/50 text-[#C87941] hover:bg-[#C87941]/10 hover:text-[#B06A36]">
+                    <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent data-testid="reset-defaults-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Reset plan to model defaults?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Every input and switch — household, income streams, expenses, accounts, taxes,
+                      Roth conversion controls, funding order, and legacy/heir settings — will be restored
+                      to the model&apos;s defaults. Unsaved changes are lost; saved scenarios are untouched.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="reset-defaults-cancel">Cancel</AlertDialogCancel>
+                    <AlertDialogAction data-testid="reset-defaults-confirm" onClick={resetToDefaults}
+                      className="bg-[#C87941] hover:bg-[#B06A36]">
+                      Reset plan
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         </div>
       </header>
 

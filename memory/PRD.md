@@ -1087,3 +1087,19 @@ Compare Funding Orders; default NOT realized.
   146.20/143.76/143.65 (taxable-first wins, Δ +$2.55M). Matches whitepaper §5.5.
 - Draft labels updated: "(default)" moved to never-realized column; toggle mentioned in §5.5 + item 4.
 Still PENDING: user approval to publish v2 into the app (WhitePaper.jsx + WHITEPAPER.md).
+
+### Phase 29 — Reset-to-defaults button + White Paper v2 published (2026-07-13)
+User approved publishing v2 and asked for a reset button covering all inputs/switches.
+- **Reset to defaults**: header button (testid `reset-defaults-btn`) with AlertDialog confirm
+  (`reset-defaults-confirm`/`reset-defaults-cancel`); re-fetches /api/defaults and swaps the whole
+  scenario state — every input/switch on every tab resets (defaults.py is the single source of truth
+  and already contains all UI-bound fields incl. stop_at_rmd_age=false, heir_gains_realized=false).
+  Hidden in shared read-only mode. Verified: flipped heir-realization switch → reset → restored.
+- **White Paper v2 published**: `WhitePaper.jsx` fully rewritten (title/subtitle, plain-English box,
+  "What changed in this edition" box, §1–§7 incl. three data tables with testids
+  `whitepaper-case-table` / `whitepaper-realization-table` / `whitepaper-mc-table`, base-household
+  callout, 11 references). Print/export contract preserved (`print` prop, `whitepaper-print-block`
+  class, Analytics "Export + White Paper" flow untouched). `WHITEPAPER.md` overwritten with v2
+  ("Second edition", draft designation removed). Draft file `WHITEPAPER_v2_DRAFT.md` retained.
+- ESLint clean on all touched files. UI verified via screenshots (WP tab renders all sections; reset
+  flow works with toast).
