@@ -233,10 +233,19 @@ class _HeirSleeves:
         self.reinvest *= (1 + self.tax_r)
         self.cash *= (1 + self.cash_r)
         self.re *= (1 + self.re_r)
-        # heirs owe LTCG on post-death appreciation of the taxable/reinvest/home sleeves
-        accrued_ltcg = self.heir_ltcg_rate * (max(0.0, self.taxable - self.taxable0)
-                                              + max(0.0, self.reinvest - self.reinvest_basis)
-                                              + max(0.0, self.re - self.home0))
+        # heirs owe LTCG on post-death appreciation of the taxable/reinvest/home sleeves —
+        # tracked per sleeve so we can attribute after-tax value back to Roth / IRA-reinvested / non-retirement.
+        ltcg_taxable  = self.heir_ltcg_rate * max(0.0, self.taxable  - self.taxable0)
+        ltcg_reinvest = self.heir_ltcg_rate * max(0.0, self.reinvest - self.reinvest_basis)
+        ltcg_re       = self.heir_ltcg_rate * max(0.0, self.re       - self.home0)
+        accrued_ltcg  = ltcg_taxable + ltcg_reinvest + ltcg_re
+        # After-tax attribution buckets (sum == total_to_heirs when inherited_traditional ≈ 0
+        # at end of the SECURE horizon; residual trad rolls into ira_post_tax on the final row).
+        after_tax_roth = self.roth                                   # tax-free (settlement haircut already applied at t=0)
+        after_tax_ira  = self.trad + self.reinvest - ltcg_reinvest   # inherited IRA depleted → after-tax proceeds compounding in taxable
+        after_tax_nonret = (self.taxable - ltcg_taxable
+                            + self.cash
+                            + self.re - ltcg_re)                     # taxable brokerage + cash + real estate (step-up applied, LTCG on post-death appreciation)
         return {
             "year_after_death": y,
             "inherited_roth": round(self.roth, 2),
@@ -245,8 +254,10 @@ class _HeirSleeves:
             "taxable_and_reinvested": round(self.taxable + self.reinvest, 2),
             "cash": round(self.cash, 2),
             "real_estate": round(self.re, 2),
-            "total_to_heirs": round(self.roth + self.trad + self.taxable + self.reinvest
-                                    + self.cash + self.re - accrued_ltcg, 2),
+            "after_tax_roth": round(after_tax_roth, 2),
+            "after_tax_ira_post_tax": round(after_tax_ira, 2),
+            "after_tax_nonretirement": round(after_tax_nonret, 2),
+            "total_to_heirs": round(after_tax_roth + after_tax_ira + after_tax_nonret, 2),
         }
 
 
@@ -322,12 +333,27 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
         final, accounts, heir_ord_rate, settlement_pct, horizon, heir_return,
         heir_ltcg_rate, div_yield)
 
+    # After-tax attribution: use the FINAL horizon row so the split lines up with total_10yr.
+    # These three fields sum to `after_tax_estate_to_heirs` — useful for UI break-out rows.
+    if post_rows:
+        _final = post_rows[-1]
+        roth_to_heirs         = _final["after_tax_roth"]
+        ira_post_tax_to_heirs = _final["after_tax_ira_post_tax"]
+        nonretirement_to_heirs = _final["after_tax_nonretirement"]
+    else:
+        roth_to_heirs = round(end_roth, 2)
+        ira_post_tax_to_heirs = round(end_trad * (1 - heir_ord_rate), 2)
+        nonretirement_to_heirs = round(gross_estate - end_roth - end_trad - estate_settlement, 2)
+
     return {
         "gross_estate": round(gross_estate, 2),
         "estate_settlement": round(estate_settlement, 2),
         "inherited_ira_tax": round(cum_ira_tax, 2),
         "tax_free_roth_to_heirs": post_rows[-1]["inherited_roth"] if post_rows else round(end_roth, 2),
         "after_tax_estate_to_heirs": total_10yr,
+        "roth_to_heirs": roth_to_heirs,
+        "ira_post_tax_to_heirs": ira_post_tax_to_heirs,
+        "nonretirement_to_heirs": nonretirement_to_heirs,
         "after_tax_estate_at_death": round(after_tax_at_death, 2),
         "heir_ordinary_rate": round(heir_ord_rate, 4),
         "heir_federal_rate": lc.get("heir_federal_rate"),

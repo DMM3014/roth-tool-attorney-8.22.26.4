@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { GitCompareArrows, Loader2, Trophy } from "lucide-react";
+import { GitCompareArrows, Loader2, Trophy, Info } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { runProjection, fundingCompareConfigs, fmtUSD } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -19,10 +20,18 @@ const orderCols = (iraSplit) => [
 const METRICS = [
   { key: "ending_net_worth",         label: "Ending Net Worth (2nd death)",          from: "summary", higherIsBetter: true },
   { key: "lifetime_taxes",           label: "Lifetime Taxes",                        from: "summary", higherIsBetter: false },
-  { key: "after_tax_estate_to_heirs",label: "After-Tax to Heirs (+10 yr SECURE)",    from: "legacy",  higherIsBetter: true },
-  { key: "heir_ira_tax_paid",        label: "Heir Income Tax on Inherited IRA",      from: "legacy",  higherIsBetter: false },
+  {
+    key: "after_tax_estate_to_heirs",
+    label: "Total After-Tax Estate to Heirs (+10 yr SECURE)",
+    from: "legacy", higherIsBetter: true,
+    tip: "Everything the heirs actually keep 10 years after the 2nd death: inherited Roth (tax-free) + inherited IRA drawn down over the SECURE window (net of heirs' ordinary tax) + taxable brokerage + cash + real estate (basis step-up at death, LTCG on post-death appreciation), minus estate settlement.",
+  },
+  { key: "roth_to_heirs",            label: "↳ Roth (tax-free)",                     from: "legacy", higherIsBetter: true, sub: true },
+  { key: "ira_post_tax_to_heirs",    label: "↳ IRA (post-tax, after SECURE)",        from: "legacy", higherIsBetter: true, sub: true },
+  { key: "nonretirement_to_heirs",   label: "↳ Taxable + Cash + Real Estate (net of LTCG)", from: "legacy", higherIsBetter: true, sub: true },
+  { key: "heir_ira_tax_paid",        label: "Heir Income Tax on Inherited IRA",      from: "legacy", higherIsBetter: false },
   { key: "ending_roth",              label: "Ending Roth (2nd death)",               from: "summary", higherIsBetter: true },
-  { key: "tax_free_roth_to_heirs",   label: "Tax-Free Roth to Heirs (+10 yr)",       from: "legacy",  higherIsBetter: true },
+  { key: "tax_free_roth_to_heirs",   label: "Tax-Free Roth to Heirs (+10 yr)",       from: "legacy", higherIsBetter: true },
 ];
 
 const readMetric = (result, m) => {
@@ -151,17 +160,40 @@ export const FundingOrderCompare = ({ scenario }) => {
                 const deltaCls = winner == null || winner === currentKey
                   ? "text-muted-foreground"
                   : (m.higherIsBetter ? "text-[#4A6741]" : (delta < 0 ? "text-[#4A6741]" : "text-[#C87941]"));
+                const labelCls = m.sub
+                  ? "px-3 py-1.5 pl-8 text-xs text-muted-foreground"
+                  : "px-3 py-2 font-medium";
+                const cellCls = m.sub ? "px-3 py-1.5 text-right text-xs" : "px-3 py-2 text-right";
                 return (
-                  <tr key={m.key} className="border-t border-[#EBE8E0]" data-testid={`funding-row-${m.key}`}>
-                    <td className="px-3 py-2 font-medium">{m.label}</td>
+                  <tr key={m.key} className={`border-t border-[#EBE8E0] ${m.sub ? "bg-[#FBFAF7]" : ""}`} data-testid={`funding-row-${m.key}`}>
+                    <td className={labelCls}>
+                      <span className="inline-flex items-center gap-1.5">
+                        {m.label}
+                        {m.tip && (
+                          <TooltipProvider delayDuration={100}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button type="button" aria-label="What's included" data-testid={`funding-tip-${m.key}`}
+                                  className="inline-flex items-center text-[#4A6741] hover:text-[#3B5234]">
+                                  <Info className="h-3.5 w-3.5" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-sm bg-[#1A1A1A] text-white text-[11px] leading-snug px-3 py-2">
+                                {m.tip}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </span>
+                    </td>
                     {cols.map((o) => (
-                      <td key={o.key} className={`px-3 py-2 text-right ${winner === o.key ? "text-[#4A6741] font-bold" : ""}`}
+                      <td key={o.key} className={`${cellCls} ${winner === o.key ? "text-[#4A6741] font-bold" : ""}`}
                           data-testid={`funding-${o.key}-${m.key}`}>
-                        {winner === o.key && <Trophy className="inline h-3 w-3 mr-1 mb-0.5" />}
+                        {winner === o.key && !m.sub && <Trophy className="inline h-3 w-3 mr-1 mb-0.5" />}
                         {fmtUSD(readMetric(runs[o.key], m))}
                       </td>
                     ))}
-                    <td className={`px-3 py-2 text-right font-medium ${deltaCls}`} data-testid={`funding-delta-${m.key}`}>
+                    <td className={`${cellCls} font-medium ${deltaCls}`} data-testid={`funding-delta-${m.key}`}>
                       {winner == null ? "—" : winner === currentKey
                         ? "on winner"
                         : `${delta > 0 ? "+" : ""}${fmtUSD(delta)}`}

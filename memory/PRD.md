@@ -978,3 +978,22 @@ volatility-cashflow interaction (kept — it's real risk).
 - **Tests**: new `tests/test_phase25_path_anchor.py` (9 tests incl. zero-vol plan reproduction and
   path-recursion exactness); `test_phase22_engine.py` historical-anchor assertion updated for plan_path.
   Full suite 175/175 pass; golden snapshot regenerated (`tests/golden_snapshot.py save`).
+
+
+### Phase 26 — Legacy after-tax attribution break-out in Compare Funding Orders (2026-07-13)
+User asked whether the Compare Funding Orders "After-Tax to Heirs" row includes taxable/cash. It always
+did (via `_HeirSleeves.step()` summing Roth + inherited-IRA post-tax + taxable + reinvest + cash + real
+estate − LTCG on post-death appreciation) — but the label hid it. Made the accounting explicit.
+- **`projection.py`**: `_HeirSleeves.step()` now emits per-sleeve LTCG and three attribution fields
+  (`after_tax_roth`, `after_tax_ira_post_tax`, `after_tax_nonretirement`) that sum to `total_to_heirs`;
+  math verified identical to prior formula. `_compute_legacy` exposes them at the top level as
+  `roth_to_heirs` / `ira_post_tax_to_heirs` / `nonretirement_to_heirs` — additive keys, no value drift on
+  existing metrics.
+- **`FundingOrderCompare.jsx`**: renamed the row to "Total After-Tax Estate to Heirs (+10 yr SECURE)",
+  added an ℹ tooltip listing what's included, added three indented sub-rows (Roth tax-free / IRA post-tax
+  after SECURE / Taxable + Cash + Real Estate net of LTCG) with a lighter sub-row style and per-row
+  trophy+Δ still active. New testids: `funding-tip-after_tax_estate_to_heirs`,
+  `funding-row-roth_to_heirs`, `funding-row-ira_post_tax_to_heirs`, `funding-row-nonretirement_to_heirs`.
+- **Tests**: new `tests/test_phase26_heirs_breakdown.py` (4 tests: sum invariant, Roth-row equals
+  `tax_free_roth_to_heirs`, non-retirement > 0 on defaults, funding-order shifts the component mix).
+  Full backend suite 179/179 pass; golden snapshot refreshed for the new additive fields.
