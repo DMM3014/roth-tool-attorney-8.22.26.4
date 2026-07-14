@@ -2,10 +2,13 @@
 horizon length, and configurable heir reinvest return."""
 import copy
 import os
+import sys
 import pytest
 import requests
 
 BASE_URL = os.environ['REACT_APP_BACKEND_URL'].rstrip('/')
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from defaults import DEFAULT_SCENARIO  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -17,9 +20,8 @@ def client():
 
 @pytest.fixture(scope="module")
 def defaults(client):
-    r = client.get(f"{BASE_URL}/api/defaults", timeout=15)
-    assert r.status_code == 200
-    return r.json()
+    # Use built-in DEFAULT_SCENARIO — immune to whatever user_defaults.json contains.
+    return copy.deepcopy(DEFAULT_SCENARIO)
 
 
 def _project(client, cfg):

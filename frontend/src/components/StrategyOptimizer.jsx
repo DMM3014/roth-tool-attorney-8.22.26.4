@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Trophy, Play, Loader2, Sparkles, ArrowUpDown, HelpCircle } from "lucide-react";
+import { Trophy, Play, Loader2, Sparkles, ArrowUpDown, HelpCircle, ChevronDown, TrendingUp, AlertTriangle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -207,6 +207,103 @@ export const StrategyOptimizer = ({ scenario, setScenario }) => {
             </Button>
           </div>
         </Card>
+      )}
+
+      {/* Why does the aggressive strategy win? — collapsible explainer */}
+      {best && (
+        <details className="group border border-[#EBE8E0] rounded-lg bg-white shadow-none"
+                 data-testid="aggressive-strategy-explainer">
+          <summary className="cursor-pointer list-none px-6 py-4 flex items-center justify-between hover:bg-[#F9F8F6]/60 transition-colors rounded-lg">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="h-4 w-4 text-[#4A6741]" />
+              <div>
+                <span className="font-display text-sm font-bold text-[#1A1A1A]">Why does the aggressive strategy win?</span>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Front-loading beats lifetime-tax-minimization when your heirs&apos; future rate exceeds your current rate — and why it&apos;s not risk-free.</p>
+              </div>
+            </div>
+            <ChevronDown className="h-4 w-4 text-muted-foreground group-open:rotate-180 transition-transform" />
+          </summary>
+          <div className="px-6 pb-6 pt-2 border-t border-[#EBE8E0]/60 space-y-4 text-[13px] leading-6 text-[#2A2A2A]">
+            <p className="text-muted-foreground italic">
+              Roth conversion isn&apos;t a tax bill — it&apos;s an asset transfer at an exchange rate. You pay
+              today&apos;s rate to move a dollar from the &ldquo;taxed-at-heir-rate&rdquo; pool into the
+              &ldquo;never-taxed&rdquo; pool. As long as tomorrow&apos;s rate is <em>higher</em> than today&apos;s,
+              the trade profits — and the profit compounds tax-free for every year until the heir eventually withdraws.
+            </p>
+
+            <div>
+              <p className="font-semibold text-[#1A1A1A] mb-1">1 · Every dollar is not worth the same</p>
+              <p className="text-muted-foreground">
+                In &ldquo;post-tax to your heirs&rdquo; terms: <span className="font-medium text-[#1A1A1A]">$1 in Traditional</span> is worth about
+                <span className="font-medium text-[#1A1A1A]"> $0.64</span> (heir marginal ~36%), while
+                <span className="font-medium text-[#1A1A1A]"> $1 in Roth</span> is worth
+                <span className="font-medium text-[#1A1A1A]"> $1.00</span>. Every dollar you convert is <span className="font-semibold">≈ 56% more valuable</span> to your heirs.
+              </p>
+            </div>
+
+            <div>
+              <p className="font-semibold text-[#1A1A1A] mb-1">2 · The unconverted IRA compounds toward a <em>higher</em> future rate</p>
+              <p className="text-muted-foreground">
+                &ldquo;Fill only 22–24%&rdquo; feels efficient — but the balance you didn&apos;t touch is still growing at
+                7%. It doubles every ~10 years, then triggers forced RMDs at 75 that push you into 32–37% brackets on
+                top of Social Security and dividends. After first death, the survivor pays those rates in the
+                <em> Single</em> brackets (half the width). You&apos;re not avoiding tax — you&apos;re deferring it into
+                a higher-rate future.
+              </p>
+            </div>
+
+            <div>
+              <p className="font-semibold text-[#1A1A1A] mb-1">3 · Roth grows tax-free; Taxable grows at ~5% net</p>
+              <p className="text-muted-foreground">
+                Roth compounds at the full 7% gross return. Taxable loses ~1.5–2 pp/year to dividend and NIIT drag —
+                growing at ~5% net. Over 30 years that gap compounds to
+                <span className="font-medium text-[#1A1A1A]"> (1.05/1.07)<sup>30</sup> ≈ 0.56</span>: $1 of Taxable growth
+                is worth ~56¢ of $1 of Roth growth in final-heir-dollar terms. Converting simply moves dollars from the
+                drag-bearing pool into the drag-free pool.
+              </p>
+            </div>
+
+            <div>
+              <p className="font-semibold text-[#1A1A1A] mb-1">4 · The pre-SS window is the cheapest tax you&apos;ll ever pay</p>
+              <p className="text-muted-foreground">
+                Between retirement and Social Security (typically ages 62–70), ordinary income is at its lowest. Even
+                pushing into 32% or 37% here is often the same rate you&apos;d face later on <em>much</em> larger RMD
+                dollars. Front-loading empties the IRA <em>before</em> the forced-withdrawal machine turns on.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-[#C87941]/40 bg-[#C87941]/5 p-4">
+              <div className="flex items-start gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-[#C87941] shrink-0 mt-0.5" />
+                <p className="font-semibold text-[#C87941] text-[13px]">The risk: sequence-of-returns and mean reversion</p>
+              </div>
+              <blockquote className="border-l-4 border-[#C87941] bg-white/60 pl-3 pr-2 py-2 mb-3 italic text-[13px] text-[#1A1A1A] font-medium leading-6">
+                &ldquo;Never pay taxes early because an assumption produces a better result. Taxes are real; assumptions are hypothetical.&rdquo;
+              </blockquote>
+              <p className="text-muted-foreground mb-2">
+                The math above assumes the historical long-term average return (roughly 8% pre-inflation, 7% real) holds
+                over your remaining horizon. It usually does — <em>eventually</em>. But if markets deliver <em>below-average
+                returns in the years immediately after</em> you convert (a bear market, a lost decade, or a mean-reversion
+                episode), you&apos;ve already prepaid tax on wealth that no longer exists at the moment you needed it to
+                compound. And unlike pre-2018, <span className="font-semibold">a Roth conversion cannot be recharacterized</span> —
+                TCJA closed that door in 2017. You cannot unwind an over-conversion after the fact.
+              </p>
+              <p className="text-muted-foreground mb-2 font-medium text-[#1A1A1A]">Practical mitigation:</p>
+              <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+                <li><span className="font-medium text-[#1A1A1A]">Phase the conversion</span> across several years rather than one big bullet — the sweep&apos;s &ldquo;phased&rdquo; strategies do this automatically.</li>
+                <li><span className="font-medium text-[#1A1A1A]">Convert <em>more</em> in down markets</span> — a bear market is effectively a &ldquo;Roth conversion sale.&rdquo; The dollar amount converted is fixed for tax, but the shares are cheap; when they recover, all the recovery lands in the Roth tax-free.</li>
+                <li><span className="font-medium text-[#1A1A1A]">Program the floor, harvest the ceiling opportunistically</span> — bake in the safer bracket (24%) as your baseline, and convert into 32–37% only in years with clearly favorable circumstances (bear market, unusually low income, pre-SS window closing, pre-widow bracket compression).</li>
+                <li><span className="font-medium text-[#1A1A1A]">Stress-test with Monte Carlo</span> — the app&apos;s Monte Carlo tab runs 1,000+ market paths against each strategy. If the aggressive plan holds up at the 5th percentile, you&apos;re not just chasing the median.</li>
+              </ul>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground italic pt-1">
+              The sweep&apos;s deterministic winner uses your assumed real return every year. The rankings are only as reliable
+              as those assumptions — but their <em>direction</em> (convert aggressively when the heir rate exceeds your
+              current rate and the horizon is long) is robust to most reasonable return paths.
+            </p>
+          </div>
+        </details>
       )}
 
       {/* Results table */}

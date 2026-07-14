@@ -1256,3 +1256,29 @@ Follow-up to Phase 1 (label subtitles + per-account RMD reservation). Closed the
   80,804,720.63, after_tax_estate_to_heirs 152,411,628.35. Three strategy-sweep tests
   updated to reflect the new (correct) winner.
 
+
+### "Why the aggressive strategy wins" explainer — Strategy Sweep tab + Whitepaper §6 (2026-07-14)
+- **Strategy Sweep tab** (`StrategyOptimizer.jsx`): Added a collapsible `<details>` panel
+  under the winner card (testid `aggressive-strategy-explainer`) that unpacks the
+  intuition — (1) $1 Trad = $0.64-to-heir vs $1 Roth = $1.00-to-heir (56% arbitrage per
+  dollar), (2) unconverted IRA compounds toward higher future rates via RMDs + widow
+  brackets, (3) Roth grows at gross 7% while Taxable grows net ~5%, (4) pre-SS window
+  is the cheapest tax you'll ever pay. Ends with an amber "sequence-of-returns and mean
+  reversion" risk callout that includes the user-provided principle as a left-bordered
+  pull-quote: **"Never pay taxes early because an assumption produces a better result.
+  Taxes are real; assumptions are hypothetical."**
+- **White Paper**: Inserted a new **§6 "Why the Aggressive Front-Load Strategy Wins —
+  And When It Bites Back"** between §5 (empirical case study) and the old §6. Renumbered
+  old §6 → §7 (What a Defensible Model Must Do) and old §7 → §8 (Conclusion). The new
+  §6 has six subsections: 6.1 three-account exchange rate (with a formatted table), 6.2
+  compounding spread math with the closed-form break-even formula, 6.3 pre-SS window
+  compounding accelerator, 6.4 stability of the ranking, 6.5 sequence-of-returns risk
+  (opening with the same epigraph quote), 6.6 practical synthesis (phase, don't bullet;
+  convert opportunistically in bear markets; program the floor, harvest the ceiling).
+- **Test hygiene**: Three test files (`test_phase9_features.py`, `test_phase10_features.py`,
+  `test_phase12_features.py`) had a `defaults` fixture that hit `/api/defaults` and asserted
+  on values baked into `DEFAULT_SCENARIO` — breaking whenever `user_defaults.json` was
+  active. Switched those fixtures to import `DEFAULT_SCENARIO` directly. Same fix applied
+  to the four `test_default_*` fixtures in `test_phase19_regression_and_rate_limit.py`.
+  All 190 pytest pass regardless of whether user_defaults.json exists.
+

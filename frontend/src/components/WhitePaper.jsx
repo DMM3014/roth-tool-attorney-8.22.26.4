@@ -584,7 +584,158 @@ export const WhitePaper = ({ print = false, scenario = null }) => {
           fixed inputs. The strategy optimizer and Monte Carlo engine should be run per household rather than assuming this case study generalizes.
         </P>
 
-        <H2>6. What a Defensible Model Must Do</H2>
+        <H2>6. Why the Aggressive Front-Load Strategy Wins — And When It Bites Back</H2>
+        <P>
+          The empirical result of §5 — that the highest-legacy strategy on this household compresses conversions into the
+          earliest years at the highest rate the heirs&apos; ceiling permits — feels counter-intuitive. It contradicts the
+          folk rule &ldquo;fill 22–24% and stop.&rdquo; Section 6 gives the mechanical reason it happens, and the market-path
+          conditions under which it stops working.
+        </P>
+
+        <H3>6.1 The three-account exchange rate</H3>
+        <P>
+          The dollars in the three retirement accounts are <em>not</em> equivalent in &ldquo;post-tax to heirs&rdquo; terms.
+          Under the model&apos;s baseline assumptions (§4 heir rate 31.65%, +40% state = ~36% blended), a dollar of principal
+          on the day of the second death is worth:
+        </P>
+        <Tbl
+          testid="whitepaper-account-value-table"
+          head={["Account", "Post-tax value to heir (per $1 principal)", "Reason"]}
+          rows={[
+            ["Traditional IRA / 401(k)", "$0.64", "SECURE 10-year ordinary-rate distribution at heir marginal rate ~36%"],
+            ["Taxable brokerage (step-up basis)", "$1.00", "§1014 basis reset at death — heir immediately sells with zero gain"],
+            ["Roth IRA", "$1.00", "Tax-free forever, no RMDs, ten-year distribution but no tax within"],
+          ]}
+          note="A $1 Traditional dollar is worth ≈ 56% less to the heir than a $1 Roth dollar. This is the raw arbitrage every conversion is trying to capture."
+        />
+        <P>
+          Converting $1 of Traditional to $1 of Roth <em>increases the heir&apos;s post-tax value by ~56%</em> — before
+          considering compounding, before considering the tax on the conversion itself, and before considering the survivor
+          filing-status compression. That single fact makes the &ldquo;fill only 24%&rdquo; heuristic wrong on any horizon
+          long enough for the heir&apos;s ordinary-rate distribution to matter — which is all of them.
+        </P>
+
+        <H3>6.2 The compounding spread between Roth and Taxable</H3>
+        <P>
+          Filling the low bracket and letting the IRA grow feels efficient, but it silently accepts a second, larger loss:
+          the dollars <em>never converted</em> spend the remaining plan horizon in an account that grows more slowly than
+          the Roth. Under the model&apos;s defaults, taxable brokerage returns roughly 7% gross but is docked ~2 pp/year for
+          qualified-dividend tax plus the 3.8% NIIT — a real net-of-tax growth rate of ~5%. Roth compounds at the full 7%
+          forever.
+        </P>
+        <P>
+          Over a 30-year retirement plus the heirs&apos; 10-year SECURE distribution window (a typical 40-year horizon
+          for a 65-year-old couple), the spread compounds to
+          <span className="font-semibold"> (1.05/1.07)<sup>40</sup> ≈ 0.475</span>. Expressed another way: <em>every dollar
+          left in the taxable bracket-drag pool at year zero is worth roughly 47.5 cents of a dollar left in Roth by the
+          end of the horizon</em>. The exchange rate of &ldquo;pay the conversion tax now to escape 40 years of drag&rdquo;
+          is generous by any reasonable discount rate.
+        </P>
+        <P>
+          Formally, converting $1 today at marginal rate <em>m_now</em>, financing the tax bill from taxable, yields a net
+          incremental heir gain of
+        </P>
+        <p className="text-center italic text-[15px] text-[#1A1A1A] my-4 leading-7">
+          Δ<sub>heir</sub>&nbsp;=&nbsp;(1+r)<sup>n</sup>&nbsp;×&nbsp;m<sub>heir</sub>&nbsp;−&nbsp;(1+r<sub>tax</sub>)<sup>n</sup>&nbsp;×&nbsp;m<sub>now</sub>
+        </p>
+        <P>
+          which is positive whenever <span className="font-semibold">m<sub>now</sub> &lt; m<sub>heir</sub> ×
+          ((1+r)/(1+r<sub>tax</sub>))<sup>n</sup></span>. At n = 30, r = 7%, r<sub>tax</sub> = 5%, m<sub>heir</sub> = 36%,
+          the break-even conversion rate is <span className="font-semibold">~65%</span> — meaningfully above the top
+          statutory federal ordinary bracket. The result is not fragile: even a conservative 15-year horizon puts
+          break-even at ~48%. The math tolerates a great deal of assumption error before the recommendation flips.
+        </P>
+
+        <H3>6.3 The pre-Social-Security window is a compounding accelerator</H3>
+        <P>
+          The engine&apos;s preferred aggressive strategy (&ldquo;Fill 37% pre-SS 2026–2027, then 24% after&rdquo;)
+          exploits the specific structural feature of the household&apos;s early plan years: <em>Social Security is not
+          yet claimed, RMDs have not begun, and taxable dividend income is the primary ordinary line</em>. Two years of
+          37%-bracket-filling here converts roughly $2.2M into Roth — where it compounds tax-free for the next 45 years
+          of the +10-yr horizon (client mortality year 2056 + 10 = 2066; plan end 2072 for the surviving spouse&apos;s
+          heirs). At 7% for 45 years, each converted dollar grows 21.0×. Each corresponding dollar left in the taxable
+          drag pool over that same period grows (1.05)<sup>45</sup> = 9.0×. The <em>ratio</em> of tax-free Roth
+          compounding to net-of-drag taxable compounding over this horizon is <span className="font-semibold">21.0 /
+          9.0 ≈ 2.33×</span>. This is the multiplier the strategy sweep is capturing.
+        </P>
+
+        <H3>6.4 Why the ranking is stable but not the numbers</H3>
+        <P>
+          The formal condition above is a function of five parameters — n, r, r<sub>tax</sub>, m<sub>now</sub>,
+          m<sub>heir</sub>. In the shipped 24% base case with a 36%-blended heir rate and a 40-year horizon, the
+          aggressive front-load wins comfortably; if either the heir rate falls below ~24% or the horizon shrinks
+          below ~10 years, the ranking flattens and the &ldquo;fill 24%&rdquo; heuristic re-emerges as a defensible
+          answer. The <em>direction</em> of the recommendation is robust for retirees with (a) large tax-deferred
+          balances, (b) heirs in higher brackets than themselves, and (c) 25+ year horizons — which describes essentially
+          every high-net-worth planning case this tool exists to solve.
+        </P>
+
+        <H3>6.5 The risk this analysis ignores: sequence-of-returns and mean reversion</H3>
+        <blockquote className="border-l-4 border-[#C87941] bg-[#C87941]/5 pl-4 pr-3 py-3 my-4 italic text-[15px] text-[#1A1A1A] font-medium leading-7">
+          &ldquo;Never pay taxes early because an assumption produces a better result. Taxes are real; assumptions are hypothetical.&rdquo;
+        </blockquote>
+        <P>
+          The section-6.2 arithmetic uses the household&apos;s assumed real returns as certain — 7% on equity-heavy IRA
+          and Roth, 5% net on taxable. Two market realities can invalidate the assumed exchange rate <em>during the plan</em>:
+        </P>
+        <ol className="list-decimal pl-6 space-y-3 text-[15px] leading-7 text-[#2A2A2A] mb-4">
+          <li>
+            <span className="font-semibold">Sequence-of-returns risk in the early conversion years.</span> If markets fall
+            15–30% shortly after aggressively converting at 32–37%, the family has prepaid a large real tax bill on shares
+            that no longer exist at anywhere near the pre-conversion valuation. Because the conversion tax is <em>final</em>
+            (TCJA repealed recharacterization for tax years after 2017 — IRC §408A(d)(6)(B)(iii)<Fn n={11} />), the
+            over-conversion cannot be unwound. The <em>Roth still recovers</em> when markets do — but the &ldquo;free
+            option&rdquo; of waiting to see the market path before committing is spent, permanently.
+          </li>
+          <li>
+            <span className="font-semibold">Mean reversion around a long-term ~8% nominal average.</span> Long-run
+            equity returns have averaged roughly 8% nominal, 6–7% real, since 1927 — but the distribution around that
+            average is heavy-tailed and clumpy. A decade of above-trend returns (2010–2020) is often followed by a decade
+            of below-trend returns as valuations normalize. The aggressive strategy&apos;s calculated edge is largest
+            when it&apos;s <em>compounded</em> on above-trend growth in the conversion years; if the years right after
+            the conversion deliver mean-reversion (below-trend returns), the calculated median outperformance shrinks
+            or reverses on realized paths.
+          </li>
+        </ol>
+        <P>
+          The Monte Carlo results in §5.7 quantify how much room the aggressive strategy has under stochastic returns.
+          On the shipped household, 1,000 seed-matched trials show the aggressive plan&apos;s <em>ruin probability
+          does not increase</em> — prepaying the IRA&apos;s tax shrinks the future forced-outflow (RMD + IRMAA + dividend
+          drag) precisely in the states where the portfolio is weakest, so the 5th-percentile ending liquid asset value
+          is actually marginally <em>better</em>. But this is not a general result. Households with lower Taxable
+          buffers relative to conversion tax, or heirs whose brackets are close to the parents&apos;, will see a
+          different Monte Carlo picture. The strategy optimizer&apos;s deterministic ranking should always be
+          re-run through Monte Carlo on your own plan before committing to a phased front-load.
+        </P>
+
+        <H3>6.6 The practical synthesis</H3>
+        <P>
+          The engine&apos;s finding — &ldquo;convert aggressively while the heir rate is materially above your own and
+          the horizon is long&rdquo; — is defensible on the deterministic math and reasonably robust to stochastic
+          returns. Its <em>implementation</em> should still respect the four disciplines from §5.7:
+        </P>
+        <ul className="list-disc pl-6 space-y-2 text-[15px] leading-7 text-[#2A2A2A] mb-4">
+          <li><span className="font-semibold">Phase, don&apos;t bullet.</span> Two or three years of aggressive conversion, dollar-cost-averaging the tax basis, dominates one heroic year in the presence of any return uncertainty.</li>
+          <li><span className="font-semibold">Convert opportunistically in bear markets.</span> A 25% drawdown effectively puts every dollar of Roth conversion on 25% sale — the tax is fixed on the current-year balance, but the shares are cheap, and when they recover the recovery is inside the Roth.</li>
+          <li><span className="font-semibold">Program the floor, harvest the ceiling.</span> Set the standing plan at the conservative bracket (24%) and let the higher-bracket harvest happen conditionally — narrow windows, low-income years, pre-SS pre-RMD gaps.</li>
+          <li><span className="font-semibold">Irreversibility asymmetry.</span> An under-converter can always accelerate later; an over-converter can never claw back. When two strategies score statistically close, the option value of waiting favors the lower default.</li>
+        </ul>
+        <P>
+          The strategy sweep&apos;s deterministic top result should be read as an upper bound on the front-load argument
+          under your own assumptions — a ceiling to price against, not a floor to commit to. The rest of the app — Monte
+          Carlo, phased schedules in the sweep itself, the &ldquo;Reset to defaults&rdquo; sandbox for stress-testing —
+          exists so this ceiling can be pressure-tested before it becomes an irreversible tax payment.
+        </P>
+        <P>
+          The disciplining principle behind every one of these guardrails is the same: <span className="font-semibold italic">never pay
+          taxes early because an assumption produces a better result</span>. Taxes are real dollars written to the
+          Treasury and irrecoverable; assumptions are hypothetical parameters carried by a spreadsheet. When the
+          deterministic model and the Monte Carlo agree that an aggressive front-load survives 5th-percentile paths,
+          the discount to the deterministic answer is small; when they disagree, the discount is whatever it takes
+          to sleep well through the next bear market.
+        </P>
+
+        <H2>7. What a Defensible Model Must Do</H2>
         <ol className="list-decimal pl-6 space-y-2 text-[15px] leading-7 text-[#2A2A2A] mb-4">
           <li><span className="font-semibold">Separate ordinary income from preferential income</span>, stacking qualified dividends and LTCG at 0/15/20% plus the 3.8% NIIT, exactly as the Code does.<Fn n={6} /><Fn n={7} /></li>
           <li><span className="font-semibold">Track cost basis per account</span> and apply the <span className="font-semibold">§1014 step-up at death</span> — while correctly denying any step-up to IRAs (IRD).<Fn n={4} /></li>
@@ -593,7 +744,7 @@ export const WhitePaper = ({ print = false, scenario = null }) => {
           <li><span className="font-semibold">Assume current law</span> — the OBBBA-2025 permanent, inflation-indexed TCJA brackets — rather than a lapsed sunset.<Fn n={8} /></li>
         </ol>
 
-        <H2>7. Conclusion</H2>
+        <H2>8. Conclusion</H2>
         <P>
           Simplified, single-rate Roth-conversion calculators are a reasonable first screen, but they are not a planning engine. The model&apos;s own
           runs sharpen the first edition&apos;s doctrine into three ranked, quantified rules:
