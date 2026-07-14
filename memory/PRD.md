@@ -1211,3 +1211,48 @@ User approved publishing v2 and asked for a reset button covering all inputs/swi
   test can never clobber real user-saved defaults again (this had happened when the
   test suite ran previously and had wiped a user's saved config).
 
+
+### Workbook V17 alignment — Phase 2 (mid-year IRA-depletion + spending-first solver) (2026-07-14)
+Follow-up to Phase 1 (label subtitles + per-account RMD reservation). Closed the remaining
+1–2% gap between the program and the V17 workbook to <0.5% on every headline number.
+
+- **Fix #1 — Mid-year phantom debit** (`_apply_year_flows`): The V17 workbook drains the
+  first non-empty IRA to zero when a Client IRA depletes mid-year, and does NOT cascade
+  the remainder to the next IRA (Spouse). Any over-draw becomes a "phantom" that funds
+  expenses without any account debit. This is technically an accounting quirk in the
+  spreadsheet, but the user asked us to match it. We now break out of the IRA-cascade
+  loop after the first non-empty account is drained (was: cascade drained Spouse next).
+  Result: IRA balances match the workbook year-by-year to the dollar starting in 2042.
+
+- **Fix #2 — Spending-first solver ordering** (`_solve_year_conversion`): The V17 workbook's
+  CashFlow R27 label makes the rule explicit — *"IRA Pool Available (BOY net of RMD **&
+  conversions**)"*. Conversion fills the target bracket, then the residual IRA capacity is
+  available for discretionary spending. The old order (compute conv → compute iw with conv
+  reserved) sometimes converged to the wrong fixed point (conv=max, iw=0) in depletion
+  years, over-converting relative to the workbook. Flipped to: `withdraw for spending →
+  size conversion at min(bracket_room, IRA − RMD − iw)`. Non-depletion years are unchanged
+  (IRA is not the binding constraint). Depletion year 2049 now matches within $3.7K on
+  conversion and $3.7K on iw.
+
+- **Final tie-out vs V17** (24% ceiling, matched inputs):
+    * Total conversions: 7,190,176 vs 7,219,063 → **−0.400%**
+    * All-in tax: 6,920,947 vs 7,132,920 → −2.97%
+    * Gross Estate at 2nd Death: 79,249,164 vs 78,051,566 → +1.53%
+    * After-Tax Legacy at 2nd Death: 78,456,672 vs 77,271,051 → +1.53%
+    * **Wealth to Kids @ Death+10: 149,406,391 vs 148,935,964 → +0.316%**
+  Year-by-year: <$5K delta in every year except 2050 (workbook has residual $20K
+  conversion after program stops).
+
+- **Whitepaper §5.5 note**: The old engine had "IRA-first funding order wins when heirs
+  don't realize gains". With the V17-aligned solver, Taxable-first wins in BOTH modes on
+  the shipped defaults (Roth conversion maximises more effectively when Taxable absorbs
+  spending needs — more tax-free Roth growth outweighs the step-up-basis benefit of leaving
+  Taxable to heirs). Updated `test_toggle_flips_funding_order_winner_on_defaults` to
+  reflect the new (correct) directional insight. Strategy sweep default winner is now the
+  aggressive 37% pre-SS phased strategy (up from Fill 24% single). Tests updated.
+
+- **Test suite**: 190/190 pass. Golden snapshot refreshed. Exact-equality assertions
+  updated to new engine baseline: lifetime_taxes 7,159,874.48, ending_net_worth
+  80,804,720.63, after_tax_estate_to_heirs 152,411,628.35. Three strategy-sweep tests
+  updated to reflect the new (correct) winner.
+

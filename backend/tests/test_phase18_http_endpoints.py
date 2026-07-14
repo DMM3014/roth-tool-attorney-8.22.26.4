@@ -93,8 +93,8 @@ def test_projection_per_owner_ledger_and_math(cfg):
     assert r.status_code == 200
     data = r.json()
     # Math regression
-    assert data["summary"]["lifetime_taxes"] == 7074269.95
-    assert data["summary"]["ending_net_worth"] == 80236439.97
+    assert data["summary"]["lifetime_taxes"] == 7159874.48
+    assert data["summary"]["ending_net_worth"] == 80804720.63
     # Per-owner ledger
     ledger = data["roth_compliance"]["conversions_ledger"]
     assert len(ledger) > 0
@@ -120,9 +120,14 @@ def test_strategy_sweep_default_topN_fill32(cfg):
     ranked = data["ranked"]
     assert len(ranked) >= 3
     top = ranked[0]
-    # Winner: Fill 24% single-bracket (never-realized heir gains default: 151.3M legacy)
-    assert "Fill 24%" in top["label"]
-    assert 150_000_000 <= top["after_tax_estate"] <= 152_000_000
+    # After the V17-alignment fix (spending-first solver ordering), the sweep now
+    # correctly identifies the aggressive front-load Roth conversion phased strategy
+    # as the winner on the built-in defaults — because the engine now maximises Roth
+    # more efficiently when Taxable can absorb spending needs. Just check the winner
+    # is Aggressive 37% phased with a plausible legacy value.
+    assert top["kind"] == "phased", f"expected phased, got {top}"
+    assert "37%" in top["label"], f"expected 37% pre-SS phased, got {top['label']}"
+    assert 158_000_000 <= top["after_tax_estate"] <= 163_000_000
 
 
 # ---------- SS optimizer regression ----------
