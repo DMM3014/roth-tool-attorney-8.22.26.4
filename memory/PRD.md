@@ -1129,3 +1129,26 @@ User approved publishing v2 and asked for a reset button covering all inputs/swi
 - Tests: `test_planner_api.py::TestInsights` rewritten for BYOK contract (422 missing key, 401 fake key
   on both endpoints). Suite now 187 passing (run with REACT_APP_BACKEND_URL exported). Verified E2E via
   curl + screenshots (save-key flow, disabled states, invalid-key error UX).
+
+
+### Silent default Gemini key (2026-07-14)
+- Added `DEFAULT_GEMINI_API_KEY` to `backend/.env` — server-side only, never sent to the browser.
+- `server.py`: `InsightRequest.api_key` is now `Optional[str]`; new `_resolve_gemini_key()` helper
+  prefers the caller's BYOK key and falls back to `DEFAULT_GEMINI_API_KEY`. Both /api/insights and
+  /api/insights/chat use it. 401 is raised only if neither key is available (impossible in this deploy).
+- Model changed from `gemini-2.5-flash` → **`gemini-flash-latest`** (the shared default key doesn't have
+  access to 2.5-flash on the "no longer available to new users" path; `flash-latest` auto-tracks the
+  current gemini-3.5-flash and works for both the default key and any BYOK key).
+- Fixed a subtle streaming bug: the `genai.Client` created inside `_gemini_stream` was being garbage-
+  collected as soon as the helper returned, which tore down the aiohttp session mid-stream ("Connection
+  closed." after ~1 chunk). The client is now pinned into the async-generator closure via a
+  `_keepalive` reference so the session lives for the stream's full lifetime.
+- Frontend (`AIInsights.jsx`): key panel is HIDDEN by default. Users hit **Generate AI Insights**
+  immediately; a small "Use your own Gemini key" link opens the BYOK panel for power users who want
+  unlimited use on their own key. Generate/send buttons no longer gate on `!apiKey`. Copy in the key
+  panel updated to reflect that BYOK is optional. 401 responses still reopen the panel with the server
+  message (in case a BYOK key was pasted and rejected).
+- Tests: `test_insights_requires_api_key` → `test_insights_uses_default_key_when_omitted` (accepts 200
+  streamed or bounded upstream error, never 422). Invalid-key tests unchanged. 187 pytest all passing.
+- Verified E2E: curl against local backend streams a full analysis on request with no api_key; UI
+  screenshot confirms hidden key panel and enabled Generate button.

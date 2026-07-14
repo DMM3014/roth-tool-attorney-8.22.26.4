@@ -146,9 +146,14 @@ class TestInsights:
                "before": {"total_burden": 109000},
                "after": {"total_burden": 130000}}
 
-    def test_insights_requires_api_key(self, client):
-        r = client.post(f"{BASE_URL}/api/insights", json={"summary": self.SUMMARY}, timeout=30)
-        assert r.status_code == 422, r.text
+    def test_insights_uses_default_key_when_omitted(self, client):
+        # api_key is optional — the server falls back to DEFAULT_GEMINI_API_KEY in .env.
+        # We can't assume network access in every CI run, so just verify the request is
+        # *accepted* (no longer 422) and produces either a streamed response or a
+        # bounded upstream error (401/429/502) — never a validation failure.
+        r = client.post(f"{BASE_URL}/api/insights", json={"summary": self.SUMMARY}, timeout=60)
+        assert r.status_code in (200, 401, 429, 502), r.text
+        assert r.status_code != 422
 
     def test_insights_rejects_invalid_key(self, client):
         r = client.post(f"{BASE_URL}/api/insights",

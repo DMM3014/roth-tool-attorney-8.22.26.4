@@ -176,7 +176,20 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 api_router = APIRouter(prefix="/api")
 
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-flash-latest"
+DEFAULT_GEMINI_API_KEY = os.environ.get("DEFAULT_GEMINI_API_KEY", "").strip()
+
+
+def _resolve_gemini_key(user_key: Optional[str]) -> str:
+    """Prefer the caller's BYOK key; fall back to the server-side default. If neither is
+    configured, surface a 401 so the client can prompt for a key."""
+    k = (user_key or "").strip()
+    if k:
+        return k
+    if DEFAULT_GEMINI_API_KEY:
+        return DEFAULT_GEMINI_API_KEY
+    raise HTTPException(status_code=401,
+                        detail="AI Insights is not configured. Add your Gemini API key to continue.")
 
 
 def _gemini_http_error(e: Exception) -> HTTPException:
@@ -214,6 +227,7 @@ async def _gemini_stream(api_key: str, system: str, prompt: str, max_tokens: int
         raise HTTPException(status_code=502, detail="Gemini is temporarily unavailable. Please try again.")
 
     async def _iter():
+        _keepalive = gclient  # noqa: F841 — keep the aiohttp session alive for the stream's lifetime
         try:
             if first is not None and first.text:
                 yield first.text
@@ -277,15 +291,17 @@ class ScenarioCreate(BaseModel):
 
 class InsightRequest(BaseModel):
     summary: Dict[str, Any]
-    api_key: str
+    api_key: Optional[str] = None
 
     @field_validator("api_key")
     @classmethod
-    def _api_key_bounds(cls, v: str) -> str:
+    def _api_key_bounds(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         v = v.strip()
-        if not v or len(v) > 200:
-            raise ValueError("A Gemini API key is required")
-        return v
+        if len(v) > 200:
+            raise ValueError("API key too long")
+        return v or None
 
 
 class ChatTurn(BaseModel):
@@ -700,7 +716,7 @@ async def insights(request: Request, req: InsightRequest):
         "Analyze this retirement & Roth conversion plan and explain the strategy and "
         "trade-offs.\n\nPlan summary (JSON):\n" + json.dumps(req.summary, indent=2)
     )
-    stream = await _gemini_stream(req.api_key, system, prompt, max_tokens=800)
+    stream = await _gemini_stream(_resolve_gemini_key(req.api_key), system, prompt, max_tokens=800)
 
     return StreamingResponse(
         stream,
@@ -737,7 +753,7 @@ async def insights_chat(request: Request, req: InsightChatRequest):
         + (f"Earlier in this conversation:\n{transcript}\n" if transcript else "")
         + "Client's question: " + req.message
     )
-    stream = await _gemini_stream(req.api_key, system, prompt, max_tokens=1000)
+    stream = await _gemini_stream(_resolve_gemini_key(req.api_key), system, prompt, max_tokens=1000)
 
     return StreamingResponse(
         stream,

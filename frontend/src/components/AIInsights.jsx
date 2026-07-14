@@ -73,7 +73,7 @@ export const AIInsights = ({ summary, testid }) => {
   };
 
   const generate = async () => {
-    if (!summary || streaming || !apiKey) return;
+    if (!summary || streaming) return;
     const id = nextMsgId();
     setMessages([{ id, role: "assistant", content: "" }]);
     setStreaming(true);
@@ -100,7 +100,7 @@ export const AIInsights = ({ summary, testid }) => {
   };
 
   const sendMessage = async (q) => {
-    if (!q || streaming || !summary || !apiKey) return;
+    if (!q || streaming || !summary) return;
     const history = messages.map(({ role, content }) => ({ role, content }));
     const aid = nextMsgId();
     setMessages((m) => [...m, { id: nextMsgId(), role: "user", content: q }, { id: aid, role: "assistant", content: "" }]);
@@ -146,11 +146,11 @@ export const AIInsights = ({ summary, testid }) => {
     <div className="rounded-xl border border-[#EBE8E0] bg-white p-4 mb-4 max-w-2xl" data-testid="gemini-key-panel">
       <div className="flex items-center gap-2 mb-1.5">
         <KeyRound className="h-4 w-4 text-[#4A6741]" />
-        <span className="text-sm font-semibold text-[#1A1A1A]">Connect your Google Gemini API key</span>
+        <span className="text-sm font-semibold text-[#1A1A1A]">Use your own Google Gemini API key</span>
       </div>
       <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-        AI Insights runs on Google Gemini using your own free API key. Your key stays in this browser only — it is never
-        stored on our servers.{" "}
+        Optional — AI Insights already works out of the box. Bring your own free key if you want unlimited use.
+        Your key stays in this browser only — it is never stored on our servers.{" "}
         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
           className="text-[#4A6741] underline font-medium" data-testid="gemini-key-link">
           Get a free key at aistudio.google.com
@@ -171,7 +171,7 @@ export const AIInsights = ({ summary, testid }) => {
           className="bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full shrink-0">
           Save key
         </Button>
-        {apiKey && editingKey && (
+        {editingKey && (
           <Button variant="ghost" onClick={() => { setEditingKey(false); setKeyError(""); }}
             data-testid="gemini-key-cancel" className="shrink-0 text-muted-foreground">
             Cancel
@@ -181,24 +181,24 @@ export const AIInsights = ({ summary, testid }) => {
     </div>
   );
 
-  // ---- Empty state: intro + key setup + generate ----
+  // ---- Empty state: intro + generate ----
   if (messages.length === 0) {
     return (
       <div data-testid={testid}>
         <p className="text-sm text-muted-foreground mb-4 max-w-2xl leading-relaxed">
           Get a CFP-level read on this plan — bracket-fill efficiency, IRMAA/NIIT exposure, RMD timing, and survivor (filing-status) impact — then ask follow-up questions.
         </p>
-        {(!apiKey || editingKey) && keyPanel}
+        {editingKey && keyPanel}
         <div className="flex items-center gap-3">
-          <Button onClick={generate} disabled={streaming || !summary || !apiKey} data-testid="generate-insights-button"
+          <Button onClick={generate} disabled={streaming || !summary} data-testid="generate-insights-button"
             className="bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
             {streaming ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
             {streaming ? "Analyzing…" : "Generate AI Insights"}
           </Button>
-          {apiKey && !editingKey && (
+          {!editingKey && (
             <button type="button" onClick={() => setEditingKey(true)} data-testid="gemini-key-change"
               className="text-xs text-muted-foreground underline underline-offset-2 hover:text-[#4A6741] transition-colors duration-200">
-              Using your Gemini key · Change
+              {apiKey ? "Using your Gemini key · Change" : "Use your own Gemini key"}
             </button>
           )}
         </div>
@@ -211,7 +211,7 @@ export const AIInsights = ({ summary, testid }) => {
 
   return (
     <div data-testid={testid}>
-      {(!apiKey || editingKey) && keyPanel}
+      {editingKey && keyPanel}
       <div ref={threadRef} className="space-y-4 max-h-[460px] overflow-y-auto pr-1 mb-4" data-testid="ai-chat-thread">
         {messages.map((m, i) => (
           <div key={m.id} className={`flex gap-2.5 ${m.role === "user" ? "justify-end" : "justify-start"}`} data-testid={`ai-msg-${i}`}>
@@ -243,7 +243,7 @@ export const AIInsights = ({ summary, testid }) => {
               key={s.label}
               type="button"
               onClick={() => sendMessage(s.q)}
-              disabled={!summary || !apiKey}
+              disabled={!summary}
               data-testid={`ai-suggestion-${i}`}
               className="rounded-full border border-[#D9D4C8] bg-white px-3 py-1.5 text-xs font-medium text-[#4A6741] transition-colors duration-200 hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] disabled:opacity-50"
             >
@@ -263,7 +263,7 @@ export const AIInsights = ({ summary, testid }) => {
           className="bg-white border-[#EBE8E0]"
           data-testid="ai-chat-input"
         />
-        <Button onClick={send} disabled={streaming || !input.trim() || !apiKey} data-testid="ai-chat-send"
+        <Button onClick={send} disabled={streaming || !input.trim()} data-testid="ai-chat-send"
           className="bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full shrink-0">
           {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
