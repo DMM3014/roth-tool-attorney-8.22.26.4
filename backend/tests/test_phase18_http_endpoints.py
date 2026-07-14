@@ -93,8 +93,8 @@ def test_projection_per_owner_ledger_and_math(cfg):
     assert r.status_code == 200
     data = r.json()
     # Math regression
-    assert data["summary"]["lifetime_taxes"] == 7075325.52
-    assert data["summary"]["ending_net_worth"] == 80238883.64
+    assert data["summary"]["lifetime_taxes"] == 7074269.95
+    assert data["summary"]["ending_net_worth"] == 80236439.97
     # Per-owner ledger
     ledger = data["roth_compliance"]["conversions_ledger"]
     assert len(ledger) > 0

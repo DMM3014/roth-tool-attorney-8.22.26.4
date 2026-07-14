@@ -44,26 +44,35 @@ class TestDefaults:
         assert isinstance(d["accounts"], list)
 
     def test_save_and_revert_custom_defaults(self, client):
-        # 1. Fetch built-in defaults so we have a valid config to save back.
-        base = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
-        assert base["household"]["filing_status"] == "Married Filing Jointly"
+        # Snapshot the caller's real saved defaults up front — this test must never
+        # clobber user_defaults.json even if it fails mid-flight.
+        pre = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+        try:
+            # 1. Fetch defaults (may be either DEFAULT_SCENARIO or the caller's override).
+            base = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+            assert base["household"]["filing_status"] == "Married Filing Jointly"
 
-        # 2. Save a marker-tweaked config as the new defaults.
-        marker = {**base, "household": {**base["household"], "first_name": "PYTEST_MARKER"}}
-        r = client.post(f"{BASE_URL}/api/defaults/save", json={"config": marker}, timeout=15)
-        assert r.status_code == 200, r.text
-        assert r.json() == {"saved": True}
+            # 2. Save a marker-tweaked config as the new defaults.
+            marker = {**base, "household": {**base["household"], "first_name": "PYTEST_MARKER"}}
+            r = client.post(f"{BASE_URL}/api/defaults/save", json={"config": marker}, timeout=15)
+            assert r.status_code == 200, r.text
+            assert r.json() == {"saved": True}
 
-        # 3. GET should now return the marker.
-        after = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
-        assert after["household"]["first_name"] == "PYTEST_MARKER"
+            # 3. GET should now return the marker.
+            after = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+            assert after["household"]["first_name"] == "PYTEST_MARKER"
 
-        # 4. DELETE reverts to built-in DEFAULT_SCENARIO.
-        r = client.delete(f"{BASE_URL}/api/defaults/save", timeout=15)
-        assert r.status_code == 200, r.text
-        assert r.json() == {"reverted": True}
-        reverted = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
-        assert reverted["household"].get("first_name") != "PYTEST_MARKER"
+            # 4. DELETE reverts to built-in DEFAULT_SCENARIO.
+            r = client.delete(f"{BASE_URL}/api/defaults/save", timeout=15)
+            assert r.status_code == 200, r.text
+            assert r.json() == {"reverted": True}
+            reverted = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+            assert reverted["household"].get("first_name") != "PYTEST_MARKER"
+        finally:
+            # Restore the caller's original defaults if they differ from built-in.
+            current = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+            if pre != current:
+                client.post(f"{BASE_URL}/api/defaults/save", json={"config": pre}, timeout=15)
 
     def test_save_defaults_requires_session_token(self):
         # No X-Session-Token header → 401.

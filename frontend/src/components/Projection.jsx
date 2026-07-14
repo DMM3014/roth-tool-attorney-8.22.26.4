@@ -99,9 +99,9 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
       <ProjectionControls scenario={scenario} update={update} rmdAge={rmdAge} targetIdx={targetIdx} />
 
       {/* Summary metrics */}
-      <SummaryCard icon={Receipt} label="Lifetime Taxes (w/ conversions)" value={fmtUSD(s?.lifetime_taxes)} sub={`vs ${fmtUSD(sn?.lifetime_taxes)} without`} accent="terra" testid="metric-lifetime-tax" />
-      <SummaryCard icon={Wallet} label="Ending Net Worth" value={fmtUSD(s?.ending_net_worth)} sub={`${nwDelta >= 0 ? "+" : ""}${fmtUSD(nwDelta)} vs no conversions`} accent="green" testid="metric-ending-nw" />
-      <SummaryCard icon={Landmark} label="Total Converted to Roth" value={fmtUSD(s?.total_roth_converted)} sub={`Ending Roth ${fmtUSD(s?.ending_roth)}`} accent="green" testid="metric-total-converted" />
+      <SummaryCard icon={Receipt} label="Lifetime Taxes (w/ conversions)" hint="all-in — Fed + State + NIIT + Medicare/IRMAA" value={fmtUSD(s?.lifetime_taxes)} sub={`vs ${fmtUSD(sn?.lifetime_taxes)} without`} accent="terra" testid="metric-lifetime-tax" />
+      <SummaryCard icon={Wallet} label="Ending Net Worth" hint="gross estate at 2nd death (pre-heir-tax, pre-settlement)" value={fmtUSD(s?.ending_net_worth)} sub={`${nwDelta >= 0 ? "+" : ""}${fmtUSD(nwDelta)} vs no conversions`} accent="green" testid="metric-ending-nw" />
+      <SummaryCard icon={Landmark} label="Total Converted to Roth" hint="sum of every Roth conversion across the plan horizon" value={fmtUSD(s?.total_roth_converted)} sub={`Ending Roth ${fmtUSD(s?.ending_roth)}`} accent="green" testid="metric-total-converted" />
       <div className="rounded-xl border border-[#4A6741]/30 bg-[#4A6741]/5 p-5 flex flex-col justify-center" data-testid="metric-tax-savings">
         <p className="label-cap text-[#4A6741] text-[10px] mb-1">Lifetime Tax Difference</p>
         <p className={`font-display text-2xl font-bold ${taxDelta >= 0 ? "text-[#4A6741]" : "text-[#C87941]"}`}>
@@ -147,12 +147,13 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
   );
 };
 
-const SummaryCard = ({ icon: Icon, label, value, sub, accent, testid }) => (
+const SummaryCard = ({ icon: Icon, label, value, sub, hint, accent, testid }) => (
   <Card className="p-5 border-[#EBE8E0] shadow-none" data-testid={testid}>
-    <div className="flex items-center gap-2 mb-2">
+    <div className="flex items-center gap-2 mb-1">
       <Icon className={`h-4 w-4 ${accent === "terra" ? "text-[#C87941]" : "text-[#4A6741]"}`} />
       <p className="label-cap text-muted-foreground text-[10px]">{label}</p>
     </div>
+    {hint && <p className="text-[10px] text-muted-foreground/80 italic mb-1 leading-tight">{hint}</p>}
     <p className={`font-display text-2xl font-bold ${accent === "terra" ? "text-[#C87941]" : "text-[#4A6741]"}`}>{value}</p>
     <p className="text-xs text-muted-foreground mt-1">{sub}</p>
   </Card>

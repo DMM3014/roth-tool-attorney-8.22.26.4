@@ -373,11 +373,19 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
     }
 
 
-def _withdraw(plan, shortfall, bal, basis, rmd_total):
+def _withdraw(plan, shortfall, bal, basis, rmd_by, conversion_reserve=0.0):
     """Withdraw `shortfall` (after cash) honoring plan.funding_order.
 
     Cash is always spent before this; Roth is always last. The middle tier
     (Taxable vs Traditional IRA) order/split is governed by plan.funding_order.
+
+    `rmd_by` is a per-IRA {account_id: rmd_dollar_amount} map so this year's mandatory
+    distributions are reserved from the CORRECT accounts (not just the first IRA). Fixes
+    a stale bug where RMDs from the Spouse IRA weren't reserved once Client IRA depleted.
+    `conversion_reserve` is the Roth conversion this year (drained from IRAs in the
+    same order as discretionary withdrawal). Reserving it here prevents the discretionary
+    IRA-withdrawal from overshooting the balance in the IRA-depletion year — the
+    workbook enforces the same `conversion + discretionary + RMD ≤ BOY balance` rule.
     Returns (withdrawals {id: amount}, realized_ltcg, ira_withdraw, roth_withdraw).
     """
     wd = {}
@@ -385,10 +393,24 @@ def _withdraw(plan, shortfall, bal, basis, rmd_total):
     if shortfall <= 0:
         return wd, realized_ltcg, ira_withdraw, roth_withdraw
 
+    # Per-IRA conversion reservation: conversion is applied Client-first, Spouse-second
+    # (mirrors _apply_year_flows), so reserve capacity in the same order.
+    conv_left = conversion_reserve
+    conv_by_ira = {}
+    for iid in plan.ira_ids:
+        if conv_left <= 0:
+            break
+        rmd_here = rmd_by.get(iid, 0.0)
+        room = max(0.0, bal[iid] - rmd_here)
+        take = min(room, conv_left)
+        conv_by_ira[iid] = take
+        conv_left -= take
+
     def cap(aid, is_ira):
         taken = wd.get(aid, 0.0)
-        reserve = rmd_total if (is_ira and aid == plan.rmd_reserve_id) else 0.0
-        return max(0.0, bal[aid] - taken - reserve)
+        reserve = rmd_by.get(aid, 0.0) if is_ira else 0.0
+        conv = conv_by_ira.get(aid, 0.0) if is_ira else 0.0
+        return max(0.0, bal[aid] - taken - reserve - conv)
 
     def take_from(ids, amount, kind):
         nonlocal realized_ltcg, ira_withdraw, roth_withdraw
@@ -509,6 +531,7 @@ class _SolveCtx:
     irmaa_index_yplus2: float
     irmaa_magi: Any
     rmd_total: float
+    rmd_by: dict           # per-IRA {account_id: rmd_amount} for correct per-account reservation
     cash_boy: float
     total_expense: float
     ira_balance: float
@@ -522,18 +545,24 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
     for conversion — mirrors the spreadsheet's iterative solver). Cash interest is taxed but
     retained in cash, so it is NOT counted as fundable income.
 
+    Hard cap: conversion + discretionary IRA withdrawal + RMD ≤ BOY IRA balance. In the
+    depletion year the SPREADSHEET prioritises the conversion (fill-the-bracket first) and
+    then draws whatever IRA is left for spending; we match that ordering here by passing
+    the conversion into `_withdraw` as a per-IRA reservation.
+
     Returns (conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw).
     """
     realized_ltcg = ira_withdraw = roth_withdraw = conversion = 0.0
     wd, tax_res = {}, {}
     prev_conv = prev_wd = -1.0
+    max_total_ira = max(0.0, ctx.ira_balance - ctx.rmd_total)  # room left after RMDs
     for _ in range(40):
         conversion = 0.0
         if ctx.in_window:
             base_inp = {**ctx.tax_base, "ira_distributions": ctx.rmd_total + ira_withdraw,
                         "realized_ltcg": realized_ltcg}
             opt = optimize_conversion(base_inp, ctx.target_rate, ctx.max_annual)
-            conversion = min(opt["recommended_conversion"], max(0.0, ctx.ira_balance - ira_withdraw))
+            conversion = min(opt["recommended_conversion"], max(0.0, max_total_ira - ira_withdraw))
             if ctx.irmaa_cap is not None:
                 magi_ceiling = irmaa_threshold_cap(int(ctx.irmaa_cap), ctx.mfj, ctx.irmaa_index_yplus2)
                 conversion = min(conversion, max(0.0, magi_ceiling - opt["before"]["magi"]))
@@ -547,8 +576,10 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
         funding_income = (ctx.tax_base["ordinary_non_ss"] + ctx.tax_base["gross_ss"]
                           + ctx.tax_base["recurring_div_ltcg"] + ctx.rmd_total)
         shortfall = (ctx.total_expense + total_tax) - funding_income - ctx.cash_boy
+        # Pass the conversion in as a reservation so `_withdraw` cannot over-draw the IRA.
+        # This is the "conversion first, spending second" ordering the spreadsheet uses.
         wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
-            ctx.plan, shortfall, bal, basis, ctx.rmd_total + conversion)
+            ctx.plan, shortfall, bal, basis, ctx.rmd_by, conversion_reserve=conversion)
 
         if abs(conversion - prev_conv) < 1.0 and abs(ira_withdraw - prev_wd) < 1.0:
             break
@@ -950,7 +981,7 @@ def run_projection(cfg: dict) -> dict:
             max_annual=plan.max_annual, irmaa_cap=plan.irmaa_cap, mfj=status.mfj,
             irmaa_index_yplus2=irmaa_index_yplus2,
             irmaa_magi=magi_history.get(year - IRMAA_LOOKBACK_YEARS),  # 2-yr lookback
-            rmd_total=rmd_total, cash_boy=cash_boy, total_expense=total_expense,
+            rmd_total=rmd_total, rmd_by=rmd_by, cash_boy=cash_boy, total_expense=total_expense,
             ira_balance=ira_balance, plan=plan)
         conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw = \
             _solve_year_conversion(ctx, bal, basis)

@@ -1169,3 +1169,45 @@ User approved publishing v2 and asked for a reset button covering all inputs/swi
   in that module pass. E2E verified via curl + UI screenshot (both buttons visible, dialog fires,
   success toast confirmed).
 
+
+### Workbook V17 alignment: boundary-ordering & clearer metric labels (2026-07-14)
+- After a user-provided workbook (Retirement_Optimizer_V17.xlsm) comparison, two gaps
+  surfaced: (a) three summary metrics on the Multi-Year Projection tab were being misread
+  as if they meant something different than they did; (b) the projection engine's
+  IRA-depletion-year ordering diverged from the workbook by ~$157K on conversions.
+
+- **Label fix** (`Projection.jsx`): Added a small italic hint line to `SummaryCard` between
+  the label and the value. The three headline metrics now spell out exactly what's included:
+    * "Lifetime Taxes (w/ conversions)" → *all-in — Fed + State + NIIT + Medicare/IRMAA*
+    * "Ending Net Worth" → *gross estate at 2nd death (pre-heir-tax, pre-settlement)*
+    * "Total Converted to Roth" → *sum of every Roth conversion across the plan horizon*
+
+- **Engine fix** (`projection.py`): Two subtle bugs in `_withdraw` / `_solve_year_conversion`:
+    1. `_withdraw`'s RMD reservation used a single `plan.rmd_reserve_id` (always the first
+       IRA), so once Client IRA depleted, RMDs coming from Spouse IRA weren't reserved — the
+       function could then over-draw the account. Replaced with a per-IRA `rmd_by` dict that
+       reserves per-account (mirrors what `_apply_year_flows` already does).
+    2. In the depletion year the solver reserved conversion via `conversion ≤ ira_balance -
+       ira_withdraw`, but `_withdraw` itself didn't know about the pending conversion, so
+       `ira_withdraw` could still consume IRA balance the conversion wanted. Added a new
+       `conversion_reserve` param to `_withdraw` that pre-books conversion capacity in the
+       IRAs (Client first, Spouse second — mirrors `_apply_year_flows`).
+  Together the two changes enforce the workbook's constraint `conversion + discretionary +
+  RMD ≤ BOY IRA balance` with the same conversion-first priority.
+
+- **Verification vs Workbook V17** (24% ceiling, matched inputs):
+    * Total conversions: 7,241,401 vs 7,219,063 → **+0.31%**
+    * Wealth to heirs @ Death+10: 148,995,484 vs 148,935,964 → **+0.04%**
+    * All-in tax: 6,943,348 vs 7,132,920 → −2.66%
+    * Legacy at 2nd death: 78,233,065 vs 77,271,051 → +1.24%
+
+- **Test suite**: Golden snapshot refreshed via `python tests/golden_snapshot.py save`.
+  Four exact-equality assertions in phase17/18/19 tests updated to the new values (lifetime
+  taxes 7,074,269.95 vs prior 7,075,325.52; ending NW 80,236,439.97 vs 80,238,883.64;
+  legacy-to-heirs 151,313,646.69 vs 151,306,744.66). All 190 tests pass.
+
+- **Test hygiene**: `test_save_and_revert_custom_defaults` now snapshots the caller's
+  existing `user_defaults.json` at start and restores it in a `finally` block so the
+  test can never clobber real user-saved defaults again (this had happened when the
+  test suite ran previously and had wiped a user's saved config).
+
