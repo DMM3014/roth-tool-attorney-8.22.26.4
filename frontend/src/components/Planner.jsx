@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut, RotateCcw } from "lucide-react";
+import { Leaf, SlidersHorizontal, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut, RotateCcw, Save } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -7,7 +7,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { fetchDefaults, fetchSharedScenario } from "@/lib/api";
+import { fetchDefaults, fetchSharedScenario, saveAsDefaults } from "@/lib/api";
 import { Optimizer } from "@/components/Optimizer";
 import { Projection } from "@/components/Projection";
 import { Scenarios } from "@/components/Scenarios";
@@ -68,6 +68,16 @@ export const Planner = () => {
       .catch(() => toast.error("Could not load defaults. Please try again."));
   };
 
+  // Promote the current in-memory scenario to be the app's baked-in defaults. The
+  // backend persists it to user_defaults.json, so every future page load AND every
+  // future "Reset to defaults" click restores to THIS state.
+  const saveCurrentAsDefaults = () => {
+    if (!scenario) return;
+    saveAsDefaults(scenario)
+      .then(() => toast.success("Current inputs and switches saved as the new defaults."))
+      .catch(() => toast.error("Could not save defaults. Please try again."));
+  };
+
   if (!scenario) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground">
@@ -97,31 +107,60 @@ export const Planner = () => {
               </span>
             </span>
             {!sharedInfo && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="outline" data-testid="reset-defaults-btn"
-                    className="gap-1.5 rounded-full border-[#C87941]/50 text-[#C87941] hover:bg-[#C87941]/10 hover:text-[#B06A36]">
-                    <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent data-testid="reset-defaults-dialog">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Reset plan to model defaults?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Every input and switch — household, income streams, expenses, accounts, taxes,
-                      Roth conversion controls, funding order, and legacy/heir settings — will be restored
-                      to the model&apos;s defaults. Unsaved changes are lost; saved scenarios are untouched.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel data-testid="reset-defaults-cancel">Cancel</AlertDialogCancel>
-                    <AlertDialogAction data-testid="reset-defaults-confirm" onClick={resetToDefaults}
-                      className="bg-[#C87941] hover:bg-[#B06A36]">
-                      Reset plan
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+              <>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" data-testid="save-defaults-btn"
+                      className="gap-1.5 rounded-full border-[#4A6741]/50 text-[#4A6741] hover:bg-[#4A6741]/10 hover:text-[#3B5234]">
+                      <Save className="h-3.5 w-3.5" /> Save as defaults
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent data-testid="save-defaults-dialog">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Save current inputs as the new defaults?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Every input and switch currently loaded — household, income streams, expenses,
+                        accounts, taxes, Roth conversion controls, funding order, and legacy/heir
+                        settings — will become the new baked-in defaults for the app. Future page loads
+                        and "Reset to defaults" clicks will restore to THIS state. Saved scenarios are
+                        untouched.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel data-testid="save-defaults-cancel">Cancel</AlertDialogCancel>
+                      <AlertDialogAction data-testid="save-defaults-confirm" onClick={saveCurrentAsDefaults}
+                        className="bg-[#4A6741] hover:bg-[#3B5234]">
+                        Save as defaults
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" data-testid="reset-defaults-btn"
+                      className="gap-1.5 rounded-full border-[#C87941]/50 text-[#C87941] hover:bg-[#C87941]/10 hover:text-[#B06A36]">
+                      <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent data-testid="reset-defaults-dialog">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Reset plan to model defaults?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Every input and switch — household, income streams, expenses, accounts, taxes,
+                        Roth conversion controls, funding order, and legacy/heir settings — will be restored
+                        to the model&apos;s defaults. Unsaved changes are lost; saved scenarios are untouched.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel data-testid="reset-defaults-cancel">Cancel</AlertDialogCancel>
+                      <AlertDialogAction data-testid="reset-defaults-confirm" onClick={resetToDefaults}
+                        className="bg-[#C87941] hover:bg-[#B06A36]">
+                        Reset plan
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
             )}
           </div>
         </div>

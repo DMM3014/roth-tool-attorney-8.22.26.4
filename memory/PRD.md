@@ -1152,3 +1152,20 @@ User approved publishing v2 and asked for a reset button covering all inputs/swi
   streamed or bounded upstream error, never 422). Invalid-key tests unchanged. 187 pytest all passing.
 - Verified E2E: curl against local backend streams a full analysis on request with no api_key; UI
   screenshot confirms hidden key panel and enabled Generate button.
+
+### Save current inputs as defaults (2026-07-14)
+- New "Save as defaults" button in the Planner header, sitting next to "Reset to defaults" (green
+  outlined pill, `Save` icon, testid `save-defaults-btn`). Confirmation dialog explains that every
+  input/switch currently loaded will become the new baked-in defaults; future page loads and
+  "Reset to defaults" clicks will restore to this state. Saved scenarios untouched.
+- Backend: `POST /api/defaults/save` (session-token required, DoS-cap validated, 10/min rate limit)
+  persists the config to `/app/backend/user_defaults.json`. `GET /api/defaults` now returns the
+  override if present, else the code-defined `DEFAULT_SCENARIO`. `DELETE /api/defaults/save`
+  reverts to the built-in.
+- Frontend api.js: `saveAsDefaults(config)` + `revertDefaults()` helpers (session-token auto-added
+  by the axios interceptor).
+- Tests: added `test_save_and_revert_custom_defaults`, `test_save_defaults_requires_session_token`,
+  `test_save_defaults_rejects_oversized_horizon` to `test_planner_api.py::TestDefaults`. All 12 tests
+  in that module pass. E2E verified via curl + UI screenshot (both buttons visible, dialog fires,
+  success toast confirmed).
+

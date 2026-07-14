@@ -43,6 +43,46 @@ class TestDefaults:
         assert isinstance(d["income_streams"], list)
         assert isinstance(d["accounts"], list)
 
+    def test_save_and_revert_custom_defaults(self, client):
+        # 1. Fetch built-in defaults so we have a valid config to save back.
+        base = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+        assert base["household"]["filing_status"] == "Married Filing Jointly"
+
+        # 2. Save a marker-tweaked config as the new defaults.
+        marker = {**base, "household": {**base["household"], "first_name": "PYTEST_MARKER"}}
+        r = client.post(f"{BASE_URL}/api/defaults/save", json={"config": marker}, timeout=15)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"saved": True}
+
+        # 3. GET should now return the marker.
+        after = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+        assert after["household"]["first_name"] == "PYTEST_MARKER"
+
+        # 4. DELETE reverts to built-in DEFAULT_SCENARIO.
+        r = client.delete(f"{BASE_URL}/api/defaults/save", timeout=15)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"reverted": True}
+        reverted = client.get(f"{BASE_URL}/api/defaults", timeout=15).json()
+        assert reverted["household"].get("first_name") != "PYTEST_MARKER"
+
+    def test_save_defaults_requires_session_token(self):
+        # No X-Session-Token header → 401.
+        r = requests.post(
+            f"{BASE_URL}/api/defaults/save",
+            json={"config": {"projection": {"start_year": 2026, "end_year": 2050}}},
+            timeout=15,
+        )
+        assert r.status_code == 401, r.text
+
+    def test_save_defaults_rejects_oversized_horizon(self, client):
+        # 200-year horizon busts the MAX_PROJECTION_YEARS cap → 400.
+        r = client.post(
+            f"{BASE_URL}/api/defaults/save",
+            json={"config": {"projection": {"start_year": 2026, "end_year": 2226}}},
+            timeout=15,
+        )
+        assert r.status_code == 400, r.text
+
 
 # ---------- /api/tax/year ----------
 class TestTaxYear:

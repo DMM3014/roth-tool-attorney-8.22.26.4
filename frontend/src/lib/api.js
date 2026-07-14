@@ -42,6 +42,8 @@ http.interceptors.request.use((cfg) => {
 });
 
 export const fetchDefaults = () => http.get(`/defaults`).then((r) => r.data);
+export const saveAsDefaults = (config) => http.post(`/defaults/save`, { config }).then((r) => r.data);
+export const revertDefaults = () => http.delete(`/defaults/save`).then((r) => r.data);
 export const fetchStates = () => http.get(`/states`).then((r) => r.data);
 
 // Two configs for the "deplete IRA now vs. leave it for the children" comparison:

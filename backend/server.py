@@ -452,9 +452,54 @@ async def root():
     return {"message": "Retirement & Roth Conversion Optimizer API"}
 
 
+# ---------- Custom defaults override (single-tenant tool) ----------
+# Any authenticated (session-token) visitor can promote the current in-memory scenario
+# to be the app's baked-in defaults by POSTing to /api/defaults/save. The payload is
+# validated with the same DoS caps as any config, then persisted to a JSON file next
+# to defaults.py so it survives restarts. GET /api/defaults returns the override if
+# present, else the code-defined DEFAULT_SCENARIO. DELETE reverts to the built-in.
+USER_DEFAULTS_PATH = ROOT_DIR / "user_defaults.json"
+
+
+def _load_user_defaults() -> Optional[dict]:
+    try:
+        if USER_DEFAULTS_PATH.exists():
+            with open(USER_DEFAULTS_PATH, "r") as f:
+                return json.load(f)
+    except Exception:
+        logging.exception("failed reading user_defaults.json — falling back to DEFAULT_SCENARIO")
+    return None
+
+
 @api_router.get("/defaults")
 async def get_defaults():
-    return DEFAULT_SCENARIO
+    return _load_user_defaults() or DEFAULT_SCENARIO
+
+
+@api_router.post("/defaults/save")
+@limiter.limit("10/minute")
+async def save_defaults(request: Request, req: ProjectionRequest,
+                        _owner: str = Depends(require_session)):
+    _validate_config(req.config)
+    try:
+        with open(USER_DEFAULTS_PATH, "w") as f:
+            json.dump(req.config, f)
+    except Exception:
+        logging.exception("failed writing user_defaults.json")
+        raise HTTPException(status_code=500, detail="Could not save defaults")
+    return {"saved": True}
+
+
+@api_router.delete("/defaults/save")
+@limiter.limit("10/minute")
+async def revert_defaults(request: Request, _owner: str = Depends(require_session)):
+    try:
+        if USER_DEFAULTS_PATH.exists():
+            USER_DEFAULTS_PATH.unlink()
+    except Exception:
+        logging.exception("failed removing user_defaults.json")
+        raise HTTPException(status_code=500, detail="Could not revert defaults")
+    return {"reverted": True}
 
 
 @api_router.get("/states")
