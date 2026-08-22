@@ -10,9 +10,11 @@ DEFAULT_SCENARIO = {
         "client_name": "John Smith",
         "client_dob_year": 1965,
         "client_life_expectancy": 91,   # dies 2056
+        "client_retirement_age": 66,    # retires 2031 — seeds the Client Report "Retirement" auto-suggest
         "spouse_name": "Jane Smith",
         "spouse_dob_year": 1966,
         "spouse_life_expectancy": 96,   # dies 2062 (second death)
+        "spouse_retirement_age": 65,    # retires 2031 — seeds the Client Report "Retirement" auto-suggest
         "filing_status": "Married Filing Jointly",
     },
     "projection": {
@@ -22,10 +24,47 @@ DEFAULT_SCENARIO = {
         "bracket_indexing": 0.03,
         "irmaa_indexing": 0.03,
     },
+    "allocation": {
+        # Household-level asset allocation for Monte Carlo. Weights should sum to 1;
+        # if omitted the MC falls back to DEFAULT_ASSETS (60/30/10). This is a purely
+        # advisory input — the projection engine still uses per-account returns from
+        # scenario.accounts[*].return. Feeds `assets` on all MC calls.
+        "stocks": 0.60,
+        "bonds": 0.30,
+        "cash": 0.10,
+    },
+    "state_exclusions": {
+        # Which federal-taxable income categories are EXCLUDED from state taxable
+        # income. Purely a display-only knob for the Client Report state-taxable chart
+        # and milestone row — does NOT change the actual state tax computed in the
+        # projection engine (that still uses scenario.federal_state.state_rate applied
+        # to federal taxable income, a common simplification). Advisors edit these on
+        # Plan Inputs to reflect the client's home state.
+        # Defaults chosen for California-ish behavior: SS is exempt, pensions & RMDs
+        # follow federal (fully taxable), municipal-bond interest ignored (already
+        # federal-tax-exempt so it never entered the base).
+        "ss": True,
+        "pension": False,
+        "rmds": False,
+    },
+    # Custom milestone columns for the Client Report Income & Expenses milestone
+    # table. Persisted on the scenario (as opposed to advisor-machine localStorage)
+    # so a shared plan reads the same set of milestones for every advisor. Up to 3
+    # entries; each `{name: str, year: int}`. Empty by default.
+    "custom_milestones": [],
+    # Family objectives the plan is being weighed against — {objective_key:
+    # "high"|"medium"|"watch"}. Drives the dollar-free "What are we planning
+    # for?" page printed ahead of the conversion analysis. Empty by default:
+    # the advisor ticks what this family actually cares about.
+    "planning_objectives": {},
     "income_streams": [
         {"id": "WAG01", "owner": "Client", "type": "Wages", "description": "Client Wages",
          "start_date": "2026-01-01", "stop_date": "2027-05-12", "start_year": 2026, "stop_year": 2027,
          "amount": 350000, "frequency": "Annual", "cola": 0.03,
+         "tax_character": "Ordinary", "taxable_pct": 1.0, "survivor_pct": 0.0, "use": True},
+        {"id": "WAG02", "owner": "Spouse", "type": "Wages", "description": "Spouse Wages",
+         "start_date": "2026-01-01", "stop_date": "2026-03-07", "start_year": 2026, "stop_year": 2026,
+         "amount": 0, "frequency": "Annual", "cola": 0.03,
          "tax_character": "Ordinary", "taxable_pct": 1.0, "survivor_pct": 0.0, "use": True},
         {"id": "SS01", "owner": "Client", "type": "Social Security", "description": "Client SS @ claim",
          "start_date": "2032-05-12", "stop_date": None, "start_year": 2032, "stop_year": None,
@@ -70,7 +109,7 @@ DEFAULT_SCENARIO = {
     ],
     "accounts": [
         {"id": "CASH", "owner": "Joint", "name": "Cash / Checking", "tax_type": "Cash",
-         "beginning_balance": 1000000, "cost_basis": 0, "return": 0.03},
+         "beginning_balance": 500000, "cost_basis": 0, "return": 0.03},
         {"id": "TAXC", "owner": "Client", "name": "Client Taxable Brokerage", "tax_type": "Taxable",
          "beginning_balance": 3000000, "cost_basis": 1000000, "return": 0.07},
         {"id": "TAXS", "owner": "Spouse", "name": "Spouse Taxable Brokerage", "tax_type": "Taxable",
@@ -88,11 +127,18 @@ DEFAULT_SCENARIO = {
     ],
     "tax": {
         "state_rate": 0.0399,
-        "state_code": "",
+        "state_code": "NC",
         "community_property": False,
         "include_irmaa": True,
         "survivor_filing_status": "Single",
         "survivor_spending_reduction": 0.2,
+        "merge_basis_at_first_death": True,
+    },
+    "giving": {
+        "annual_gift_amount": 0.0,
+        "section_2503e_amount": 0.0,
+        "start_year": 0,
+        "end_year": 0,
     },
     "roth": {
         "enabled": True,
@@ -103,18 +149,26 @@ DEFAULT_SCENARIO = {
         "stop_at_rmd_age": False,
         "irmaa_tier_cap": None,
     },
-    "dividend_yield": 0.02,
+    "dividend_yield": 0.01,
     "mortgage_balance": 0,
     "withdrawal": {
         "funding_order": "Cash → IRA → Taxable → Roth",
         "ira_split": 0.5,
         "surplus_sweep_to": "Taxable",
     },
+    # Strategy Optimizer lens shown on the Plan Inputs tab. Legacy-first is the
+    # house default: most after-tax dollars to heirs after the SECURE window.
+    "optimizer": {
+        "goal": "after_tax_estate",
+        "include_phased": True,
+        "sweep_funding_orders": True,
+        "preset_id": "legacy_first",
+    },
     "legacy": {
-        "estate_settlement_pct": 0.01,
-        "heir_federal_rate": 0.3165,   # blended Fed+State heir ordinary rate (share-weighted)
-        "heir_state_rate": 0.0,
-        "heir_ltcg_rate": 0.2345,      # 15% LTCG + 3.8% NIIT + blended heir state
+        "estate_settlement_pct": 0.0,
+        "heir_federal_rate": 0.32,     # heirs' federal ordinary income bracket
+        "heir_state_rate": 0.04,       # heirs' state ordinary income rate (NC-adjacent default)
+        "heir_ltcg_rate": 0.228,       # 15% LTCG + 3.8% NIIT + 4% heir state = 22.8%
         "heir_gains_realized": False,
         "step_up_at_death": True,
         "post_death_years": 10,

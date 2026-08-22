@@ -35,8 +35,9 @@ class TestHeirRate:
         r = client.post(f"{BASE_URL}/api/projection", json={"config": defaults}, timeout=60)
         assert r.status_code == 200
         leg = r.json()["legacy"]
-        # V9 default blended heir ordinary rate = 0.3165 (+ 0.0 state)
-        assert abs(leg["heir_ordinary_rate"] - 0.3165) < 1e-6, leg
+        # Heir ordinary rate = heir_federal_rate + heir_state_rate from the config.
+        expected = defaults["legacy"]["heir_federal_rate"] + defaults["legacy"]["heir_state_rate"]
+        assert abs(leg["heir_ordinary_rate"] - expected) < 1e-6, leg
         # inherited_ira_tax should == end_trad * 0.30 approximately
         # We can't easily extract end_trad, but we can check it's positive
         assert leg["inherited_ira_tax"] >= 0
@@ -98,9 +99,13 @@ class TestSweepHeirRate:
 # ---------- State rate sensitivity ----------
 class TestStateRate:
     def test_state_rate_change_changes_lifetime_taxes(self, client, defaults):
+        # `state_code` (full bracket schedule) takes precedence over the flat
+        # `state_rate` fallback, so clear it to exercise the flat-rate path.
         cfg_zero = copy.deepcopy(defaults)
+        cfg_zero["tax"]["state_code"] = ""
         cfg_zero["tax"]["state_rate"] = 0.0
         cfg_default = copy.deepcopy(defaults)
+        cfg_default["tax"]["state_code"] = ""
         cfg_default["tax"]["state_rate"] = 0.0399
 
         r0 = client.post(f"{BASE_URL}/api/projection", json={"config": cfg_zero}, timeout=60)

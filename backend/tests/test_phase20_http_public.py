@@ -5,7 +5,7 @@ import copy
 import requests
 import pytest
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://cv-craft-504.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://roth-retirement-tool.preview.emergentagent.com").rstrip("/")
 # ingress blocks python-urllib default UA -> use browser UA
 HDRS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
         "X-Session-Token": "0b7a2f77-49a1-4a6a-9d3e-1c2b3d4e5f60"}
@@ -13,9 +13,12 @@ HDRS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
 
 @pytest.fixture(scope="module")
 def defaults():
-    r = requests.get(f"{BASE_URL}/api/defaults", headers=HDRS, timeout=30)
-    assert r.status_code == 200, r.text
-    return r.json()
+    # Built-in code defaults — NOT GET /api/defaults, which returns user-saved
+    # overrides ("Save as defaults") and would make these math tests environment-dependent.
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from defaults import DEFAULT_SCENARIO
+    return copy.deepcopy(DEFAULT_SCENARIO)
 
 
 def _post_projection(cfg):
@@ -41,9 +44,16 @@ def test_projection_spouse_heavy_routes_to_ROTS(defaults):
     assert r.status_code == 200, r.text
     data = r.json()
     rows = data["rows"]
+    # Per-owner routing must be checked while BOTH spouses are alive. From the
+    # first death onward the decedent's IRA/Roth are retitled onto the survivor's
+    # account (spousal rollover, 2026-08-21), so the decedent's line is
+    # legitimately zero in the final row.
+    mfj = [x for x in rows if x["filing_status"] == rows[0]["filing_status"]]
+    both_alive = mfj[-1]["account_balances"]
+    assert both_alive.get("ROTS", 0) > 0, f"ROTS should be positive, got {both_alive.get('ROTS')}"
+    assert both_alive.get("ROTC", 0) > 0, f"ROTC should be positive, got {both_alive.get('ROTC')}"
     last = rows[-1]["account_balances"]
-    assert last.get("ROTS", 0) > 0, f"ROTS should be positive, got {last.get('ROTS')}"
-    assert last.get("ROTC", 0) > 0, f"ROTC should be positive, got {last.get('ROTC')}"
+    assert (last.get("ROTC", 0) or 0) + (last.get("ROTS", 0) or 0) > 0, "Roth must survive to the final row"
     assert data.get("auto_accounts", []) == []
 
 

@@ -4,9 +4,11 @@ import { Card } from "@/components/ui/card";
 import { runProjection, runSweep, fmtUSD } from "@/lib/api";
 import { AIInsights } from "@/components/AIInsights";
 import { useAiSummary } from "@/hooks/useAiSummary";
-import { NetWorthChart, CompositionChart, TaxChart } from "@/components/ProjectionCharts";
+import { NetWorthChart, CompositionChart, TaxChart, ConversionScheduleChart } from "@/components/ProjectionCharts";
 import { BRACKETS, ProjectionControls, SweepPanel, YearTable, LegacyPanels } from "@/components/ProjectionPanels";
 import { FundingOrderCompare } from "@/components/FundingOrderCompare";
+import { StrategyBadge } from "@/components/StrategyBadge";
+import { MarketBadge } from "@/components/MarketScenarioSelector";
 
 export const Projection = ({ scenario, setScenario, mcResult }) => {
   const [withRoth, setWithRoth] = useState(null);
@@ -70,6 +72,9 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
       netRoth: row.net_worth,
       netNo: noRoth?.rows[i]?.net_worth,
       conversion: row.roth_conversion,
+      // Bracket-fill overlay data — see ConversionScheduleChart.
+      headroom_unused: row.conversion_headroom_unused || 0,
+      target_bracket_ceiling: row.target_bracket_ceiling,
     }));
   }, [withRoth, noRoth]);
 
@@ -96,6 +101,10 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <StrategyBadge scenario={scenario} testid="projection-strategy-badge" />
+        <MarketBadge scenario={scenario} testid="projection-market-badge" />
+      </div>
       <ProjectionControls scenario={scenario} update={update} rmdAge={rmdAge} targetIdx={targetIdx} />
 
       {/* Summary metrics */}
@@ -118,11 +127,14 @@ export const Projection = ({ scenario, setScenario, mcResult }) => {
       <CompositionChart data={chartData} />
       <TaxChart data={chartData} />
 
+      {/* Dedicated Roth conversion schedule — annual bars + cumulative overlay */}
+      <ConversionScheduleChart data={chartData} />
+
       <YearTable rows={withRoth?.rows || []} />
 
       <LegacyPanels legacy={legacy} legacyNo={legacyNo} heirDelta={heirDelta} postCompare={postCompare} targetIdx={targetIdx} />
 
-      {/* 5-year / pre-59½ Roth compliance warnings (Boldin's documented blind spot) */}
+      {/* 5-year / pre-59½ Roth compliance warnings — early-tap penalty tracker */}
       {withRoth?.roth_compliance && (
         <RothComplianceCard compliance={withRoth.roth_compliance} />
       )}
@@ -183,8 +195,8 @@ const RothComplianceCard = ({ compliance }) => {
       <p className="text-xs text-muted-foreground mb-3 max-w-3xl">
         The funding order taps Roth <span className="font-medium">before</span> either the 5-year clock on a
         specific conversion, or before the owner reaches age 59½. Each such withdrawal on the
-        converted principal incurs a <span className="font-medium">10% penalty</span> under IRC §408A(d)(3)
-        (Boldin&apos;s documented blind spot). Estimated penalty: <span className="font-bold text-[#B84A4A]">{fmtUSD(total_early_penalty)}</span>.
+        converted principal incurs a <span className="font-medium">10% penalty</span> under IRC §408A(d)(3).
+        Estimated penalty: <span className="font-bold text-[#B84A4A]">{fmtUSD(total_early_penalty)}</span>.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">

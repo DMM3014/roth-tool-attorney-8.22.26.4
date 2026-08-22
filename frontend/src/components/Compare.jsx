@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { listScenarios, runProjection, fmtUSD } from "@/lib/api";
 import { CompareNetWorthChart } from "@/components/CompareChart";
+import AIAnalysisCard from "@/components/AIAnalysisCard";
 
 const SLOT_COLORS = ["#4A6741", "#C87941", "#4B7A94"];
 const NONE = "__none__";
@@ -207,6 +208,26 @@ export const Compare = ({ scenario }) => {
               </table>
             </div>
           </Card>
+
+          {/* AI plain-English analysis of the side-by-side comparison */}
+          <AIAnalysisCard
+            testid="compare-ai-analysis"
+            title="AI analysis of this comparison"
+            focus="You are reviewing a side-by-side comparison of 2-3 retirement scenarios. Explain in plain English which scenario dominates on which metric (lifetime tax, ending net worth, after-tax to heirs, inherited IRA tax) and WHY — differences in conversion aggressiveness, funding order, SS claim age, allocation, etc. Highlight the biggest deltas. 4-5 crisp bullets max."
+            summary={{
+              page: "Compare",
+              scenarios: cols.map((s) => ({
+                label: s.label,
+                lifetime_taxes: s.data?.summary?.lifetime_taxes,
+                ending_net_worth: s.data?.summary?.ending_net_worth,
+                total_roth_converted: s.data?.summary?.total_roth_converted,
+                ending_roth: s.data?.summary?.ending_roth,
+                after_tax_to_heirs: s.data?.legacy?.after_tax_estate_to_heirs,
+                inherited_ira_tax: s.data?.legacy?.inherited_ira_tax,
+              })),
+              metrics_analyzed: METRICS.map((m) => m[0]),
+            }}
+          />
         </>
       )}
     </div>

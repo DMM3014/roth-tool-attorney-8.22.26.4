@@ -73,6 +73,16 @@ h1, h2, h3, h4, .font-display {
     background-size: 4px 4px;
 }
 
+/* ---- Presentation-tab client PDF (hidden on-screen, revealed only during native print) ---- */
+.presentation-print-block { display: none; }
+
+/* Force each .pdf-page section onto its own PDF page when html2pdf.js reads
+   the DOM stylesheet with `pagebreak.mode: 'css'`. Inline styles are less
+   reliably honored — this rule wins. `:not(:first-child)` skips the cover so
+   the PDF doesn't start with a blank leading page. */
+.pdf-page { page-break-inside: avoid; break-inside: avoid; }
+.pdf-page:not(:first-child) { page-break-before: always; break-before: page; }
+
 /* ---- Presentation print layout (Analytics → Print / Export PDF) ---- */
 .print-only { display: none; }
 .concepts-print-block { position: absolute; left: 0; top: 0; width: 720px; opacity: 0; pointer-events: none; z-index: -10; }
@@ -104,4 +114,33 @@ h1, h2, h3, h4, .font-display {
     .whitepaper-print-block { display: none; }
     body.print-whitepaper .whitepaper-print-block { display: block; page-break-before: always; break-before: page; }
     body.print-whitepaper .whitepaper-print-block h2 { break-after: avoid; page-break-after: avoid; }
+
+    /* Client Presentation tab: hide everything except the presentation-print-block */
+    body.print-presentation .presentation-print-block { display: block; }
+    body.print-presentation .presentation-print-block,
+    body.print-presentation .presentation-print-block * { visibility: visible !important; }
+    body.print-presentation .presentation-print-block {
+        position: absolute; left: 0; top: 0; width: 100%;
+        z-index: auto !important; pointer-events: auto !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    body.print-presentation #analytics-print,
+    body.print-presentation .whitepaper-print-block,
+    body.print-presentation .concepts-print-block { display: none !important; }
+
+    /* "Download PDF" from the White Paper tab: show the currently-mounted on-screen
+       WhitePaper article (.whitepaper-standalone), hide everything else. Different
+       body class than .print-whitepaper so it does NOT reveal the hidden appendix
+       block that lives inside the Presentation deck. */
+    body.print-whitepaper-standalone .whitepaper-standalone,
+    body.print-whitepaper-standalone .whitepaper-standalone * { visibility: visible !important; }
+    body.print-whitepaper-standalone .whitepaper-standalone {
+        position: absolute; left: 0; top: 0; width: 100%;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    body.print-whitepaper-standalone #analytics-print,
+    body.print-whitepaper-standalone .presentation-print-block,
+    body.print-whitepaper-standalone .concepts-print-block { display: none !important; }
+    body.print-whitepaper-standalone .whitepaper-standalone .no-print { display: none !important; }
+    body.print-whitepaper-standalone .whitepaper-standalone article { max-width: none !important; }
 }

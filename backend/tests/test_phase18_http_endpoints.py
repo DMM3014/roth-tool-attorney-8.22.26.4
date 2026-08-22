@@ -93,8 +93,8 @@ def test_projection_per_owner_ledger_and_math(cfg):
     assert r.status_code == 200
     data = r.json()
     # Math regression
-    assert data["summary"]["lifetime_taxes"] == 7159874.48
-    assert data["summary"]["ending_net_worth"] == 80804720.63
+    assert data["summary"]["lifetime_taxes"] == 6351096.5
+    assert data["summary"]["ending_net_worth"] == 84563211.53
     # Per-owner ledger
     ledger = data["roth_compliance"]["conversions_ledger"]
     assert len(ledger) > 0
@@ -120,14 +120,13 @@ def test_strategy_sweep_default_topN_fill32(cfg):
     ranked = data["ranked"]
     assert len(ranked) >= 3
     top = ranked[0]
-    # After the V17-alignment fix (spending-first solver ordering), the sweep now
-    # correctly identifies the aggressive front-load Roth conversion phased strategy
-    # as the winner on the built-in defaults — because the engine now maximises Roth
-    # more efficiently when Taxable can absorb spending needs. Just check the winner
-    # is Aggressive 37% phased with a plausible legacy value.
-    assert top["kind"] == "phased", f"expected phased, got {top}"
-    assert "37%" in top["label"], f"expected 37% pre-SS phased, got {top['label']}"
-    assert 158_000_000 <= top["after_tax_estate"] <= 163_000_000
+    # After the Phase 43 Excel-parity fix (cost basis is consumed on every taxable
+    # sale, so early conversion taxes funded from low-basis taxable accounts realize
+    # more LTCG), the front-loaded 37% phased schedule loses its edge and the sweep
+    # now favors a Fill-35% window through the pre-RMD years on the built-in defaults.
+    assert top["kind"] == "single", f"expected single, got {top}"
+    assert "35%" in top["label"], f"expected Fill 35% window, got {top['label']}"
+    assert 158_000_000 <= top["after_tax_estate"] <= 170_000_000
 
 
 # ---------- SS optimizer regression ----------

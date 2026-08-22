@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { ArrowRight, Target, Sparkles, DownloadCloud, Loader2 } from "lucide-react";
+import { ArrowRight, Target, Sparkles, DownloadCloud, Loader2, AlertTriangle, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { optimizeConversion, runProjection, fmtUSD, fmtPct } from "@/lib/api";
@@ -11,6 +12,17 @@ import { toast } from "sonner";
 import { AIInsights } from "@/components/AIInsights";
 
 const BRACKETS = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37];
+
+// LTCG/QDIV band tops (2026 base-year $, indexed by the projection's bracket_index)
+// mirror the tax_engine constants — needed to detect when a conversion pushes
+// preferential income across the 0→15% or 15→20% cliffs (Kitces "capital gains
+// bump zone"). Keeping these in sync with tax_engine.py is intentional: the
+// bump-zone effect is purely a function of ordinary vs. preferential band overlap,
+// no extra backend call is required to detect it.
+const LTCG0_MFJ = 98900;
+const LTCG15_MFJ = 613700;
+const LTCG0_SGL = 49450;
+const LTCG15_SGL = 545500;
 
 const NumField = ({ label, value, onChange, testid, step = 1000 }) => (
   <div>
@@ -29,7 +41,7 @@ export const Optimizer = ({ scenario }) => {
   const taxableTotal = scenario.accounts
     .filter((a) => a.tax_type === "Taxable")
     .reduce((sum, a) => sum + (a.beginning_balance || 0), 0);
-  const divRate = scenario.dividend_yield ?? 0.02;
+  const divRate = scenario.dividend_yield ?? 0.01;
   const divFromRate = Math.round(divRate * taxableTotal);
 
   const proj = scenario.projection;
@@ -40,6 +52,63 @@ export const Optimizer = ({ scenario }) => {
   const clientDob = scenario.household?.client_dob_year;
   const spouseDob = scenario.household?.spouse_dob_year;
   const YEARS = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
+
+  // Sum any Dividend/LTCG income streams (e.g. "Special Dividends & LTCG") that
+  // are active in the given year — mirrors backend/projection.py::_stream_amount
+  // so the Optimizer preview and the multi-year engine agree byte-for-byte on
+  // preferential income sourced from streams. Follows the same use/skip logic,
+  // start_date/stop_date proration, Monthly-vs-Annual frequency, and COLA
+  // compounding rules the projection engine uses.
+  const parseYMD = (s) => {
+    if (!s) return null;
+    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+  };
+  const daysInYear = (y) => (((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365);
+  const dayOfYear = ({ y, m, d }) => {
+    const days = [31, 28 + (((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 1 : 0), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let n = d;
+    for (let i = 0; i < m - 1; i++) n += days[i];
+    return n;
+  };
+  const activeFraction = (sd, ed, year) => {
+    // sd/ed may be null. Backend semantics: outside range → 0; entirely inside → 1;
+    // boundary years prorate by the active day-count fraction.
+    if (sd && year < sd.y) return 0;
+    if (ed && year > ed.y) return 0;
+    if ((!sd || year > sd.y) && (!ed || year < ed.y)) return 1;
+    const totalDays = daysInYear(year);
+    const startDay = (sd && sd.y === year) ? dayOfYear(sd) : 1;
+    const endDay = (ed && ed.y === year) ? dayOfYear(ed) : totalDays;
+    return Math.max(0, (endDay - startDay + 1) / totalDays);
+  };
+  const streamDividendsForYear = (year) => {
+    let total = 0;
+    for (const s of (scenario.income_streams || [])) {
+      if (s.type !== "Dividend/LTCG") continue;
+      if (s.use === false) continue; // honour the "Use" toggle on Plan Inputs
+      const sd = parseYMD(s.start_date);
+      const ed = parseYMD(s.stop_date);
+      const startYearS = sd ? sd.y : (s.start_year ?? startYear);
+      let frac;
+      if (sd || ed) {
+        frac = activeFraction(sd, ed, year);
+      } else {
+        const stop = s.stop_year;
+        if (year < startYearS || (stop && year > stop)) continue;
+        frac = 1;
+      }
+      if (frac <= 0) continue;
+      const monthly = s.frequency === "Monthly";
+      const freqMul = monthly ? 12 : 1; // backend only supports Monthly / Annual
+      let annual = Number(s.amount || 0) * freqMul;
+      const cola = Number(s.cola || 0);
+      annual *= Math.pow(1 + cola, Math.max(0, year - startYearS));
+      annual *= frac;
+      total += annual;
+    }
+    return Math.round(total);
+  };
 
   const idxFor = (year) => ({
     bracket_index: Math.pow(1 + bracketRate, year - startYear),
@@ -64,7 +133,9 @@ export const Optimizer = ({ scenario }) => {
       ira_distributions: 0,
       cash_interest: 3000,
       gross_ss: 0,
-      recurring_div_ltcg: divFromRate,
+      // Include both auto-computed brokerage dividends AND any explicit
+      // Dividend/LTCG income streams the user configured on the Inputs page.
+      recurring_div_ltcg: divFromRate + streamDividendsForYear(startYear),
       realized_ltcg: 0,
       state_rate: scenario.tax.state_rate,
       include_irmaa: true,
@@ -73,6 +144,8 @@ export const Optimizer = ({ scenario }) => {
   const [targetIdx, setTargetIdx] = useState(3); // index into BRACKETS -> 0.24
   const [result, setResult] = useState(null);
   const [pulling, setPulling] = useState(false);
+  const [irmaaAware, setIrmaaAware] = useState(false);
+  const [irmaaBuffer, setIrmaaBuffer] = useState(3000);
 
   const set = (k) => (v) => setInp((p) => ({ ...p, [k]: v }));
   const targetRate = BRACKETS[targetIdx];
@@ -80,7 +153,18 @@ export const Optimizer = ({ scenario }) => {
   const setYear = (y) => {
     const year = +y;
     const c = ageCountFor(year, inp.filing_status);
-    setInp((p) => ({ ...p, year, ...idxFor(year), num_65plus: c, medicare_count: c }));
+    // Re-sync recurring_div_ltcg to the selected year's stream state so
+    // starting/stopping a Dividend/LTCG stream on Plan Inputs immediately
+    // reflects in the tax breakdown when the user changes tax year — was
+    // stale otherwise (iteration_41 bug).
+    setInp((p) => ({
+      ...p,
+      year,
+      ...idxFor(year),
+      num_65plus: c,
+      medicare_count: c,
+      recurring_div_ltcg: divFromRate + streamDividendsForYear(year),
+    }));
   };
   const setFiling = (v) => {
     const c = ageCountFor(inp.year, v);
@@ -125,8 +209,8 @@ export const Optimizer = ({ scenario }) => {
   };
 
   const recalc = useCallback(() => {
-    optimizeConversion(inp, targetRate, 0).then(setResult);
-  }, [inp, targetRate]);
+    optimizeConversion(inp, targetRate, 0, { irmaa_aware: irmaaAware, irmaa_cliff_buffer: irmaaBuffer }).then(setResult);
+  }, [inp, targetRate, irmaaAware, irmaaBuffer]);
 
   useEffect(() => {
     const t = setTimeout(recalc, 250);
@@ -135,6 +219,61 @@ export const Optimizer = ({ scenario }) => {
 
   const before = result?.before;
   const after = result?.after;
+
+  // ---- Capital-gains "bump zone" detection ----
+  // A Roth conversion adds to ordinary taxable income; LTCG/QDIV stacks ON TOP of
+  // that base, so a big enough conversion can push some qualified dividends /
+  // long-term gains from the 0% band into 15%, or from 15% into 20%. When it does,
+  // the effective marginal rate on the conversion dollars silently ramps to
+  // ~27–50% (ordinary rate PLUS 15pp or 5pp on the bumped preferential dollars).
+  // Warn the user with a concrete $ callout of what got bumped and how much extra
+  // pref tax the conversion cost them.
+  const bumpAlert = useMemo(() => {
+    if (!before || !after) return null;
+    const mfj = inp.filing_status === "MFJ";
+    const idx = inp.bracket_index || 1;
+    const l0 = (mfj ? LTCG0_MFJ : LTCG0_SGL) * idx;
+    const l15 = (mfj ? LTCG15_MFJ : LTCG15_SGL) * idx;
+    const beforeOrd = before.ordinary_taxable_income || 0;
+    const afterOrd = after.ordinary_taxable_income || 0;
+    const pref = before.preferential_within_taxable || 0;
+    if (pref <= 0) return null;
+    if (afterOrd <= beforeOrd + 0.5) return null;
+    // "Preferential dollars in band X" helpers: pref stacks from `ord` up to `ord+pref`,
+    // and we intersect that segment with each LTCG band.
+    const prefIn = (ord, lo, hi) => Math.max(0, Math.min(ord + pref, hi) - Math.max(ord, lo));
+    const in0 = { before: prefIn(beforeOrd, 0, l0), after: prefIn(afterOrd, 0, l0) };
+    const in15 = { before: prefIn(beforeOrd, l0, l15), after: prefIn(afterOrd, l0, l15) };
+    const in20 = { before: prefIn(beforeOrd, l15, Infinity), after: prefIn(afterOrd, l15, Infinity) };
+    // Net-flow rule of thumb:
+    //   dollars pushed off the 0% shelf = max(0, in0.before - in0.after)
+    //   dollars pushed into the 20% band = max(0, in20.after - in20.before)
+    // The 15% band's balance reconciles the two — any 0% dollars that didn't leak
+    // all the way to 20 landed there.
+    const round0 = (x) => (Math.abs(x) < 1 ? 0 : Math.round(x));
+    const bumped15to20 = round0(Math.max(0, in20.after - in20.before));
+    // Dollars that left the 0% band and did NOT leak all the way to the 20% band.
+    // Clamp the entire expression at 0 — bumped15to20 can exceed the drop-from-0
+    // when the flow is purely 15→20 (no 0-band involvement at all).
+    const bumped0to15 = round0(Math.max(0, Math.max(0, in0.before - in0.after) - bumped15to20));
+    // Ground-truth extra pref tax from the tax engine, no reconstruction guesswork.
+    const ltcgExtra = Math.round(Math.max(0, (after.federal_ltcg_tax || 0) - (before.federal_ltcg_tax || 0)));
+    if (bumped0to15 <= 0 && bumped15to20 <= 0 && ltcgExtra < 1) return null;
+    return {
+      bumped0to15,
+      bumped15to20,
+      ltcgExtra,
+      ceiling15: Math.round(l15),
+      ceiling0: Math.round(l0),
+      in15After: round0(in15.after),
+      in20After: round0(in20.after),
+    };
+  }, [before, after, inp.filing_status, inp.bracket_index]);
+  const bumpTagline = bumpAlert && (bumpAlert.bumped15to20 > 0
+    ? `${fmtUSD(bumpAlert.bumped15to20)} of gains pushed 15% → 20%`
+    : bumpAlert.bumped0to15 > 0
+      ? `${fmtUSD(bumpAlert.bumped0to15)} of gains pushed 0% → 15%`
+      : "");
 
   const aiSummary = useMemo(
     () => result && { mode: "single_year", year: inp.year, filing_status: inp.filing_status, target_bracket: targetRate, ...result },
@@ -196,7 +335,11 @@ export const Optimizer = ({ scenario }) => {
               <div>
                 <NumField label="Qualified Dividends + Recurring LTCG" value={inp.recurring_div_ltcg} onChange={set("recurring_div_ltcg")} testid="in-div" />
                 <p className="text-[10px] text-muted-foreground mt-1" data-testid="div-derivation">
-                  Auto = {fmtPct(divRate)} dividend rate × {fmtUSD(taxableTotal)} taxable balances. Editable; change the rate on Plan Inputs.
+                  Auto = {fmtPct(divRate)} dividend rate × {fmtUSD(taxableTotal)} taxable balances = {fmtUSD(divFromRate)}
+                  {streamDividendsForYear(inp.year) > 0 && (
+                    <> · plus <span className="font-medium">{fmtUSD(streamDividendsForYear(inp.year))}</span> from Dividend/LTCG income streams (e.g. Special Dividends) active in {inp.year}</>
+                  )}
+                  . Editable; change the rate or streams on Plan Inputs.
                 </p>
               </div>
               <NumField label="Realized LTCG (sales)" value={inp.realized_ltcg} onChange={set("realized_ltcg")} testid="in-realized" />
@@ -242,6 +385,84 @@ export const Optimizer = ({ scenario }) => {
           <Metric label="Bracket Ceiling" value={result?.bracket_ceiling ? fmtUSD(result.bracket_ceiling) : "No cap"} />
           <Metric label="Extra Tax on Conversion" value={fmtUSD(result?.tax_on_conversion)} warn testid="tax-on-conversion" />
         </div>
+
+        {/* IRMAA-cliff-aware toggle */}
+        <div className="mt-4 rounded-lg border border-[#EBE8E0] bg-[#F9F8F6] p-3" data-testid="irmaa-aware-card">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-[#4A6741]" />
+                <span className="text-xs font-semibold text-[#1A1A1A]">IRMAA cliff-aware routing</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
+                Clip the recommendation so MAGI stays clear of the next Medicare Part-B IRMAA tier. Crossing a tier by
+                even $1 costs a couple ~$1,000–$5,000/yr in extra premiums.
+              </p>
+            </div>
+            <div className="shrink-0 flex items-center gap-2">
+              <Switch checked={irmaaAware} onCheckedChange={setIrmaaAware} data-testid="irmaa-aware-toggle" />
+              <span className="text-[11px] text-muted-foreground">
+                Buffer:{" "}
+                <input
+                  type="number"
+                  value={irmaaBuffer}
+                  min={0}
+                  max={20000}
+                  step={500}
+                  onChange={(e) => setIrmaaBuffer(Math.max(0, Math.min(20000, parseFloat(e.target.value) || 0)))}
+                  disabled={!irmaaAware}
+                  data-testid="irmaa-buffer-input"
+                  className="w-20 px-1.5 py-0.5 border border-[#EBE8E0] rounded text-[11px] text-right"
+                />{" "}
+                $
+              </span>
+            </div>
+          </div>
+          {result?.avoided_irmaa_cliff && (
+            <div className="mt-2 rounded-md border border-[#4A6741]/30 bg-[#4A6741]/8 px-3 py-2" data-testid="irmaa-cliff-badge">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-[#4A6741] mb-0.5">
+                Cliff Avoided
+              </div>
+              <p className="text-[11px] text-[#2A2A2A] leading-relaxed">
+                Trimmed the conversion by <strong>{fmtUSD(result.avoided_irmaa_cliff.avoided_conversion_amount)}</strong>{" "}
+                to keep MAGI at least <strong>{fmtUSD(result.avoided_irmaa_cliff.buffer)}</strong> below the next IRMAA
+                tier at <strong>{fmtUSD(result.avoided_irmaa_cliff.threshold)}</strong>. The unconstrained recommendation
+                would have been <strong>{fmtUSD(result.avoided_irmaa_cliff.unconstrained_conversion)}</strong>.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {bumpAlert && (
+          <div className="mt-4 rounded-lg border border-[#C87941]/40 bg-[#FBF3EC] p-3 flex items-start gap-3"
+               data-testid="bump-zone-alert">
+            <AlertTriangle className="h-4 w-4 text-[#C87941] mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="text-xs font-semibold text-[#C87941]">Capital-gains bump zone</span>
+                <span className="text-[10px] rounded-full bg-[#C87941] text-white px-2 py-0.5" data-testid="bump-zone-tagline">
+                  {bumpTagline || `+${fmtUSD(bumpAlert.ltcgExtra)} extra LTCG/QDIV tax`}
+                </span>
+              </div>
+              <p className="text-[11px] text-[#7A4A2E] leading-relaxed">
+                This conversion stacks additional ordinary income beneath your qualified dividends and long-term gains, pushing some of them into a higher preferential bracket. The <span className="font-semibold">Extra Tax on Conversion</span> above already includes this <span className="font-semibold" data-testid="bump-zone-ltcg-extra">{fmtUSD(bumpAlert.ltcgExtra)}</span> of extra LTCG/QDIV tax — the effective marginal rate on the marginal conversion dollars is higher than the {(targetRate * 100).toFixed(0)}% ordinary bracket alone.
+              </p>
+              <ul className="text-[11px] text-[#7A4A2E] leading-relaxed mt-1 space-y-0.5 list-disc pl-4">
+                {bumpAlert.bumped0to15 > 0 && (
+                  <li data-testid="bump-zone-0to15">
+                    <span className="font-semibold">{fmtUSD(bumpAlert.bumped0to15)}</span> of gains crossed the 0% → 15% cliff (ceiling <span className="font-mono">{fmtUSD(bumpAlert.ceiling0)}</span> of ordinary taxable income).
+                  </li>
+                )}
+                {bumpAlert.bumped15to20 > 0 && (
+                  <li data-testid="bump-zone-15to20">
+                    <span className="font-semibold">{fmtUSD(bumpAlert.bumped15to20)}</span> of gains crossed the 15% → 20% cliff (ceiling <span className="font-mono">{fmtUSD(bumpAlert.ceiling15)}</span> of ordinary taxable income).
+                  </li>
+                )}
+                <li>Consider a smaller conversion that stops below the cliff, or realize gains in a low-income year instead.</li>
+              </ul>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Breakdown table */}

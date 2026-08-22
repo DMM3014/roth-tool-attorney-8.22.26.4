@@ -25,9 +25,12 @@ def client():
 
 @pytest.fixture(scope="module")
 def defaults(client):
-    r = client.get(f"{BASE_URL}/api/defaults", timeout=15)
-    assert r.status_code == 200
-    return r.json()
+    # Built-in code defaults — NOT GET /api/defaults, which returns user-saved
+    # overrides ("Save as defaults") and would make these math tests environment-dependent.
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from defaults import DEFAULT_SCENARIO
+    return copy.deepcopy(DEFAULT_SCENARIO)
 
 
 class TestHeirsBreakdown:

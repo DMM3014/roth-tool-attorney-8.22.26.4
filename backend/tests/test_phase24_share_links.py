@@ -150,3 +150,25 @@ def test_list_scenarios_exposes_share_token(owner, scenario):
     match = [s for s in r.json() if s["id"] == sid]
     assert match, "saved scenario missing from list"
     assert match[0].get("share_token") == tok, "list should surface current share token for the owner"
+
+
+def test_multiple_unshared_and_revoked_scenarios_coexist(owner, defaults):
+    """Regression: the share_token unique index must be PARTIAL — sparse indexes still
+    index explicit nulls, so two unshared plans (or two revoked ones, which $set null)
+    collided with E11000 / HTTP 500."""
+    ids = []
+    try:
+        for _ in range(2):
+            r = owner.post(f"{BASE_URL}/api/scenarios",
+                           json={"name": f"nulltok-{uuid.uuid4().hex[:6]}",
+                                 "config": copy.deepcopy(defaults)}, timeout=10)
+            assert r.status_code == 200, r.text
+            ids.append(r.json()["id"])
+        # share then revoke both — two explicit-null share_tokens must coexist
+        for sid2 in ids:
+            assert owner.post(f"{BASE_URL}/api/scenarios/{sid2}/share", timeout=10).status_code == 200
+        for sid2 in ids:
+            assert owner.delete(f"{BASE_URL}/api/scenarios/{sid2}/share", timeout=10).status_code == 200
+    finally:
+        for sid2 in ids:
+            owner.delete(f"{BASE_URL}/api/scenarios/{sid2}", timeout=10)

@@ -1,7 +1,8 @@
-import { TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, AlertTriangle, Table2 } from "lucide-react";
+import { TrendingUp, ShieldCheck, BarChart3, Activity, CloudLightning, Flame, Link2, AlertTriangle, Table2, PauseCircle, LifeBuoy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { fmtUSD, fmtPct } from "@/lib/api";
 import { SuccessGauge, SuccessCompareChart, FanChart, EndingHistogram } from "@/components/MonteCarloCharts";
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 
 const CORR_ROWS = [
   ["stocks_bonds", "Stocks ↔ Bonds"],
@@ -89,6 +90,13 @@ export const MonteCarloResults = ({
         {res.guardrail?.enabled && (
           <span className="rounded-full border border-[#EBE8E0] bg-[#F9F8F6] px-3 py-1" data-testid="mc-guardrail-info">
             Guardrail −{Math.round(res.guardrail.cut_pct * 100)}% after loss years: success {fmtPct(res.guardrail.success_without_guardrail)} → <span className="font-semibold text-[#4A6741]">{fmtPct(res.guardrail.success_with_guardrail)}</span> · median {res.guardrail.median_cut_years} trimmed yrs
+          </span>
+        )}
+        {res.conversion_halt?.enabled && (
+          <span className="rounded-full border border-[#EBE8E0] bg-[#F9F8F6] px-3 py-1" data-testid="mc-halt-info">
+            <PauseCircle className="inline h-3 w-3 mr-1 text-[#4A6741]" />
+            Halt ≥{Math.round(res.conversion_halt.drop_threshold * 100)}% drop: triggered in <span className="font-semibold text-[#4A6741]">{fmtPct(res.conversion_halt.triggered_pct)}</span> of trials
+            {res.conversion_halt.median_trigger_year != null && <> · median year {res.conversion_halt.median_trigger_year}</>}
           </span>
         )}
       </div>
@@ -251,6 +259,23 @@ export const MonteCarloResults = ({
         </div>
       </Card>
 
+      {/* Conversion-halt histogram: WHERE in the horizon do the halts fire? */}
+      {res.conversion_halt?.enabled && res.conversion_halt?.trigger_year_counts && (
+        <HaltHistogramCard res={res} />
+      )}
+
+      {/* Guardrail persistence: symmetric visibility for the spending guardrail so
+          advisors can compare it head-to-head with the halt histogram card. */}
+      {res.guardrail?.enabled && (
+        <GuardrailPersistenceCard res={res} />
+      )}
+
+      {/* Outcome distributions beyond success probability — total conversions
+          (exact), lifetime taxes (model-locked), after-tax inheritance (approx). */}
+      {res.outcome_distributions && (
+        <OutcomeDistributionsCard res={res} />
+      )}
+
       {/* Percentile outcomes table */}
       <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-percentile-table-card">
         <div className="flex items-center gap-2 mb-1">
@@ -313,5 +338,239 @@ export const MonteCarloResults = ({
         <EndingHistogram histogram={wc.histogram} />
       </Card>
     </>
+  );
+};
+
+
+// ---------------------------------------------------------------------------
+// HaltHistogramCard — "When does the halt fire?" per-year bar chart. Shows the
+// number of trials whose planned Roth conversions were cancelled in each year,
+// so advisors can see whether triggers cluster in the early conversion window
+// (bad for parents' upfront tax bill) or across the whole horizon.
+// ---------------------------------------------------------------------------
+const HaltHistogramCard = ({ res }) => {
+  const halt = res.conversion_halt;
+  const trigCounts = halt.trigger_year_counts || [];
+  const resCounts = halt.resume_year_counts || [];
+  const years = res.years || [];
+  const winStart = halt.conversion_window_start;
+  const winEnd = halt.conversion_window_end;
+  const recoveryOn = (halt.resume_after_positive_years || 0) > 0;
+  const anyResume = resCounts.some((c) => c > 0);
+  const data = years.map((y, i) => ({
+    year: y,
+    triggers: trigCounts[i] || 0,
+    resumes: resCounts[i] || 0,
+    inWindow: winStart != null && winEnd != null && y >= winStart && y <= winEnd,
+  }));
+  const total = trigCounts.reduce((s, c) => s + c, 0);
+  const peakIdx = trigCounts.indexOf(Math.max(...(trigCounts.length ? trigCounts : [0])));
+  const peakYear = peakIdx >= 0 ? years[peakIdx] : null;
+  const peakCount = peakIdx >= 0 ? trigCounts[peakIdx] : 0;
+  return (
+    <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-halt-histogram-card">
+      <div className="flex items-center gap-2 mb-1">
+        <PauseCircle className="h-4 w-4 text-[#4A6741]" />
+        <h3 className="font-display text-base font-bold tracking-tight">
+          Halt {recoveryOn ? "trigger & resume" : "triggers"} by year — where do the drawdowns cluster?
+        </h3>
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-3">
+        Green bars = trials whose remaining Roth conversions were <strong>halted</strong> that
+        year (prior-year drop ≥ {Math.round(halt.drop_threshold * 100)}%).
+        {recoveryOn && anyResume && (
+          <> Amber bars = trials whose halt was <strong>lifted</strong> that year after {halt.resume_after_positive_years}
+          consecutive positive-return years.</>
+        )}
+        {" "}Sand shading marks the conversion window ({winStart}–{winEnd}).
+        {total > 0 && peakYear != null && (
+          <> Peak halt year: <strong className="text-[#4A6741]">{peakYear}</strong> ({peakCount} trials).</>
+        )}
+        {recoveryOn && anyResume && halt.median_resume_year != null && (
+          <> Median resume year: <strong className="text-[#8A6820]">{halt.median_resume_year}</strong>.</>
+        )}
+      </p>
+      <div style={{ width: "100%", height: 220 }}>
+        <ResponsiveContainer>
+          <BarChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#EBE8E0" />
+            <XAxis dataKey="year" tick={{ fontSize: 10 }} tickLine={false} />
+            <YAxis tick={{ fontSize: 10 }} tickLine={false} allowDecimals={false} width={30} />
+            <Tooltip
+              contentStyle={{ fontSize: 11 }}
+              formatter={(v, key) => [`${v} trials`, key === "triggers" ? "Halts triggered" : "Halts lifted"]}
+              labelFormatter={(y) => `Year ${y}`}
+            />
+            {winStart != null && (
+              <ReferenceLine x={winStart} stroke="#C4A64A" strokeDasharray="3 3" label={{ value: "window start", fontSize: 9, position: "insideTopLeft", fill: "#8A6D3B" }} />
+            )}
+            {winEnd != null && (
+              <ReferenceLine x={winEnd} stroke="#C4A64A" strokeDasharray="3 3" label={{ value: "window end", fontSize: 9, position: "insideTopRight", fill: "#8A6D3B" }} />
+            )}
+            <Bar dataKey="triggers" isAnimationActive={false} name="Halts triggered">
+              {data.map((d, i) => (
+                <Cell key={i} fill={d.inWindow ? "#4A6741" : "#C7C0AC"} />
+              ))}
+            </Bar>
+            {recoveryOn && anyResume && (
+              <Bar dataKey="resumes" isAnimationActive={false} name="Halts lifted" fill="#C4A64A" />
+            )}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="grid grid-cols-3 gap-4 mt-4">
+        <Stat label="Trials triggered" value={`${halt.trials_triggered} / ${res.n_trials} (${fmtPct(halt.triggered_pct)})`} />
+        <Stat label="Median trigger year" value={halt.median_trigger_year != null ? String(halt.median_trigger_year) : "—"} accent />
+        <Stat label="P10 → P90 trigger year" value={halt.p10_trigger_year != null ? `${halt.p10_trigger_year} → ${halt.p90_trigger_year}` : "—"} />
+      </div>
+      {recoveryOn && (
+        <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#EBE8E0]" data-testid="mc-halt-resume-stats">
+          <Stat label="Trials resumed" value={halt.trials_resumed > 0
+            ? `${halt.trials_resumed} / ${halt.trials_triggered} (${fmtPct(halt.resumed_pct)})`
+            : "0 (recovery rule inactive)"} />
+          <Stat label="Median resume year" value={halt.median_resume_year != null ? String(halt.median_resume_year) : "—"} accent />
+          <Stat label="P10 → P90 resume year" value={halt.p10_resume_year != null ? `${halt.p10_resume_year} → ${halt.p90_resume_year}` : "—"} />
+        </div>
+      )}
+    </Card>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// GuardrailPersistenceCard — symmetric visibility for the guardrail alongside the
+// halt histogram. Reports the guardrail's success-rate lift AND how often / how
+// deeply it had to bite (median, P90, and max cut years per trial) so advisors
+// see the FULL cost/benefit picture, not just the headline success%.
+// ---------------------------------------------------------------------------
+const GuardrailPersistenceCard = ({ res }) => {
+  const gr = res.guardrail;
+  const lift = (gr.success_with_guardrail || 0) - (gr.success_without_guardrail || 0);
+  const cutPct = Math.round((gr.cut_pct || 0) * 100);
+  return (
+    <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-guardrail-persistence-card">
+      <div className="flex items-center gap-2 mb-1">
+        <LifeBuoy className="h-4 w-4 text-[#4A6741]" />
+        <h3 className="font-display text-base font-bold tracking-tight">
+          Spending guardrail — how often does it bite?
+        </h3>
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
+        A {cutPct}% cut to discretionary spending is applied in any year that follows a
+        portfolio loss. This card shows both the <strong>benefit</strong> (success-rate lift
+        vs no guardrail) and the <strong>cost</strong> (how many years the household would
+        actually have to trim expenses, per trial) — critical context clients often miss when
+        they see only the headline success number.
+      </p>
+      <div className="grid grid-cols-3 gap-4">
+        <Stat label="Success without / with guardrail"
+          value={`${fmtPct(gr.success_without_guardrail)} → ${fmtPct(gr.success_with_guardrail)}`}
+          accent />
+        <Stat label="Lift from guardrail"
+          value={`${lift >= 0 ? "+" : ""}${Math.round(lift * 100)} pts`} />
+        <Stat label="Trials that ever cut spending"
+          value={`${gr.trials_with_cuts} / ${res.n_trials} (${fmtPct(gr.trials_with_cuts_pct)})`} />
+      </div>
+      <div className="grid grid-cols-4 gap-4 mt-3 pt-3 border-t border-[#EBE8E0]">
+        <Stat label="Mean cut years / trial" value={`${gr.mean_cut_years}`} />
+        <Stat label="Median cut years" value={String(gr.median_cut_years)} accent />
+        <Stat label="P10 → P90 cut years" value={`${gr.p10_cut_years} → ${gr.p90_cut_years}`} />
+        <Stat label="Worst-case cut years" value={String(gr.max_cut_years)} />
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-3 leading-relaxed">
+        If the median trial had {gr.median_cut_years} cut year{gr.median_cut_years === 1 ? "" : "s"}
+        {gr.max_cut_years > gr.median_cut_years * 2 && (
+          <> and the worst 10% had ≥ {gr.p90_cut_years} cut year{gr.p90_cut_years === 1 ? "" : "s"}</>
+        )}, the guardrail is doing REAL work — advisors should confirm the client is comfortable
+        living through that many trimmed years if a bear market hits early.
+      </p>
+    </Card>
+  );
+};
+
+
+// Outcome distributions beyond the probability-of-success headline: total Roth
+// conversions (exact under the halt state machine), lifetime taxes (locked
+// cash-flow model), and after-tax inheritance (first-order approximation).
+const OutcomeDistributionsCard = ({ res }) => {
+  const od = res?.outcome_distributions;
+  if (!od) return null;
+  const conv = od.conversions;
+  const taxes = od.lifetime_taxes;
+  const inh = od.after_tax_inheritance;
+  const fullPct = Math.round((conv?.pct_trials_full_plan || 0) * 100);
+  const rows = [
+    conv && {
+      key: "conv", label: "Total Roth conversions executed", d: conv,
+      det: conv.planned_total, detLabel: "Planned schedule",
+      basis: "Exact — halt/resume state machine × the plan's conversion schedule",
+    },
+    taxes && {
+      key: "tax", label: "Lifetime taxes paid", d: taxes,
+      det: taxes.det_value, detLabel: "Deterministic plan",
+      basis: "Locked cash-flow model — halted trials pay the no-conversion tax stream; inflation-scaled per trial",
+    },
+    inh && {
+      key: "inh", label: "After-tax inheritance", d: inh,
+      det: inh.det_value, detLabel: "Deterministic plan",
+      basis: `Approximation — deterministic heirs÷ending-wealth ratio × each trial's ending wealth, less heir tax (${Math.round((inh.heir_rate || 0) * 100)}%) on skipped conversions`,
+    },
+  ].filter(Boolean);
+  return (
+    <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="mc-outcome-dist-card">
+      <div className="flex items-center gap-2 mb-1">
+        <BarChart3 className="h-4 w-4 text-[#4A6741]" />
+        <h3 className="font-display text-base font-bold tracking-tight">
+          Beyond the Success Rate — Distribution of Plan Outcomes
+        </h3>
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
+        The deterministic plan reports a single conversion total, lifetime tax bill, and legacy figure. Across
+        the {res.n_trials?.toLocaleString?.() || res.n_trials} simulated futures those are <strong>distributions</strong>
+        {od.halt_active && conv ? (
+          <> — with the drawdown-halt rule active, the full {fmtUSD(conv.planned_total)} conversion schedule
+          executes in only <strong className="text-[#C87941]">{fullPct}%</strong> of trials, so the deterministic
+          conversion total and its legacy benefit should not be read as assured</>
+        ) : null}.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs" data-testid="mc-outcome-dist-table">
+          <thead className="text-muted-foreground text-left">
+            <tr className="border-b border-[#EBE8E0]">
+              <th className="px-2 py-2">Metric</th>
+              <th className="px-2 py-2 text-right">P10</th>
+              <th className="px-2 py-2 text-right">P25</th>
+              <th className="px-2 py-2 text-right">Median</th>
+              <th className="px-2 py-2 text-right">P75</th>
+              <th className="px-2 py-2 text-right">P90</th>
+              <th className="px-2 py-2 text-right">Deterministic</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-b border-[#F3F1EC]" data-testid={`mc-outcome-dist-row-${row.key}`}>
+                <td className="px-2 py-2">
+                  <span className="font-semibold text-[#1A1A1A]">{row.label}</span>
+                  <div className="text-[10px] text-muted-foreground italic">{row.basis}</div>
+                </td>
+                <td className="px-2 py-2 text-right tabular-nums">{fmtUSD(row.d.p10)}</td>
+                <td className="px-2 py-2 text-right tabular-nums">{fmtUSD(row.d.p25)}</td>
+                <td className="px-2 py-2 text-right tabular-nums font-bold text-[#4A6741]">{fmtUSD(row.d.p50)}</td>
+                <td className="px-2 py-2 text-right tabular-nums">{fmtUSD(row.d.p75)}</td>
+                <td className="px-2 py-2 text-right tabular-nums">{fmtUSD(row.d.p90)}</td>
+                <td className="px-2 py-2 text-right tabular-nums text-muted-foreground" title={row.detLabel}>
+                  {fmtUSD(row.det)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!od.halt_active && (
+        <p className="text-[10px] text-muted-foreground mt-2 italic">
+          The conversion-halt rule is OFF, so every trial executes the identical conversion schedule — turn the
+          halt rule on to see how bear markets disperse the conversion total, lifetime taxes, and inheritance.
+        </p>
+      )}
+    </Card>
   );
 };

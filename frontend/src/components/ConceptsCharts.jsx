@@ -19,7 +19,7 @@ export const Waterfall = ({ data, testid, height = 300, width }) => {
         formatter={(value, name) => (name === "value" ? [fmtUSD(value), "Amount"] : null)} />}
       <Bar dataKey="base" stackId="w" fill="transparent" isAnimationActive={false} legendType="none" />
       <Bar dataKey="value" stackId="w" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-        {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+        {data.map((d) => <Cell key={d.name} fill={d.fill} />)}
         <LabelList dataKey="label" position="top" style={{ fontSize: 10, fill: "#555" }} />
       </Bar>
     </BarChart>

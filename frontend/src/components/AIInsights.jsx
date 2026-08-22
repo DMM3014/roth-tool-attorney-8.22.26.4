@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Sparkles, Loader2, Send, RotateCcw, User, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { API } from "@/lib/api";
+import { API, authHeaders } from "@/lib/api";
 
 const KEY_STORAGE = "gemini_api_key";
 
@@ -26,7 +26,7 @@ const SUGGESTIONS = [
   { label: "Why 24%?", q: "Why convert to the 24% bracket and not 32%?" },
   { label: "IRMAA risk?", q: "What is my IRMAA exposure, and how do my conversions affect my Medicare surcharges?" },
   { label: "Survivor impact?", q: "How does the death-of-spouse transition to single filing status affect this plan?" },
-  { label: "Net to family?", q: "How much more do my heirs receive with these conversions, and how much of it is tax-free?" },
+  { label: "Net to family?", q: "How much more do my heirs receive with these conversions, and how much of it is sheltered from income tax through the SECURE Act 10-year window?" },
 ];
 
 export const AIInsights = ({ summary, testid }) => {
@@ -56,7 +56,7 @@ export const AIInsights = ({ summary, testid }) => {
   const postStream = async (path, body, onToken) => {
     const res = await fetch(`${API}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ ...body, api_key: apiKey }),
     });
     if (!res.ok) {
@@ -64,7 +64,10 @@ export const AIInsights = ({ summary, testid }) => {
       try {
         const j = await res.json();
         if (typeof j.detail === "string") detail = j.detail;
-      } catch {}
+      } catch (parseErr) {
+        // Response body wasn't JSON — fall back to the generic message. Not fatal.
+        console.debug("AIInsights: non-JSON error body", parseErr);
+      }
       const err = new Error(detail);
       err.status = res.status;
       throw err;
@@ -149,7 +152,7 @@ export const AIInsights = ({ summary, testid }) => {
         <span className="text-sm font-semibold text-[#1A1A1A]">Use your own Google Gemini API key</span>
       </div>
       <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-        Optional — AI Insights already works out of the box. Bring your own free key if you want unlimited use.
+        Optional — AI Insights already works out of the box, powered by Anthropic&apos;s Claude Fable 5. Bring your own free Gemini key if you want unlimited use.
         Your key stays in this browser only — it is never stored on our servers.{" "}
         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
           className="text-[#4A6741] underline font-medium" data-testid="gemini-key-link">

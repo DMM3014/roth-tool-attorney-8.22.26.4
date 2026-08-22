@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dices, Loader2, Play, Flame, Link2, RotateCcw, AlertTriangle, Anchor, LifeBuoy, History, CloudLightning, BarChart2 } from "lucide-react";
+import { Dices, Loader2, Play, Flame, Link2, RotateCcw, AlertTriangle, Anchor, History, CloudLightning, BarChart2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -8,6 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { runMonteCarlo, fmtUSD, fmtPct } from "@/lib/api";
 import { MonteCarloResults } from "@/components/MonteCarloResults";
+import { MarketScenarioSelector } from "@/components/MarketScenarioSelector";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { RegimeComparePanel } from "@/components/RegimeComparePanel";
+import AIAnalysisCard from "@/components/AIAnalysisCard";
+import { GuardrailCard, HaltCard, RebalanceCadenceCard } from "@/components/monteCarlo/BehaviorRuleCards";
+import { PairedRothVsNoRothCard } from "@/components/monteCarlo/PairedRothVsNoRothCard";
+import { useSharedGuardrail } from "@/hooks/useSharedGuardrail";
+import { useSharedHalt } from "@/hooks/useSharedHalt";
 
 const ASSET_ROWS = [
   ["stocks", "Stocks"],
@@ -19,9 +27,9 @@ const MIN_TRIALS = 50;
 const MAX_TRIALS = 2000;
 const LIQUID_TYPES = ["Cash", "Taxable", "Tax-Deferred", "Tax-Free"];
 const DEFAULT_ASSETS = {
-  stocks: { weight: 0.6, mean: 0.08, vol: 0.18 },
-  bonds: { weight: 0.3, mean: 0.04, vol: 0.06 },
-  cash: { weight: 0.1, mean: 0.03, vol: 0.01 },
+  stocks: { weight: 0.65, mean: 0.08, vol: 0.18 },
+  bonds: { weight: 0.25, mean: 0.04, vol: 0.06 },
+  cash: { weight: 0.10, mean: 0.03, vol: 0.01 },
 };
 // Long-run US annual historical pairwise correlations (Gaussian copula defaults)
 const DEFAULT_CORR = {
@@ -48,20 +56,52 @@ const STAGFLATION = {
   },
 };
 
-export const MonteCarlo = ({ scenario, onResult }) => {
-  const [assets, setAssets] = useState(DEFAULT_ASSETS);
-  const [shockOn, setShockOn] = useState(false);
-  const [shockRate, setShockRate] = useState(-0.15);
+export const MonteCarlo = ({ scenario, setScenario, onResult, onRegimeResult }) => {
+  // Seed the MC weights from scenario.allocation (edited on Plan Inputs) so switching
+  // the household allocation on Plan Inputs flows into the MC without an extra click.
+  // Advisors can still fine-tune on this tab; edits stay local to the MC view.
+  const [assets, setAssets] = useState(() => {
+    const a = scenario?.allocation;
+    if (!a) return DEFAULT_ASSETS;
+    const sum = (a.stocks || 0) + (a.bonds || 0) + (a.cash || 0);
+    if (!(sum > 0)) return DEFAULT_ASSETS;
+    return {
+      stocks: { ...DEFAULT_ASSETS.stocks, weight: (a.stocks || 0) / sum },
+      bonds:  { ...DEFAULT_ASSETS.bonds,  weight: (a.bonds  || 0) / sum },
+      cash:   { ...DEFAULT_ASSETS.cash,   weight: (a.cash   || 0) / sum },
+    };
+  });
+  // Early Bear Market stress — ON by default (−20% for 2 years). Advisor can
+  // turn it off or dial the depth via the shock controls below.
+  const [shockOn, setShockOn] = useState(true);
+  const [shockRate, setShockRate] = useState(-0.20);
   const [shockYears, setShockYears] = useState(2);
   const [inflOn, setInflOn] = useState(false);
   const [inflMean, setInflMean] = useState(scenario?.projection?.general_inflation ?? 0.03);
   const [inflVol, setInflVol] = useState(0.015);
-  const [corrOn, setCorrOn] = useState(false);
+  // Regime-switching stochastic inflation (Markov 3-state Low/Normal/High).
+  const [regimeOn, setRegimeOn] = useState(false);
+  const [regimeLow, setRegimeLow] = useState({ mean: 0.020, vol: 0.008 });
+  const [regimeNormal, setRegimeNormal] = useState({ mean: 0.035, vol: 0.014 });
+  const [regimeHigh, setRegimeHigh] = useState({ mean: 0.060, vol: 0.025 });
+  const [regimePStay, setRegimePStay] = useState(0.85);
+  // Correlated draws — ON by default so the "risk-off" cross-asset comovement
+  // shows up in every stress-test unless the advisor explicitly wants independent
+  // draws (e.g. teaching mode).
+  const [corrOn, setCorrOn] = useState(true);
   const [corr, setCorr] = useState(DEFAULT_CORR);
-  const [engine, setEngine] = useState("lognormal");
+  const [engine, setEngine] = useState("historical");
   const [anchorOn, setAnchorOn] = useState(true);
-  const [grOn, setGrOn] = useState(false);
-  const [grCut, setGrCut] = useState(10); // percent
+  // Spending guardrail is shared with the Client Report tab via
+  // `useSharedGuardrail` so flipping it on either surface updates the other
+  // in real time and both sessions boot with the same default (ON, 10%).
+  const { grOn, setGrOn, grCut, setGrCut } = useSharedGuardrail();
+  // Halt conversions on drawdowns — shared with the Client Report tab via
+  // `useSharedHalt`, so changing the threshold here updates the printed report
+  // in real time. Default: ON, 20% YoY drawdown trigger, resume after 1
+  // positive-return year.
+  const { haltOn, setHaltOn, haltDrop, setHaltDrop, haltResume, setHaltResume } = useSharedHalt();
+  const [rebalCadence, setRebalCadence] = useState("annual"); // annual | biennial | never
   const [running, setRunning] = useState(false);
   const [res, setRes] = useState(null);
   const [resStag, setResStag] = useState(false);
@@ -86,6 +126,18 @@ export const MonteCarlo = ({ scenario, onResult }) => {
     return liq.reduce((s, a) => s + (a.beginning_balance || 0) * (a.return || 0), 0) / tot;
   })();
 
+  // Build the inflation config for API calls — same in `run` and `runCompare`.
+  const inflationPayload = () => ({
+    enabled: inflOn,
+    mean: inflMean,
+    vol: inflVol,
+    regime_switching: inflOn && regimeOn,
+    regime_low: regimeLow,
+    regime_normal: regimeNormal,
+    regime_high: regimeHigh,
+    regime_p_stay: regimePStay,
+  });
+
   const run = async () => {
     setRunning(true);
     setErr(null);
@@ -94,11 +146,13 @@ export const MonteCarlo = ({ scenario, onResult }) => {
         n_trials: nTrials,
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
-        inflation: { enabled: inflOn, mean: inflMean, vol: inflVol },
+        inflation: inflationPayload(),
         correlation: { enabled: corrOn && engine === "lognormal", ...corr },
         engine,
         anchor_to_plan: anchorOn,
         guardrail: { enabled: grOn, cut_pct: grCut / 100 },
+        conversion_halt: { enabled: haltOn, drop_threshold: haltDrop / 100, resume_after_positive_years: haltResume },
+        rebalance: { cadence: rebalCadence },
       });
       setRes(out);
       setResStag(stagApplied);
@@ -123,9 +177,11 @@ export const MonteCarlo = ({ scenario, onResult }) => {
         n_trials: nTrials,
         assets,
         shock: { enabled: shockOn, rate: shockRate, years: shockYears },
-        inflation: { enabled: inflOn, mean: inflMean, vol: inflVol },
+        inflation: inflationPayload(),
         anchor_to_plan: anchorOn,
         guardrail: { enabled: grOn, cut_pct: grCut / 100 },
+        conversion_halt: { enabled: haltOn, drop_threshold: haltDrop / 100, resume_after_positive_years: haltResume },
+        rebalance: { cadence: rebalCadence },
         seed: 42,
       };
       // NOTE: correlation only applies to the lognormal engine (historical resamples calendar
@@ -161,13 +217,38 @@ export const MonteCarlo = ({ scenario, onResult }) => {
     shockOn && near(shockRate, STAGFLATION.shock.rate) && shockYears === STAGFLATION.shock.years &&
     inflOn && near(inflMean, STAGFLATION.inflation.mean) && near(inflVol, STAGFLATION.inflation.vol) &&
     corrOn && CORR_ROWS.every(([k]) => near(corr[k], STAGFLATION.corr[k]));
-  const toggleStagflation = () => {
+
+  // "Early bear-market stress" preset — the default shipped state (matches Phase 53
+  // defaults exactly). Kept in sync with the shock controls below: if the user
+  // dials the shock away from −20% / 2yrs, or turns it off, the preset dropdown
+  // reflects that reality rather than falsely claiming the preset is still active.
+  const earlyBearApplied =
+    shockOn && near(shockRate, -0.20) && shockYears === 2 && !stagApplied;
+  const activeStressPreset = stagApplied
+    ? "stagflation"
+    : earlyBearApplied ? "early_bear" : "none";
+
+  const applyEarlyBear = () => {
+    setShockOn(true); setShockRate(-0.20); setShockYears(2);
+    // Early Bear is a pure shock — do NOT stack stagflation's inflation or
+    // correlation overrides on top of it; those belong to the stagflation preset.
     if (stagApplied) {
-      setShockOn(false); setShockRate(-0.15); setShockYears(2);
       setInflOn(false); setInflMean(scenario?.projection?.general_inflation ?? 0.03); setInflVol(0.015);
-      setCorrOn(false); setCorr(DEFAULT_CORR);
-      toast("Stagflation preset cleared", { description: "Shock, inflation and correlations back to baseline." });
-    } else {
+      setCorr(DEFAULT_CORR);
+    }
+  };
+  const clearAllStress = () => {
+    setShockOn(false); setShockRate(-0.20); setShockYears(2);
+    setInflOn(false); setInflMean(scenario?.projection?.general_inflation ?? 0.03); setInflVol(0.015);
+    setCorr(DEFAULT_CORR);
+  };
+  const setStressPreset = (v) => {
+    if (v === "early_bear") {
+      applyEarlyBear();
+      toast.success("Early Bear Market Stress applied", {
+        description: "−20% return shock for the first 2 years. Everything else stays at your current settings.",
+      });
+    } else if (v === "stagflation") {
       setEngine("lognormal");
       setShockOn(true); setShockRate(STAGFLATION.shock.rate); setShockYears(STAGFLATION.shock.years);
       setInflOn(true); setInflMean(STAGFLATION.inflation.mean); setInflVol(STAGFLATION.inflation.vol);
@@ -175,8 +256,14 @@ export const MonteCarlo = ({ scenario, onResult }) => {
       toast.success("2022-style stagflation preset applied", {
         description: "2-yr −15% return shock · 5.5% ±3% inflation · stock/bond diversification failure (+0.60).",
       });
+    } else {
+      clearAllStress();
+      toast("Stress preset cleared", { description: "Shock, inflation and correlations back to baseline." });
     }
   };
+  // Legacy button-toggle kept only as an alias for tests — logically equivalent to
+  // picking stagflation from the preset dropdown, then clearing it.
+  const toggleStagflation = () => setStressPreset(stagApplied ? "none" : "stagflation");
 
   return (
     <div className="space-y-6">
@@ -191,6 +278,15 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           stock / bond / cash mix. Success = the liquid portfolio fully funds every year&apos;s spending and never runs out
           through the second death.
         </p>
+
+        {/* Market Scenario selector — anchors the deterministic median-return baseline
+            that every stochastic trial is calibrated against. Changing the preset here
+            propagates to every tab because it patches scenario.market_scenario. */}
+        {setScenario && (
+          <div className="mb-5">
+            <MarketScenarioSelector scenario={scenario} setScenario={setScenario} />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Asset allocation table */}
@@ -294,24 +390,39 @@ export const MonteCarlo = ({ scenario, onResult }) => {
               </p>
             </div>
 
-            <div className={`rounded-lg border p-3 transition-colors ${stagApplied ? "border-[#C87941] bg-[#FBF3EC]" : "border-[#EBE8E0]"}`} data-testid="mc-stagflation-card">
+            <div className={`rounded-lg border p-3 transition-colors ${activeStressPreset !== "none" ? "border-[#C87941] bg-[#FBF3EC]" : "border-[#EBE8E0]"}`} data-testid="mc-stagflation-card">
               <div className="flex items-center justify-between gap-2">
                 <Label className="text-xs flex items-center gap-1.5">
-                  <AlertTriangle className={`h-3.5 w-3.5 ${stagApplied ? "text-[#C87941]" : "text-muted-foreground"}`} />
+                  <AlertTriangle className={`h-3.5 w-3.5 ${activeStressPreset !== "none" ? "text-[#C87941]" : "text-muted-foreground"}`} />
                   Stress preset
                 </Label>
-                {stagApplied && <span className="text-[10px] font-semibold text-[#C87941] uppercase tracking-wide" data-testid="mc-stagflation-active">Active</span>}
+                {activeStressPreset !== "none" && (
+                  <span className="text-[10px] font-semibold text-[#C87941] uppercase tracking-wide"
+                        data-testid="mc-stress-preset-active">Active</span>
+                )}
               </div>
-              <Button variant="outline" size="sm" onClick={toggleStagflation} data-testid="mc-stagflation-preset"
-                className={`mt-2 h-8 w-full gap-1.5 text-[11px] rounded-full ${stagApplied
-                  ? "border-[#C87941] text-[#C87941] hover:bg-[#C87941]/10"
-                  : "border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/10"}`}>
-                <Flame className="h-3 w-3" />
-                {stagApplied ? "Clear stagflation preset" : "2022-style stagflation"}
-              </Button>
-              <p className="text-[10px] text-muted-foreground mt-2">
-                One click replays 2022: −15% returns for 2 yrs, 5.5% ± 3% inflation, and stock/bond
-                diversification failure (correlation +0.60) with inflation punishing both (−0.50 / −0.60).
+              <Select value={activeStressPreset} onValueChange={setStressPreset}>
+                <SelectTrigger className="h-9 mt-2 text-xs bg-white" data-testid="mc-stress-preset-trigger">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="early_bear" data-testid="mc-stress-preset-early-bear">
+                    Early Bear Market Stress (default)
+                  </SelectItem>
+                  <SelectItem value="stagflation" data-testid="mc-stress-preset-stagflation">
+                    2022-style Stagflation
+                  </SelectItem>
+                  <SelectItem value="none" data-testid="mc-stress-preset-none">
+                    No stress preset
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                {activeStressPreset === "early_bear"
+                  ? "Front-loads a −20% return shock for the first 2 years — the sequence-of-returns risk aggressive conversions run into."
+                  : activeStressPreset === "stagflation"
+                  ? "One click replays 2022: −15% returns for 2 yrs, 5.5% ± 3% inflation, and stock/bond diversification failure (correlation +0.60)."
+                  : "No preset applied — baseline market draws."}
               </p>
             </div>
 
@@ -360,6 +471,66 @@ export const MonteCarlo = ({ scenario, onResult }) => {
                   ? "ON = each trial's outflows track the CPI of its sampled historical years (jointly with returns). OFF = deterministic plan inflation."
                   : "Applies a per-trial cumulative CPI multiplier to outflows (expenses + taxes). Off = deterministic inflation."}
               </p>
+
+              {/* Regime-switching inflation — a 3-state Markov chain instead of a single lognormal draw */}
+              {inflOn && engine !== "historical" && (
+                <div className="mt-3 pt-3 border-t border-[#EBE8E0]" data-testid="mc-regime-card">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs flex items-center gap-1.5">
+                      <Flame className="h-3.5 w-3.5 text-[#8A6820]" /> Regime-switching (Markov)
+                    </Label>
+                    <Switch checked={regimeOn} onCheckedChange={setRegimeOn} data-testid="mc-regime-toggle" />
+                  </div>
+                  {regimeOn && (
+                    <>
+                      <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+                        3-state Markov chain (Low / Normal / High). Each year has probability{" "}
+                        <strong>{Math.round(regimePStay * 100)}%</strong> of staying in the current regime, the rest split evenly.
+                        The 3 regimes replace the single (mean, vol) above.
+                      </p>
+                      <table className="w-full text-[11px] mt-2" data-testid="mc-regime-table">
+                        <thead>
+                          <tr className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                            <th className="text-left py-1">Regime</th>
+                            <th className="text-right py-1">Mean %/yr</th>
+                            <th className="text-right py-1">Vol %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            ["Low", regimeLow, setRegimeLow, "reg-low"],
+                            ["Normal", regimeNormal, setRegimeNormal, "reg-normal"],
+                            ["High", regimeHigh, setRegimeHigh, "reg-high"],
+                          ].map(([label, val, setter, tid]) => (
+                            <tr key={label} className="border-t border-[#F3F1EC]">
+                              <td className="py-1 font-medium">{label}</td>
+                              <td className="py-1">
+                                <Input type="number" step={0.25} value={+(val.mean * 100).toFixed(2)}
+                                  data-testid={`mc-${tid}-mean`}
+                                  onChange={(e) => setter({ ...val, mean: (parseFloat(e.target.value) || 0) / 100 })}
+                                  className="h-7 text-[11px] text-right bg-white" />
+                              </td>
+                              <td className="py-1">
+                                <Input type="number" step={0.1} value={+(val.vol * 100).toFixed(2)}
+                                  data-testid={`mc-${tid}-vol`}
+                                  onChange={(e) => setter({ ...val, vol: (parseFloat(e.target.value) || 0) / 100 })}
+                                  className="h-7 text-[11px] text-right bg-white" />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="mt-2">
+                        <Label className="text-[10px] text-muted-foreground">Persistence (P_stay): {Math.round(regimePStay * 100)}%</Label>
+                        <input type="range" min="0.5" max="0.99" step="0.01" value={regimePStay}
+                          onChange={(e) => setRegimePStay(parseFloat(e.target.value))}
+                          data-testid="mc-regime-p-stay"
+                          className="w-full mt-1" />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="rounded-lg border border-[#EBE8E0] p-3" data-testid="mc-corr-card">
@@ -399,24 +570,12 @@ export const MonteCarlo = ({ scenario, onResult }) => {
               )}
             </div>
 
-            <div className="rounded-lg border border-[#EBE8E0] p-3" data-testid="mc-guardrail-card">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs flex items-center gap-1.5"><LifeBuoy className="h-3.5 w-3.5 text-[#4A6741]" /> Spending guardrail</Label>
-                <Switch checked={grOn} onCheckedChange={setGrOn} data-testid="mc-guardrail-toggle" />
-              </div>
-              {grOn && (
-                <div className="mt-3">
-                  <Label className="text-[10px] text-muted-foreground">Cut discretionary spending after a loss year by %</Label>
-                  <Input type="number" step={5} min={0} max={50} value={grCut} data-testid="mc-guardrail-cut"
-                    onChange={(e) => setGrCut(Math.max(0, Math.min(50, parseFloat(e.target.value) || 0)))}
-                    className="h-8 text-right bg-white" />
-                </div>
-              )}
-              <p className="text-[10px] text-muted-foreground mt-2">
-                Real retirees trim spending after bad markets (Guyton-Klinger guardrails). When on, expenses — never
-                taxes — are cut in any year that follows a portfolio loss, and the success-rate lift is reported.
-              </p>
-            </div>
+            <GuardrailCard grOn={grOn} setGrOn={setGrOn} grCut={grCut} setGrCut={setGrCut} />
+
+            <HaltCard haltOn={haltOn} setHaltOn={setHaltOn} haltDrop={haltDrop} setHaltDrop={setHaltDrop}
+              haltResume={haltResume} setHaltResume={setHaltResume} />
+
+            <RebalanceCadenceCard rebalCadence={rebalCadence} setRebalCadence={setRebalCadence} />
 
             <Button onClick={run} disabled={running || comparing} data-testid="mc-run"
               className="w-full gap-2 bg-[#4A6741] hover:bg-[#3B5234] text-white rounded-full">
@@ -449,6 +608,58 @@ export const MonteCarlo = ({ scenario, onResult }) => {
           resStag={resStag}
           realDollars={realDollars}
           setRealDollars={setRealDollars}
+        />
+      )}
+
+      {/* Paired A/B — Roth vs no-Roth on identical seeds. Uses the paths_w /
+          paths_n arrays the engine already computes; no extra run needed. */}
+      {res?.paired_delta && (
+        <PairedRothVsNoRothCard res={res} testid="mc-paired-roth-vs-no-roth" />
+      )}
+
+      {/* AI plain-English analysis of the Monte Carlo result */}
+      {res && (
+        <AIAnalysisCard
+          testid="mc-ai-analysis"
+          title="AI analysis of this Monte Carlo simulation"
+          focus="You are reviewing a Monte Carlo retirement simulation result. Explain in plain English what the success rate means, how converting to Roth changes resilience, sequence-of-returns risk exposure (early loss years), and whether the guardrail / shock stress-tests suggest a safer plan. 4-5 crisp bullets max."
+          summary={{
+            page: "Monte Carlo",
+            engine: engine,
+            n_trials: nTrials,
+            allocation: { stocks: assets.stocks, bonds: assets.bonds, cash: assets.cash },
+            success_with_conversions: res.with_conversions?.success,
+            success_without_conversions: res.without_conversions?.success,
+            median_ending_net_worth_with: res.with_conversions?.percentiles?.p50?.slice(-1)?.[0],
+            p10_ending_net_worth_with: res.with_conversions?.percentiles?.p10?.slice(-1)?.[0],
+            p90_ending_net_worth_with: res.with_conversions?.percentiles?.p90?.slice(-1)?.[0],
+            guardrail: res.guardrail || null,
+            shock: shockOn ? { rate: shockRate, years: shockYears, base_success: res.shock?.base_success_with, shocked_success: res.shock?.success_with } : null,
+            comparing_engine: compare ? { lognormal_success: compare.lognormal?.with_conversions?.success, historical_success: compare.historical?.with_conversions?.success } : null,
+          }}
+        />
+      )}
+
+      {/* Regime comparison — same simulation across all 6 market-scenario
+          presets. Only shown once the user has run the main MC at least
+          once, so the panel picks up the same allocation, engine, correlation,
+          and trial count they just used. */}
+      {res && (
+        <RegimeComparePanel
+          scenario={scenario}
+          onResult={onRegimeResult}
+          mcRequestBase={{
+            assets,
+            shock: { enabled: shockOn, rate: shockRate, years: shockYears },
+            inflation: inflationPayload(),
+            correlation: { enabled: corrOn && engine === "lognormal", ...corr },
+            engine,
+            anchor_to_plan: anchorOn,
+            guardrail: { enabled: grOn, cut_pct: grCut / 100 },
+            conversion_halt: { enabled: haltOn, drop_threshold: haltDrop / 100, resume_after_positive_years: haltResume },
+            rebalance: { cadence: rebalCadence },
+            n_trials: nTrials,
+          }}
         />
       )}
     </div>

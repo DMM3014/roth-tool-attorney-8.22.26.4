@@ -170,7 +170,7 @@ export const SweepPanel = ({ sweep, sweeping, findOptimal, withRoth }) => (
         </Button>
       </div>
     </div>
-    {!sweep && <p className="text-sm text-muted-foreground">Sweeps every target bracket (and no-conversion) and ranks each by the after-tax estate passed to heirs — then auto-applies the winner.</p>}
+    {!sweep && <p className="text-sm text-muted-foreground">Sweeps every target bracket (and no-conversion) and ranks each by the after-tax estate passed to heirs — then auto-applies the leader.</p>}
     {sweep && (
       <div className="overflow-x-auto">
         <div className="flex items-center gap-2 mb-3 text-sm flex-wrap">
@@ -189,7 +189,7 @@ export const SweepPanel = ({ sweep, sweeping, findOptimal, withRoth }) => (
               <TooltipContent side="top" className="max-w-xs bg-[#1A1A1A] text-white text-[11px] leading-snug px-3 py-2">
                 This picks the best <span className="font-semibold">single flat bracket</span> held constant every year of your
                 current start-to-end window. The <span className="font-semibold">Strategy Optimizer</span> tab searches a wider space —
-                time-varying phased schedules (e.g. 32% pre-SS then 22% after) and narrower conversion windows — so its winner may differ.
+                time-varying phased schedules (e.g. 32% pre-SS then 22% after) and narrower conversion windows — so its leader may differ.
                 Both rank by the same metric: highest after-tax to heirs, tiebreak lowest lifetime tax.
               </TooltipContent>
             </Tooltip>
@@ -261,12 +261,12 @@ export const LegacyPanels = ({ legacy, legacyNo, heirDelta, postCompare, targetI
           <h3 className="font-display text-base font-bold tracking-tight">Legacy & Estate — {horizon}-Year SECURE Horizon After 2nd Death</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5 max-w-4xl">
-          Headline value is projected <span className="font-medium">{horizon} years after the second death</span>: the inherited Roth keeps compounding <span className="font-medium">tax-free</span>, while the inherited Traditional IRA must be fully drawn down within 10 years and is taxed to heirs at {fmtPct(legacy?.heir_ordinary_rate)} (after-tax proceeds reinvested). Taxable &amp; home received a basis step-up at death.
+          Headline value is projected <span className="font-medium">{horizon} years after the second death</span>: the inherited Roth continues compounding <span className="font-medium">income-tax free through the SECURE 10-year distribution window</span>, while the inherited Traditional IRA must be fully drawn down within 10 years and is taxed to heirs at {fmtPct(legacy?.heir_ordinary_rate)} (after-tax proceeds reinvested). Taxable &amp; home received a basis step-up at death. After year 10, if the inherited Roth is retained in an accumulation trust, retained trust income is taxed at compressed trust brackets (37% federal above ~$16K) — favoring DNI carry-out and in-kind distribution of appreciated assets to beneficiaries.
         </p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <EstateMetric label="After-Tax at Death" value={fmtUSD(legacy?.after_tax_estate_at_death)} testid="estate-at-death" />
           <EstateMetric label={`Inherited IRA Tax (${horizon}-yr)`} value={`−${fmtUSD(legacy?.inherited_ira_tax)}`} warn testid="estate-ira-tax" />
-          <EstateMetric label={`Tax-Free Roth @ Yr ${horizon}`} value={fmtUSD(legacy?.tax_free_roth_to_heirs)} accent testid="estate-roth" />
+          <EstateMetric label={`Inherited Roth @ Yr ${horizon} (SECURE-10 sheltered)`} value={fmtUSD(legacy?.tax_free_roth_to_heirs)} accent testid="estate-roth" />
           <EstateMetric label="Gross Estate at Death" value={fmtUSD(legacy?.gross_estate)} testid="estate-gross" />
           <EstateMetric label={`After-Tax to Heirs @ Yr ${horizon}`} value={fmtUSD(legacy?.after_tax_estate_to_heirs)} accent big testid="estate-after-tax" />
         </div>
@@ -283,7 +283,7 @@ export const LegacyPanels = ({ legacy, legacyNo, heirDelta, postCompare, targetI
           </div>
         </div>
         <p className="text-xs text-muted-foreground mb-5 max-w-4xl">
-          After-tax value delivered to heirs for the <span className="font-medium">selected {targetPct}% bracket strategy</span> vs. doing no conversions — solid = total estate, dashed = the tax-free Roth portion. When the lines nearly overlap, conversions add little for heirs.
+          After-tax value delivered to heirs for the <span className="font-medium">selected {targetPct}% bracket strategy</span> vs. doing no conversions — solid = total estate, dashed = the inherited Roth portion (income-tax free through the SECURE 10-year window). When the lines nearly overlap, conversions add little for heirs.
         </p>
         <ConvertCompareChart data={postCompare} targetPct={targetPct} />
       </Card>

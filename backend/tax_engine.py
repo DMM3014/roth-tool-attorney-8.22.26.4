@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from state_tax import compute_state_tax
+
 # ---- TaxTables sheet constants (2026 base-year $) ------------------------
 BRACKET_RATES = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]
 BRACKET_DELTA = [0.10, 0.02, 0.10, 0.02, 0.08, 0.03, 0.02]
@@ -93,6 +95,33 @@ def federal_ltcg_tax(ord_tax: float, pref: float, mfj: bool, idx: float) -> floa
     tax15 = 0.15 * max(0.0, min(ord_tax + pref, l15) - max(ord_tax, l0))
     tax20 = 0.20 * max(0.0, ord_tax + pref - max(ord_tax, l15))
     return tax15 + tax20
+
+
+def ltcg_band_split(ord_tax: float, pref: float, mfj: bool, idx: float) -> dict:
+    """How many preferential-income dollars sit in each LTCG band (0 / 15 / 20 %).
+
+    Same stacking model as `federal_ltcg_tax` — preferential income sits directly on top of
+    ordinary taxable income and is sliced by the indexed 0%/15%/20% ceilings. Returned
+    keys are the raw dollar amounts in each band plus the two indexed ceilings for
+    the year so the frontend can render the exact cliff dollar values.
+    """
+    if pref <= 0:
+        return {"in_0": 0.0, "in_15": 0.0, "in_20": 0.0,
+                "ceiling_0": (LTCG0_MFJ if mfj else LTCG0_SGL) * idx,
+                "ceiling_15": (LTCG15_MFJ if mfj else LTCG15_SGL) * idx}
+    l0 = (LTCG0_MFJ if mfj else LTCG0_SGL) * idx
+    l15 = (LTCG15_MFJ if mfj else LTCG15_SGL) * idx
+    top = ord_tax + pref
+    in_0 = max(0.0, min(top, l0) - max(ord_tax, 0.0))
+    in_15 = max(0.0, min(top, l15) - max(ord_tax, l0))
+    in_20 = max(0.0, top - max(ord_tax, l15))
+    return {
+        "in_0": round(in_0, 2),
+        "in_15": round(in_15, 2),
+        "in_20": round(in_20, 2),
+        "ceiling_0": round(l0, 2),
+        "ceiling_15": round(l15, 2),
+    }
 
 
 def marginal_ordinary_rate(ordinary_taxable: float, mfj: bool, idx: float) -> float:
@@ -207,6 +236,9 @@ class _TaxBase:
     recurring_div_ltcg: float
     realized_ltcg: float
     state_rate: float
+    state_code: str
+    pension_income: float
+    max_age: int
     include_irmaa: bool
     part_b_base: float
     part_d_base: float
@@ -267,6 +299,9 @@ def _resolve_taxable_income(inp: dict) -> _TaxBase:
         year=year, ordinary_non_ss=ordinary_non_ss, ira_distributions=ira_distributions,
         cash_interest=cash_interest, gross_ss=gross_ss, recurring_div_ltcg=recurring_div_ltcg,
         realized_ltcg=realized_ltcg, state_rate=inp.get("state_rate", 0.0),
+        state_code=inp.get("state_code", ""),
+        pension_income=inp.get("pension_income", 0.0),
+        max_age=inp.get("max_age", 0),
         include_irmaa=inp.get("include_irmaa", True), part_b_base=inp.get("part_b_base", 2435.0),
         part_d_base=inp.get("part_d_base", 600.0),
         total_pref=total_pref, ordinary_before_ss=ordinary_before_ss, provisional=provisional,
@@ -285,7 +320,28 @@ def compute_year_tax(inp: dict) -> dict:
     fed_ordinary = federal_ordinary_tax(b.ordinary_taxable, b.mfj, b.idx)  # R30
     fed_ltcg = federal_ltcg_tax(b.ordinary_taxable, b.pref_within, b.mfj, b.idx)  # R31
     niit = niit_tax(b.total_pref, b.cash_interest, b.magi, b.mfj)         # R32
-    state_tax = max(0.0, b.state_rate * b.taxable_income)                # R35
+
+    # State income tax: real state engine when a state_code is set, else legacy
+    # flat `state_rate × federal_taxable_income` fallback (preserves back-compat).
+    state_res = compute_state_tax(
+        state_code=b.state_code,
+        filing_status="MFJ" if b.mfj else "Single",
+        federal_taxable_income=b.taxable_income,
+        federal_std_deduction=b.std,
+        federal_senior_bonus=b.senior,
+        taxable_ss=b.taxable_ss,
+        ira_distributions=b.ira_distributions,
+        pension_income=b.pension_income,
+        year=b.year,
+        idx=b.idx,
+        max_age=b.max_age,
+        fallback_rate=b.state_rate,
+    )
+    # Use unrounded state tax for total math (matches pre-refactor behavior).
+    if not b.state_code:
+        state_tax = max(0.0, b.state_rate * b.taxable_income)
+    else:
+        state_tax = state_res["state_tax"]
 
     tier, medicare = medicare_premiums(
         b.magi_for_irmaa, b.mfj, b.irmaa_idx, b.medicare_count, b.include_irmaa,
@@ -318,6 +374,7 @@ def compute_year_tax(inp: dict) -> dict:
         "federal_ltcg_tax": round(fed_ltcg, 2),
         "niit": round(niit, 2),
         "state_tax": round(state_tax, 2),
+        "state_detail": state_res,
         "irmaa_tier": tier,
         "medicare_premiums": round(medicare, 2),
         "total_income_tax": round(total_tax, 2),
@@ -327,11 +384,18 @@ def compute_year_tax(inp: dict) -> dict:
     }
 
 
-def optimize_conversion(base_inp: dict, target_rate: float, max_conversion: float = 0.0) -> dict:
+def optimize_conversion(base_inp: dict, target_rate: float, max_conversion: float = 0.0,
+                        irmaa_aware: bool = False, irmaa_cliff_buffer: float = 3000.0) -> dict:
     """Fill-the-bracket: convert traditional IRA $ up to the target bracket ceiling.
 
     base_inp = year inputs WITHOUT any Roth conversion in ira_distributions.
     Returns the recommended conversion amount + before/after tax breakdowns.
+
+    If ``irmaa_aware`` is True and IRMAA is being modeled, the recommendation
+    is trimmed so the resulting MAGI stays at least ``irmaa_cliff_buffer``
+    below the next IRMAA tier threshold — avoiding a Medicare-premium cliff
+    where crossing $1 costs the household hundreds of dollars per month for
+    the following year.
     """
     mfj = base_inp.get("filing_status", "MFJ") == "MFJ"
     idx = base_inp.get("bracket_index", 1.0)
@@ -342,6 +406,31 @@ def optimize_conversion(base_inp: dict, target_rate: float, max_conversion: floa
     if max_conversion and max_conversion > 0:
         headroom = min(headroom, max_conversion)
     conversion = round(headroom, 2)
+
+    # IRMAA cliff avoidance: never push MAGI within `irmaa_cliff_buffer` of a threshold.
+    avoided_cliff = None
+    if irmaa_aware and base_inp.get("include_irmaa", True):
+        irmaa_idx = base_inp.get("irmaa_index", idx)
+        thresholds = irmaa_thresholds(mfj, irmaa_idx)  # already indexed
+        base_magi = base["magi"]
+        # Every dollar of Roth conversion enters ordinary income and directly increases MAGI.
+        max_magi_after = base_magi + conversion
+        # Find the next threshold above base_magi (i.e. the first one we would cross).
+        next_thr = None
+        for t in thresholds:
+            if t > base_magi:
+                next_thr = t
+                break
+        if next_thr is not None and max_magi_after > (next_thr - irmaa_cliff_buffer):
+            allowed = max(0.0, next_thr - irmaa_cliff_buffer - base_magi)
+            if allowed < conversion:
+                avoided_cliff = {
+                    "threshold": round(next_thr, 2),
+                    "buffer": round(irmaa_cliff_buffer, 2),
+                    "unconstrained_conversion": conversion,
+                    "avoided_conversion_amount": round(conversion - allowed, 2),
+                }
+                conversion = round(allowed, 2)
 
     after_inp = dict(base_inp)
     after_inp["ira_distributions"] = base_inp.get("ira_distributions", 0.0) + conversion
@@ -354,4 +443,6 @@ def optimize_conversion(base_inp: dict, target_rate: float, max_conversion: floa
         "tax_on_conversion": round(after["total_income_tax"] - base["total_income_tax"], 2),
         "before": base,
         "after": after,
+        "irmaa_aware": irmaa_aware,
+        "avoided_irmaa_cliff": avoided_cliff,
     }

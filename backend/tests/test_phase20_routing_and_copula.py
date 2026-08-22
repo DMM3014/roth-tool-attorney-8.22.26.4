@@ -35,11 +35,23 @@ def _spouse_heavy_cfg():
 
 def test_spouse_conversions_land_in_spouse_roth():
     r = run_projection(_spouse_heavy_cfg())
-    final = r["rows"][-1]["account_balances"]
-    assert final["ROTS"] > 0, "spouse-sourced conversions must land in the spouse's Roth"
-    assert final["ROTC"] > 0, "client-sourced conversions still land in the client's Roth"
+    rows = r["rows"]
+    # Per-owner routing must be checked while BOTH spouses are alive. From the
+    # first death onward the decedent's IRA/Roth/taxable are retitled onto the
+    # survivor's account (spousal rollover, 2026-08-21), so the decedent's line
+    # is legitimately zero in the final row.
+    mfj = [x for x in rows if x["filing_status"] == rows[0]["filing_status"]]
+    both_alive = mfj[-1]["account_balances"]
+    assert both_alive["ROTS"] > 0, "spouse-sourced conversions must land in the spouse's Roth"
+    assert both_alive["ROTC"] > 0, "client-sourced conversions still land in the client's Roth"
     led = r["roth_compliance"]["conversions_ledger"]
     assert any(entry["owner"] == "Spouse" for entry in led)
+    # After the first death exactly one owner's Roth line carries the combined
+    # balance, and the total is preserved across the retitling year.
+    if len(mfj) < len(rows):
+        after = rows[len(mfj)]["account_balances"]
+        assert (after["ROTC"] == 0) != (after["ROTS"] == 0), "one Roth line must be retitled to the survivor"
+        assert after["ROTC"] + after["ROTS"] >= both_alive["ROTC"] + both_alive["ROTS"]
 
 
 def test_default_scenario_unchanged_totals():

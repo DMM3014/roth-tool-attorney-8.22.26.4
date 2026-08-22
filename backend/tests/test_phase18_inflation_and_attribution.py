@@ -117,8 +117,13 @@ def test_warnings_use_owner_not_just_client_age():
 
 
 def test_conversion_math_unchanged_by_attribution():
-    """Adding per-owner attribution must NOT change any of the headline projection metrics."""
+    """Adding per-owner attribution must NOT change any of the headline projection metrics.
+
+    Values updated in the workbook-parity refactor: basis-merge default is now ON
+    (workbook convention pools all Taxable accounts at first death → different post-
+    death draw sequencing → small delta in lifetime taxes / heir estate).
+    """
     out = run_projection(copy.deepcopy(DEFAULT_SCENARIO))
-    assert out["summary"]["lifetime_taxes"] == 7159874.48
-    assert out["summary"]["ending_net_worth"] == 80804720.63
-    assert out["legacy"]["after_tax_estate_to_heirs"] == 152411628.35
+    assert out["summary"]["lifetime_taxes"] == 6351096.5
+    assert out["summary"]["ending_net_worth"] == 84563211.53
+    assert out["legacy"]["after_tax_estate_to_heirs"] == 162500588.9

@@ -11,7 +11,8 @@ from typing import Any
 
 from tax_engine import (compute_year_tax, optimize_conversion, rmd_divisor,
                         rmd_start_age, bracket_ceiling, irmaa_threshold_cap,
-                        bracket_fill, irmaa_thresholds)
+                        bracket_fill, irmaa_thresholds, ltcg_band_split)
+from market_scenarios import apply_market_scenario
 
 IRMAA_LOOKBACK_YEARS = 2  # IRMAA surcharge is based on MAGI from 2 years prior (hard-coded SSA rule)
 
@@ -49,6 +50,32 @@ def _active_fraction(start_d, stop_d, year: int) -> float:
 
 def _age(dob_year: int, year: int) -> int:
     return year - dob_year
+
+
+def _normalize_state_move(move) -> dict | None:
+    """Coerce a scenario.tax.state_move dict into `{year: int, from: str, to: str}` or None.
+
+    Advisors can declare a single mid-plan state change (e.g. NY→FL at retirement).
+    The projection swaps `state_code` in the tax computation for any year >= move.year.
+    Returns None when the move is missing / malformed / a no-op.
+    """
+    if not isinstance(move, dict):
+        return None
+    yr = move.get("year")
+    to = (move.get("to") or "").strip().upper()
+    frm = (move.get("from") or "").strip().upper()
+    if not yr or not isinstance(yr, int) or not to or to == frm:
+        return None
+    return {"year": int(yr), "from": frm, "to": to}
+
+
+def _effective_state_code(plan_state_code: str, state_move, year: int) -> str:
+    """The active state_code in `year`, honoring an optional mid-plan move."""
+    if not state_move:
+        return plan_state_code
+    if year >= state_move["year"]:
+        return state_move["to"]
+    return state_move["from"] or plan_state_code
 
 
 def _alive(dob_year: int, death_age: int, year: int) -> bool:
@@ -96,43 +123,131 @@ def _stream_amount(s: dict, year: int, both_alive: bool, survivor_owner: str | N
 
 
 def _income_from_stream(s, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner):
-    """Classify one income stream into (ordinary_non_ss, gross_ss, recurring_div) for a year."""
+    """Classify one income stream into (ordinary_non_ss, gross_ss, recurring_div, pension) for a year.
+
+    `pension` is a same-taxable subset of ordinary income (pensions + annuities) that
+    some states exempt from state income tax. It is ALREADY included in ordinary_non_ss —
+    the pension field is emitted separately purely for downstream state-tax exclusion math.
+    """
     owner = s.get("owner", "Joint")
     owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
                    or (owner == "Spouse" and spouse_alive))
     if not owner_alive and s.get("tax_character") != "SS" and owner != "Joint":
-        return 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0
     amt, char = _stream_amount(s, year, both_alive, survivor_owner)
     if char == "SS":
         # after first death, only the surviving owner's own SS benefit continues
         if not both_alive and has_spouse and not (
                 (owner == "Client" and client_alive) or (owner == "Spouse" and spouse_alive)):
-            return 0.0, 0.0, 0.0
-        return 0.0, amt, 0.0
+            return 0.0, 0.0, 0.0, 0.0
+        return 0.0, amt, 0.0, 0.0
     if char == "QDiv/LTCG":
-        return 0.0, 0.0, amt
+        return 0.0, 0.0, amt, 0.0
     if char == "Annuity":
-        return amt * s.get("taxable_pct", 1.0), 0.0, 0.0
-    return amt, 0.0, 0.0
+        taxable = amt * s.get("taxable_pct", 1.0)
+        # Annuities count as pension-like for state exclusion (most states treat them together).
+        return taxable, 0.0, 0.0, taxable
+    # Detect pension by type/description.
+    stype = (s.get("type") or "").strip().lower()
+    desc = (s.get("description") or s.get("name") or "").strip().lower()
+    is_pension = ("pension" in stype) or ("pension" in desc)
+    return amt, 0.0, 0.0, (amt if is_pension else 0.0)
 
 
 def _aggregate_income(streams, year, client_alive, spouse_alive, both_alive, has_spouse, survivor_owner):
-    """Sum income streams into (ordinary_non_ss, gross_ss, recurring_div) for a year."""
-    ordinary_non_ss = gross_ss = recurring_div = 0.0
+    """Sum income streams into (ordinary_non_ss, gross_ss, recurring_div, pension) for a year."""
+    ordinary_non_ss = gross_ss = recurring_div = pension = 0.0
     for s in streams:
-        o, ss, d = _income_from_stream(s, year, client_alive, spouse_alive,
-                                       both_alive, has_spouse, survivor_owner)
+        o, ss, d, p = _income_from_stream(s, year, client_alive, spouse_alive,
+                                          both_alive, has_spouse, survivor_owner)
         ordinary_non_ss += o
         gross_ss += ss
         recurring_div += d
+        pension += p
 
-    # survivor SS = higher of the two benefits (approximate)
-    if not both_alive and has_spouse and gross_ss == 0:
+    # survivor SS = higher of the two benefits (SSA widow(er) rule: the survivor
+    # steps up to the deceased spouse's benefit when it exceeds their own).
+    if not both_alive and has_spouse:
         ss_vals = [_stream_amount(s, year, True, None)[0]
                    for s in streams if s.get("tax_character") == "SS"]
         if ss_vals:
-            gross_ss = max(ss_vals)
-    return ordinary_non_ss, gross_ss, recurring_div
+            gross_ss = max([gross_ss] + ss_vals)
+    return ordinary_non_ss, gross_ss, recurring_div, pension
+
+
+def _income_line_items(streams, year, client_alive, spouse_alive, both_alive,
+                       has_spouse, survivor_owner):
+    """Per-stream breakdown for the Cashflow tab.
+
+    Returns a list of {source, owner, kind, amount, tax_character} where `kind` is a
+    coarse cash-flow category (`wages`, `pension`, `annuity`, `ss`, `dividends`, `other`)
+    so the frontend can bucket by section without re-parsing tax_character strings.
+    ZERO amount rows are dropped so the tab doesn't render empty lines for streams
+    that are dormant this year.
+    """
+    out = []
+    for s in streams:
+        o, ss, d, _p = _income_from_stream(s, year, client_alive, spouse_alive,
+                                           both_alive, has_spouse, survivor_owner)
+        amt = o + ss + d
+        if amt <= 0:
+            continue
+        char = s.get("tax_character", "Ordinary")
+        # Coarse-grained cash-flow bucket (independent of tax character):
+        # Fallback label chain: explicit `description` (canonical stream field
+        # per defaults.py + PlanInputs) → `name` (legacy / auto-generated
+        # streams) → `category` → tax_character-based generic. Reading only
+        # `name` caused every unnamed Ordinary stream owned by the same person
+        # to collapse into a single "Wages / other ordinary — Client" row,
+        # merging Wages + Pension totals — see cashflow-tab bug 2026-07-23.
+        raw = (s.get("description") or s.get("name") or s.get("category") or "").strip()
+        owner = s.get("owner", "Joint")
+        if not raw:
+            if char == "SS":
+                raw = f"Social Security — {owner}"
+            elif char == "QDiv/LTCG":
+                raw = "Qualified dividends"
+            elif char == "Annuity":
+                raw = f"Annuity — {owner}"
+            else:
+                raw = f"Wages / other ordinary — {owner}"
+        name = raw
+        low = name.lower()
+        if char == "SS":
+            kind = "ss"
+        elif char == "QDiv/LTCG":
+            kind = "dividends"
+        elif char == "Annuity":
+            kind = "annuity"
+        elif "pension" in low:
+            kind = "pension"
+        elif "wage" in low or "salary" in low or "w-2" in low or "w2" in low:
+            kind = "wages"
+        else:
+            kind = "other"
+        out.append({
+            "source": name,
+            "owner": s.get("owner", "Joint"),
+            "kind": kind,
+            "tax_character": char,
+            "amount": round(amt, 2),
+        })
+    # SSA widow(er) step-up: keep the line items in sync with _aggregate_income's
+    # "survivor SS = higher of the two benefits" rule via a synthetic delta row.
+    if not both_alive and has_spouse:
+        own_ss = sum(i["amount"] for i in out if i["tax_character"] == "SS")
+        ss_vals = [_stream_amount(s, year, True, None)[0]
+                   for s in streams if s.get("tax_character") == "SS"]
+        best = max(ss_vals) if ss_vals else 0.0
+        if best > own_ss + 0.005:
+            out.append({
+                "source": "Survivor benefit step-up (higher SS benefit)",
+                "owner": survivor_owner or "Joint",
+                "kind": "ss",
+                "tax_character": "SS",
+                "amount": round(best - own_ss, 2),
+            })
+    return out
 
 
 def _total_rmd(plan, status, owner_map, bal, year):
@@ -159,6 +274,55 @@ def _total_rmd(plan, status, owner_map, bal, year):
             rmd_by[aid] = bal[aid] / div
             rmd_total += rmd_by[aid]
     return rmd_total, rmd_by
+
+
+def _qcd_for_year(plan, status, year, rmd_total: float) -> tuple[float, float, float]:
+    """Compute this year's Qualified Charitable Distribution.
+
+    QCD rules (as of 2025):
+    - Available only if the IRA owner is age 70½ or older that year.
+    - Counts toward the year's RMD dollar-for-dollar.
+    - Excluded from AGI (never enters taxable ordinary income).
+    - IRS annual cap = $108,000 per eligible taxpayer (indexed each year).
+    - QCDs above the RMD are still allowed (up to the annual cap) but this planner
+      caps at RMD to keep the "reduce IRA balance" side-effect coherent with the
+      cash-flow model (QCDs above RMD would still be permitted in real life; we
+      err on the conservative side rather than model excess-QCD which is rare).
+
+    Returns (qcd_total, qcd_client, qcd_spouse). All zero if disabled/out-of-window.
+    """
+    if plan.qcd_annual <= 0 or plan.qcd_start_year <= 0 or rmd_total <= 0:
+        return 0.0, 0.0, 0.0
+    if year < plan.qcd_start_year:
+        return 0.0, 0.0, 0.0
+    if plan.qcd_end_year and year > plan.qcd_end_year:
+        return 0.0, 0.0, 0.0
+
+    client_age = _age(plan.client_dob, year) if status.client_alive else -1
+    spouse_age = (_age(plan.spouse_dob, year) if (plan.has_spouse and status.spouse_alive) else -1)
+
+    # Age 70½ eligibility. We approximate with integer age ≥ 70 since the plan runs
+    # at annual granularity. Half-year strictness would require DOB-month + timing.
+    client_eligible = client_age >= 70
+    spouse_eligible = spouse_age >= 70
+
+    # Split the planned annual QCD between spouses per the household's Client share.
+    # Each spouse is independently capped by the IRS per-taxpayer limit and by
+    # whether they are eligible this year.
+    share_c = plan.qcd_client_share if client_eligible else 0.0
+    share_s = (1.0 - plan.qcd_client_share) if spouse_eligible else 0.0
+    total_share = share_c + share_s
+    if total_share <= 0:
+        return 0.0, 0.0, 0.0
+    # Re-normalize the shares in case one spouse became ineligible (survivor / not-yet-70)
+    share_c /= total_share
+    share_s /= total_share
+
+    planned = min(plan.qcd_annual, rmd_total)
+    qcd_c = min(planned * share_c, plan.qcd_annual_cap if client_eligible else 0.0)
+    qcd_s = min(planned * share_s, plan.qcd_annual_cap if spouse_eligible else 0.0)
+    qcd_total = qcd_c + qcd_s
+    return qcd_total, qcd_c, qcd_s
 
 
 def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
@@ -196,6 +360,70 @@ def _total_expenses(expenses, year, client_alive, spouse_alive, both_alive,
     if not both_alive:
         total *= (1 - survivor_reduction)
     return total
+
+
+def _expense_line_items(expenses, year, client_alive, spouse_alive, both_alive,
+                        start_year, survivor_reduction):
+    """Per-expense-source breakdown for the Cashflow tab.
+
+    Returns a list of {source, owner, category, amount} where `category` is derived
+    from the expense name (best-effort tag: `spending`, `health`, `insurance`, `housing`,
+    `gift`, `taxes`, `other`) so the frontend can group / color rows without re-parsing.
+    The `amount` already includes inflation, day-count proration, AND the same
+    survivor-reduction multiplier that `_total_expenses` applies to the aggregate —
+    so summing this list equals the row's aggregate expenses to the cent.
+    """
+    factor = 1.0 - (survivor_reduction if not both_alive else 0.0)
+    out = []
+    for e in expenses:
+        if not e.get("use", True):
+            continue
+        owner = e.get("owner", "Joint")
+        owner_alive = (owner == "Joint" or (owner == "Client" and client_alive)
+                       or (owner == "Spouse" and spouse_alive))
+        if not owner_alive:
+            continue
+        sd = _parse_date(e.get("start_date"))
+        ed = _parse_date(e.get("stop_date"))
+        es = e.get("start_year", sd.year if sd else start_year)
+        if sd or ed:
+            frac = _active_fraction(sd, ed, year)
+            if frac <= 0:
+                continue
+        else:
+            ee = e.get("stop_year")
+            if year < es or (ee and year > ee):
+                continue
+            frac = 1.0
+        freq = 12 if e.get("frequency", "Annual") == "Monthly" else 1
+        amt = (e.get("amount", 0.0) * freq
+               * (1 + e.get("inflation", 0.03)) ** max(0, year - start_year)
+               * frac * factor)
+        if amt <= 0:
+            continue
+        name = (e.get("name") or e.get("category") or "Expense").strip()
+        low = name.lower()
+        if any(k in low for k in ("health", "medic", "dental", "vision")):
+            cat = "health"
+        elif any(k in low for k in ("insur", "premium")):
+            cat = "insurance"
+        elif any(k in low for k in ("home", "hous", "mortgage", "rent", "prop tax", "property tax", "hoa")):
+            cat = "housing"
+        elif any(k in low for k in ("gift", "donation", "charit", "tithe")):
+            cat = "gift"
+        elif any(k in low for k in ("tax",)):
+            cat = "taxes"
+        elif any(k in low for k in ("travel", "vacation", "living", "spend", "food", "groceries", "discretion", "auto", "car")):
+            cat = "spending"
+        else:
+            cat = "other"
+        out.append({
+            "source": name,
+            "owner": owner,
+            "category": cat,
+            "amount": round(amt, 2),
+        })
+    return out
 
 
 @dataclass
@@ -242,7 +470,6 @@ class _HeirSleeves:
         ltcg_taxable  = rate * max(0.0, self.taxable  - self.taxable0)
         ltcg_reinvest = rate * max(0.0, self.reinvest - self.reinvest_basis)
         ltcg_re       = rate * max(0.0, self.re       - self.home0)
-        accrued_ltcg  = ltcg_taxable + ltcg_reinvest + ltcg_re
         # After-tax attribution buckets (sum == total_to_heirs when inherited_traditional ≈ 0
         # at end of the SECURE horizon; residual trad rolls into ira_post_tax on the final row).
         after_tax_roth = self.roth                                   # tax-free (settlement haircut already applied at t=0)
@@ -283,12 +510,14 @@ def _init_heir_sleeves(final, accounts, heir_rate, settlement_pct, heir_return, 
         taxable0=taxable0, home0=home0, reinvest_basis=0.0,
         roth_r=heir_return if override else ret("Tax-Free", 0.07),
         trad_r=heir_return if override else ret("Tax-Deferred", 0.07),
-        tax_r=tax_r, cash_r=ret("Cash", 0.03), re_r=ret("Real Estate", 0.035),
+        # Inherited home: heirs sell (tax-free via step-up) and reinvest at the heir
+        # taxable-brokerage rate — matches the workbook's (Taxable+Home)×(1+r_heir)^n.
+        tax_r=tax_r, cash_r=ret("Cash", 0.03), re_r=(heir_return if override else tax_r),
         heir_rate=heir_rate, heir_ltcg_rate=heir_ltcg_rate, gains_realized=gains_realized)
 
 
 def _post_death_horizon(final, accounts, heir_rate, settlement_pct, years=10,
-                        heir_return=None, heir_ltcg_rate=0.2345, div_yield=0.02,
+                        heir_return=None, heir_ltcg_rate=0.2345, div_yield=0.01,
                         gains_realized=False):
     """SECURE Act post-death inherited-account horizon after the 2nd death (matches V9).
 
@@ -319,7 +548,7 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
     heir_return = lc.get("heir_reinvest_return")  # None -> use account returns
     heir_ltcg_rate = lc.get("heir_ltcg_rate", 0.188 + lc.get("heir_state_rate", 0.0))
     gains_realized = bool(lc.get("heir_gains_realized", False))
-    div_yield = cfg.get("dividend_yield", 0.02)
+    div_yield = cfg.get("dividend_yield", 0.01)
     mortgage = cfg.get("mortgage_balance", 0.0)
     accounts = accounts if accounts is not None else cfg["accounts"]
 
@@ -386,12 +615,15 @@ def _withdraw(plan, shortfall, bal, basis, rmd_by, conversion_reserve=0.0):
     same order as discretionary withdrawal). Reserving it here prevents the discretionary
     IRA-withdrawal from overshooting the balance in the IRA-depletion year — the
     workbook enforces the same `conversion + discretionary + RMD ≤ BOY balance` rule.
-    Returns (withdrawals {id: amount}, realized_ltcg, ira_withdraw, roth_withdraw).
+    Returns (withdrawals {id: amount}, realized_ltcg, ira_withdraw, roth_withdraw,
+    basis_consumed {taxable_id: basis dollars sold} — mirrors the workbook's
+    "Basis Consumed" rows: consumed = withdrawal × (1 − gain%) on BOY values).
     """
     wd = {}
+    basis_consumed = {}
     realized_ltcg = ira_withdraw = roth_withdraw = 0.0
     if shortfall <= 0:
-        return wd, realized_ltcg, ira_withdraw, roth_withdraw
+        return wd, realized_ltcg, ira_withdraw, roth_withdraw, basis_consumed
 
     # Per-IRA conversion reservation: conversion is applied Client-first, Spouse-second
     # (mirrors _apply_year_flows), so reserve capacity in the same order.
@@ -424,6 +656,7 @@ def _withdraw(plan, shortfall, bal, basis, rmd_by, conversion_reserve=0.0):
             if kind == "taxable":
                 gain_pct = max(0.0, 1 - basis[aid] / bal[aid]) if bal[aid] > 0 else 0.0
                 realized_ltcg += t * gain_pct
+                basis_consumed[aid] = basis_consumed.get(aid, 0.0) + t * (1 - gain_pct)
             elif kind == "ira":
                 ira_withdraw += t
             elif kind == "roth":
@@ -444,7 +677,7 @@ def _withdraw(plan, shortfall, bal, basis, rmd_by, conversion_reserve=0.0):
         remaining = take_from(plan.taxable_ids, remaining, "taxable")
         remaining = take_from(plan.ira_ids, remaining, "ira")
     take_from(plan.roth_ids, remaining, "roth")            # Roth always last
-    return wd, realized_ltcg, ira_withdraw, roth_withdraw
+    return wd, realized_ltcg, ira_withdraw, roth_withdraw, basis_consumed
 
 
 @dataclass
@@ -459,9 +692,27 @@ class YearFlows:
     conversion: float
     surplus: float
     conv_deposits: dict = None   # {roth_account_id: amount} — same-owner routing
+    basis_consumed: dict = None  # {taxable_id: basis dollars sold} — workbook "Basis Consumed"
 
 
-def _apply_year_flows(plan, bal, basis, flows):
+def _living_owner_target(plan, ids, status):
+    """First account in `ids` whose ORIGINAL owner is still alive. New money (a
+    surplus sweep) must not land in a dead spouse's account — after a first death
+    the balances are retitled to the survivor, so continuing to credit the
+    decedent's account would resurrect that row."""
+    if not ids:
+        return None
+    if status is None:
+        return ids[0]
+    orig = {a["id"]: a.get("owner", "Client") for a in plan.accounts}
+    for aid in ids:
+        o = orig.get(aid, "Client")
+        if o == "Joint" or (o == "Client" and status.client_alive) or (o == "Spouse" and status.spouse_alive):
+            return aid
+    return ids[0]
+
+
+def _apply_year_flows(plan, bal, basis, flows, status=None):
     """Apply one year's flows AFTER growth (mirrors the sheet's EOY = BOY×(1+r) ± flows):
     cash spend, per-account RMD, conversion + discretionary IRA withdrawal (client IRA
     first), taxable/Roth withdrawals, conversion in, surplus sweep.
@@ -493,10 +744,13 @@ def _apply_year_flows(plan, bal, basis, flows):
         bal[iid] -= t
         rem -= t
         break                              # workbook: no cascade to next IRA (phantom debit)
-    # taxable discretionary withdrawals per converged waterfall
+    # taxable discretionary withdrawals per converged waterfall; each sale consumes
+    # its pro-rata cost basis (workbook: basis_EOY = MAX(0, basis_BOY − consumed) + sweep)
     for aid, amt in flows.wd.items():
         if aid in acct["taxable_set"]:
             bal[aid] = max(0.0, bal[aid] - amt)
+            if flows.basis_consumed:
+                basis[aid] = max(0.0, basis[aid] - flows.basis_consumed.get(aid, 0.0))
     # roth withdrawals, then conversion lands in roth
     rem = flows.roth_withdraw
     for rid in acct["roth"]:
@@ -510,17 +764,31 @@ def _apply_year_flows(plan, bal, basis, flows):
             bal[rid] += amt
     # reinvest surplus (after-tax) — default to taxable brokerage (gross return), add basis
     if flows.surplus > 0:
-        if plan.surplus_sweep_to == "Taxable" and acct["taxable"]:
-            bal[acct["taxable"][0]] += flows.surplus
-            basis[acct["taxable"][0]] += flows.surplus
+        tax_id = _living_owner_target(plan, acct["taxable"], status)
+        if plan.surplus_sweep_to == "Taxable" and tax_id:
+            bal[tax_id] += flows.surplus
+            basis[tax_id] += flows.surplus
         elif acct["cash"]:
-            bal[acct["cash"][0]] += flows.surplus
+            cash_id = _living_owner_target(plan, acct["cash"], status)
+            bal[cash_id] += flows.surplus
 
 
-def _grow_balances(bal, accounts, div_yield):
-    """End-of-year growth: taxable appreciates net of dividend yield; others at full return."""
+RISKY_TAX_TYPES = ("Taxable", "Tax-Deferred", "Tax-Free")
+
+
+def _grow_balances(bal, accounts, div_yield, eq=None):
+    """End-of-year growth: taxable appreciates net of dividend yield; others at full return.
+
+    `eq` is the sequence-of-returns hook: (equity_share, equity_return_this_year).
+    When supplied, every market-exposed account grows at
+    `w x equity_return + (1 - w) x its own flat return` for THAT year, so only the
+    equity sleeve takes the shock (cash and the residence keep their own rates).
+    """
     for a in accounts:
         aid, r = a["id"], a["return"]
+        if eq is not None and a["tax_type"] in RISKY_TAX_TYPES:
+            w, e = eq
+            r = w * e + (1 - w) * r
         if a["tax_type"] == "Taxable":
             bal[aid] *= (1 + (r - div_yield))
         elif a["tax_type"] in ("Tax-Deferred", "Tax-Free", "Cash", "Real Estate"):
@@ -545,6 +813,7 @@ class _SolveCtx:
     total_expense: float
     ira_balance: float
     plan: "Plan"
+    qcd_total: float = 0.0  # QCD portion of RMD — excluded from taxable ordinary income & fundable cash
 
 
 def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
@@ -562,13 +831,17 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
     Returns (conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw).
     """
     realized_ltcg = ira_withdraw = roth_withdraw = conversion = 0.0
-    wd, tax_res = {}, {}
+    wd, tax_res, basis_consumed = {}, {}, {}
     prev_conv = prev_wd = -1.0
     max_total_ira = max(0.0, ctx.ira_balance - ctx.rmd_total)  # room left after RMDs
+    # QCDs count toward the RMD but are EXCLUDED from AGI — subtract them wherever
+    # `rmd_total` was previously treated as taxable ordinary income (ira_distributions)
+    # OR as fundable cash-in for the household (QCDs go directly to charity).
+    taxable_rmd = max(0.0, ctx.rmd_total - ctx.qcd_total)
     for _ in range(40):
         # 1) Tax with the CURRENT conv & iw estimates
         tax_inp = {**ctx.tax_base,
-                   "ira_distributions": ctx.rmd_total + conversion + ira_withdraw,
+                   "ira_distributions": taxable_rmd + conversion + ira_withdraw,
                    "realized_ltcg": realized_ltcg, "irmaa_magi": ctx.irmaa_magi}
         tax_res = compute_year_tax(tax_inp)
         total_tax = tax_res["total_burden"]
@@ -578,16 +851,17 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
         #    account. This matches the workbook's "IRA Pool Available (BOY net of RMD &
         #    conversions)" label.
         funding_income = (ctx.tax_base["ordinary_non_ss"] + ctx.tax_base["gross_ss"]
-                          + ctx.tax_base["recurring_div_ltcg"] + ctx.rmd_total)
+                          + ctx.tax_base["recurring_div_ltcg"] + taxable_rmd)
         shortfall = (ctx.total_expense + total_tax) - funding_income - ctx.cash_boy
-        wd, realized_ltcg, ira_withdraw, roth_withdraw = _withdraw(
+        wd, realized_ltcg, ira_withdraw, roth_withdraw, basis_consumed = _withdraw(
             ctx.plan, shortfall, bal, basis, ctx.rmd_by, conversion_reserve=conversion)
 
         # 3) Now size conversion given the discretionary iw just chosen (fills bracket to
-        #    the target ceiling, capped by whatever IRA remains after RMD + iw).
+        #    the target ceiling, capped by whatever IRA remains after RMD + iw — matches
+        #    the workbook's CashFlow!r17 cap `MAX(0, bal − RMD − discretionary_wd)`).
         conversion = 0.0
         if ctx.in_window:
-            base_inp = {**ctx.tax_base, "ira_distributions": ctx.rmd_total + ira_withdraw,
+            base_inp = {**ctx.tax_base, "ira_distributions": taxable_rmd + ira_withdraw,
                         "realized_ltcg": realized_ltcg}
             opt = optimize_conversion(base_inp, ctx.target_rate, ctx.max_annual)
             conversion = min(opt["recommended_conversion"], max(0.0, max_total_ira - ira_withdraw))
@@ -598,15 +872,19 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
         if abs(conversion - prev_conv) < 1.0 and abs(ira_withdraw - prev_wd) < 1.0:
             break
         prev_conv, prev_wd = conversion, ira_withdraw
-    return conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw
+    return conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw, basis_consumed
 
 
 def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
                        ledger: list | None = None, auto_accounts: list | None = None,
-                       accounts: list | None = None) -> dict:
+                       accounts: list | None = None,
+                       gift_pot_by_year: dict | None = None) -> dict:
     """Roll year rows up into summary totals + the legacy block + Roth compliance."""
     final = rows[-1] if rows else {}
     total_early_penalty = round(sum(w.get("penalty_10pct", 0.0) for w in (warnings or [])), 2)
+    _gpby = gift_pot_by_year or {}
+    total_gifted = round(sum(v.get("contributed", 0.0) for v in _gpby.values()), 2)
+    ending_pot = round((_gpby.get(sorted(_gpby.keys())[-1], {}).get("cumulative_pot", 0.0)) if _gpby else 0.0, 2)
     return {
         "rows": rows,
         "auto_accounts": auto_accounts or [],
@@ -614,14 +892,22 @@ def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
             "years": len(rows),
             "total_roth_converted": round(sum(r["roth_conversion"] for r in rows), 2),
             "lifetime_taxes": round(sum(r["total_tax"] for r in rows), 2),
+            "lifetime_qcd": round(sum(r.get("qcd", 0.0) for r in rows), 2),
             "ending_net_worth": final.get("net_worth", 0),
             "ending_roth": final.get("roth", 0),
             "ending_traditional": final.get("traditional", 0),
             "ending_taxable": final.get("taxable", 0),
             "ending_real_estate": final.get("real_estate", 0),
             "roth_early_penalty_total": total_early_penalty,
+            "lifetime_gifted": total_gifted,
+            "gift_pot_at_second_death": ending_pot,
         },
         "legacy": _compute_legacy(cfg, final, accounts=accounts),
+        "giving": {
+            "annual_pot": _gpby,
+            "total_gifted": total_gifted,
+            "ending_pot": ending_pot,
+        },
         "roth_compliance": {
             "warnings": warnings or [],
             "conversions_ledger": ledger or [],
@@ -644,6 +930,8 @@ class Plan:
     spouse_death: int
     has_spouse: bool
     state_rate: float
+    state_code: str
+    state_move: dict | None  # {year, from, to} — mid-plan single state change; None if unused
     community_property: bool
     include_irmaa: bool
     survivor_status: str
@@ -673,6 +961,35 @@ class Plan:
     rmd_reserve_id: Any
     acct: dict
     auto_accounts: list
+    # ----- Qualified Charitable Distribution (QCD) settings -----
+    # Annual QCD dollar amount the household intends to route directly from IRA to
+    # a 501(c)(3) charity. QCDs count toward the year's RMD dollar-for-dollar and
+    # are EXCLUDED from AGI (never enter taxable ordinary income). Capped at the
+    # 2025 IRS annual limit ($108,000 per eligible taxpayer ≥ 70½). Only owners
+    # who are ≥ 70½ this year can contribute their share.
+    qcd_annual: float = 0.0
+    qcd_start_year: int = 0            # 0 = disabled
+    qcd_end_year: int = 0              # 0 = run through end_year
+    qcd_client_share: float = 1.0      # 1.0 = 100% from Client, 0.5 = 50/50, 0.0 = 100% Spouse
+    qcd_annual_cap: float = 111000.0   # per-taxpayer IRS annual cap (2026)
+    # ----- Basis Merge Toggle (workbook parity) -----
+    # When True, all Taxable accounts pool into ONE blended-basis account at
+    # first death (matches the spreadsheet's Legacy-page behavior). When False,
+    # accounts stay separate — the stepped-up lot is spent first, which is the
+    # tax-efficient real-world behavior but produces a small delta vs the sheet.
+    merge_basis_at_first_death: bool = True
+    # ----- Lifetime Giving Program -----
+    # Annual exclusion gifts (2026: $19K/donor/donee) + §2503(e) direct medical/
+    # tuition payments. Both drain the taxable brokerage annually and compound
+    # in a family-side "gift pot" at the heir reinvestment rate.
+    annual_gift_amount: float = 0.0    # $/yr (both spouses combined)
+    section_2503e_amount: float = 0.0  # $/yr direct medical/tuition (unlimited)
+    gift_start_year: int = 0           # 0 = disabled
+    gift_end_year: int = 0             # 0 = run through end_year
+    # ----- Sequence-of-returns path (optional) -----
+    # {"start_year": int, "equity_share": float, "equity_returns": [r_2026, r_2027, ...]}
+    # Absent (the normal case) => every account compounds at its own flat return.
+    return_path: dict | None = None
 
 
 def _auto_roth_accounts(accounts: list) -> list:
@@ -692,6 +1009,33 @@ def _auto_roth_accounts(accounts: list) -> list:
     return autos
 
 
+def _parse_return_path(cfg: dict) -> dict | None:
+    """Validate the optional sequence-of-returns path (see Plan.return_path)."""
+    rp = cfg.get("return_path")
+    if not isinstance(rp, dict):
+        return None
+    seq = rp.get("equity_returns")
+    if not isinstance(seq, list) or not seq:
+        return None
+    return {
+        "start_year": int(rp.get("start_year") or cfg["projection"]["start_year"]),
+        "equity_share": max(0.0, min(1.0, float(rp.get("equity_share", 0.6)))),
+        "equity_returns": [float(x) for x in seq],
+    }
+
+
+def _equity_for_year(plan: "Plan", year: int):
+    """(equity_share, equity_return) for `year`, or None outside the supplied path."""
+    rp = plan.return_path
+    if not rp:
+        return None
+    i = year - rp["start_year"]
+    seq = rp["equity_returns"]
+    if 0 <= i < len(seq):
+        return (rp["equity_share"], seq[i])
+    return None
+
+
 def _parse_plan(cfg: dict) -> Plan:
     """Pull every scalar/list the projection loop needs out of the raw config once."""
     h = cfg["household"]
@@ -709,16 +1053,26 @@ def _parse_plan(cfg: dict) -> Plan:
     other_ids = [a["id"] for a in accounts if a["tax_type"] in ("Real Estate",)]
     taxable_set = set(taxable_ids)
     wd_cfg = cfg.get("withdrawal", {})
+    # Per spec: model uses ONE assumed CPI (config.projection.general_inflation)
+    # for all bracket + IRMAA indexing — same convention as the spreadsheet's
+    # BracketInfl variable. If separate values are set on a legacy scenario the
+    # explicit override still wins, but the default is the general inflation
+    # rate, NOT a fixed 3% chained-CPI.
+    _gi = float(p.get("general_inflation", 0.03) or 0.03)
+    _brk = p.get("bracket_indexing")
+    _irm = p.get("irmaa_indexing")
     return Plan(
         cfg=cfg,
         start_year=p["start_year"], end_year=p["end_year"],
-        bracket_index_rate=p.get("bracket_indexing", 0.03),
-        irmaa_index_rate=p.get("irmaa_indexing", 0.03),
+        bracket_index_rate=float(_brk) if _brk is not None else _gi,
+        irmaa_index_rate=float(_irm) if _irm is not None else _gi,
         client_dob=h["client_dob_year"], spouse_dob=h.get("spouse_dob_year"),
         client_death=h["client_life_expectancy"],
         spouse_death=h.get("spouse_life_expectancy", 200),
         has_spouse=h.get("spouse_dob_year") is not None,
         state_rate=cfg["tax"]["state_rate"],
+        state_code=(cfg["tax"].get("state_code") or "").strip().upper(),
+        state_move=_normalize_state_move(cfg["tax"].get("state_move")),
         community_property=cfg["tax"].get("community_property", False),
         include_irmaa=cfg["tax"].get("include_irmaa", True),
         survivor_status=cfg["tax"].get("survivor_filing_status", "Single"),
@@ -732,7 +1086,7 @@ def _parse_plan(cfg: dict) -> Plan:
         # normalize JSON string keys ("2026") to ints so HTTP payloads work
         year_targets={int(k): float(v) for k, v in (roth.get("year_targets") or {}).items()},
         streams=cfg["income_streams"], expenses=cfg["expenses"], accounts=accounts,
-        div_yield=cfg.get("dividend_yield", 0.02),
+        div_yield=cfg.get("dividend_yield", 0.01),
         cash_rate=next((a["return"] for a in accounts if a["tax_type"] == "Cash"), 0.03),
         funding_order=wd_cfg.get("funding_order", "Cash → Taxable → IRA → Roth"),
         ira_split=wd_cfg.get("ira_split", 0.5),
@@ -744,6 +1098,17 @@ def _parse_plan(cfg: dict) -> Plan:
         acct={"cash": cash_ids, "taxable": taxable_ids, "ira": ira_ids,
               "roth": roth_ids, "other": other_ids, "taxable_set": taxable_set},
         auto_accounts=auto_accounts,
+        qcd_annual=float(h.get("qcd_annual_amount") or 0.0),
+        qcd_start_year=int(h.get("qcd_start_year") or 0),
+        qcd_end_year=int(h.get("qcd_end_year") or 0),
+        qcd_client_share=max(0.0, min(1.0, float(h.get("qcd_client_share", 1.0)))),
+        qcd_annual_cap=float(h.get("qcd_annual_cap") or 111000.0),
+        merge_basis_at_first_death=bool(cfg["tax"].get("merge_basis_at_first_death", True)),
+        annual_gift_amount=float(cfg.get("giving", {}).get("annual_gift_amount") or 0.0),
+        section_2503e_amount=float(cfg.get("giving", {}).get("section_2503e_amount") or 0.0),
+        gift_start_year=int(cfg.get("giving", {}).get("start_year") or 0),
+        gift_end_year=int(cfg.get("giving", {}).get("end_year") or 0),
+        return_path=_parse_return_path(cfg),
     )
 
 
@@ -768,6 +1133,13 @@ def _step_up_basis(plan, owner_map, basis, bal, decedent):
     died. Common-law state -> decedent's separate property 100%, jointly-owned 50%
     (only the decedent's half), the survivor's separate property 0%. `owner_map` still
     holds the ORIGINAL owner here (rollover reassignment happens after this call).
+
+    If `plan.merge_basis_at_first_death` is True, ALL taxable-account balances +
+    basis are pooled into the survivor's first taxable account after the step-up
+    (workbook parity — the spreadsheet keeps only ONE blended-basis taxable line
+    post-Y1). Other taxable/real-estate accounts are drained to zero. Real estate
+    stays in its own account regardless (blending a personal residence into a
+    brokerage doesn't make sense in the workbook or in reality).
     """
     for aid in plan.taxable_ids + plan.other_ids:
         owner = owner_map.get(aid, "Client")
@@ -782,6 +1154,27 @@ def _step_up_basis(plan, owner_map, basis, bal, decedent):
         cur = basis.get(aid, 0.0)
         if frac > 0 and bal.get(aid, 0.0) > cur:
             basis[aid] = cur + frac * (bal[aid] - cur)
+
+    # Basis merge (workbook convention): after step-up, pool all Taxable
+    # accounts into ONE account so subsequent withdrawals draw from a single
+    # blended-basis pool. Real estate is preserved separately.
+    # The anchor is the SURVIVOR's own taxable account (falling back to a joint
+    # account, then to the first): pooling onto `taxable_ids[0]` parked the whole
+    # brokerage on the decedent's line — e.g. the balance kept growing on "Client
+    # Taxable Brokerage" for years after the client's death.
+    if plan.merge_basis_at_first_death and len(plan.taxable_ids) > 1:
+        survivor = "Spouse" if decedent == "Client" else "Client"
+        orig_owner = {a["id"]: a.get("owner", "Client") for a in plan.accounts}
+        anchor = next((aid for aid in plan.taxable_ids if orig_owner.get(aid) == survivor),
+                      next((aid for aid in plan.taxable_ids if orig_owner.get(aid) == "Joint"),
+                           plan.taxable_ids[0]))
+        pooled_bal = sum(bal.get(aid, 0.0) for aid in plan.taxable_ids)
+        pooled_basis = sum(basis.get(aid, 0.0) for aid in plan.taxable_ids)
+        for aid in plan.taxable_ids:
+            bal[aid] = 0.0
+            basis[aid] = 0.0
+        bal[anchor] = pooled_bal
+        basis[anchor] = pooled_basis
 
 
 def _apply_spousal_rollover(plan, owner_map, basis, bal, client_alive, spouse_alive,
@@ -798,6 +1191,34 @@ def _apply_spousal_rollover(plan, owner_map, basis, bal, client_alive, spouse_al
         return
     _step_up_basis(plan, owner_map, basis, bal, decedent)
     owner_map.update({k: (survivor if v == decedent else v) for k, v in owner_map.items()})
+    # Retitle the decedent's RETIREMENT accounts onto the SURVIVOR's own account
+    # of the same tax type (advisor request 2026-08-21). Ownership already
+    # transferred above — a spousal rollover means the survivor holds the IRA and
+    # the Roth — so leaving the dollars on the decedent's account made the
+    # year-by-year account table report balances on a dead person's line. Totals,
+    # RMD divisors (driven by owner_map + the owner's age) and aggregate basis are
+    # unchanged — only which row carries the money.
+    # Deliberately limited to Traditional / Roth: Taxable and Real-Estate lots are
+    # governed by _step_up_basis and the `merge_basis_at_first_death` flag, and
+    # folding them here would silently defeat merge=False (which must keep the
+    # stepped-up lot separate so the survivor can spend it first).
+    RETITLE_TYPES = ("Tax-Deferred", "Tax-Free")
+    by_owner_type = {}
+    for a in plan.accounts:
+        by_owner_type.setdefault((a.get("owner", "Client"), a.get("tax_type")), []).append(a["id"])
+    for a in plan.accounts:
+        if a.get("owner", "Client") != decedent or a.get("tax_type") not in RETITLE_TYPES:
+            continue
+        dst_ids = by_owner_type.get((survivor, a.get("tax_type")))
+        if not dst_ids:
+            continue                      # survivor holds nothing of this type — leave in place
+        dst, src = dst_ids[0], a["id"]
+        if dst == src:
+            continue
+        bal[dst] = bal.get(dst, 0.0) + bal.get(src, 0.0)
+        basis[dst] = basis.get(dst, 0.0) + basis.get(src, 0.0)
+        bal[src] = 0.0
+        basis[src] = 0.0
 
 
 def _medicare_headcount(plan, client_alive, spouse_alive, year):
@@ -850,6 +1271,187 @@ class YearCalc:
     roth_withdraw: float
     surplus: float
     wd: dict
+    # Line-item breakdowns for the Cashflow tab. Populated in the main loop.
+    income_lines: list = field(default_factory=list)
+    expense_lines: list = field(default_factory=list)
+    rmd_by: dict = field(default_factory=dict)
+    taxable_dividends: float = 0.0
+    taxable_withdraw: float = 0.0
+    # ----- Qualified Charitable Distribution (QCD) values, if any -----
+    qcd_total: float = 0.0
+    qcd_client: float = 0.0
+    qcd_spouse: float = 0.0
+
+
+def _assemble_line_items(plan, status, calc, tax_res) -> dict:
+    """Assemble the full income + expense line-item statement for one year.
+
+    Consumers: the "Cashflow" tab (frontend) renders this directly. Contract:
+      - `income` is a list of {source, kind, owner, amount, taxable_ordinary,
+        taxable_preferential, note?}. Sum of `amount` == `income_subtotal`.
+      - `expenses` is a list of {source, category, owner, amount}. Sum of `amount`
+        == `expense_subtotal`.
+      - `funding` block splits how the shortfall (if any) was drawn from cash /
+        taxable / IRA / Roth.
+      - `subtotals` gives the four bold reconciliation numbers the tab renders.
+      - `non_cash_events` lists things (Roth conversions) that DRIVE the tax bill
+        but are not real cash movements — kept separate so `income_subtotal` isn't
+        overstated.
+    """
+    # ---------- Income ----------
+    income: list = []
+    for line in calc.income_lines:
+        rec = {
+            "source": line["source"],
+            "owner": line["owner"],
+            "kind": line["kind"],
+            "amount": line["amount"],
+            # Ordinary / preferential contribution of THIS source alone (for the
+            # per-year card view). SS is special: only the taxable portion of the
+            # aggregate applies proportionally across all SS lines.
+        }
+        if line["kind"] == "ss":
+            gross = calc.gross_ss
+            frac = (line["amount"] / gross) if gross > 0 else 0
+            rec["taxable_ordinary"] = round(tax_res["taxable_ss"] * frac, 2)
+            rec["taxable_preferential"] = 0.0
+        elif line["kind"] == "dividends":
+            rec["taxable_ordinary"] = 0.0
+            rec["taxable_preferential"] = line["amount"]
+        else:
+            rec["taxable_ordinary"] = line["amount"]
+            rec["taxable_preferential"] = 0.0
+        income.append(rec)
+
+    # Taxable-brokerage dividends (yield * balance) — synthesized here from `calc`,
+    # not from streams. Preferential-taxed.
+    if calc.taxable_dividends > 0:
+        income.append({
+            "source": "Taxable brokerage dividends", "owner": "Joint",
+            "kind": "dividends", "amount": calc.taxable_dividends,
+            "taxable_ordinary": 0.0, "taxable_preferential": calc.taxable_dividends,
+        })
+
+    if calc.cash_interest > 0:
+        income.append({
+            "source": "Cash interest", "owner": "Joint", "kind": "interest",
+            "amount": round(calc.cash_interest, 2),
+            "taxable_ordinary": round(calc.cash_interest, 2),
+            "taxable_preferential": 0.0,
+        })
+
+    if calc.realized_ltcg > 0:
+        income.append({
+            "source": "Realized LTCG (rebalance)", "owner": "Joint", "kind": "dividends",
+            "amount": round(calc.realized_ltcg, 2),
+            "taxable_ordinary": 0.0,
+            "taxable_preferential": round(calc.realized_ltcg, 2),
+            "note": "Long-term gains realized when funding spend / rebalancing.",
+        })
+
+    # RMDs per source account — labeled by account name so the couple can see
+    # which IRA drove which withdrawal. If QCDs are active, the taxable portion
+    # is netted out (QCDs pass to charity untaxed — see the "Charitable — QCD"
+    # expense line below).
+    qcd_remaining = calc.qcd_total
+    for aid, amt in (calc.rmd_by or {}).items():
+        if amt <= 0:
+            continue
+        acct = next((a for a in plan.accounts if a["id"] == aid), None)
+        # Apportion QCD against this account's RMD share (proportional split so a
+        # multi-IRA household sees each IRA's QCD portion excluded consistently).
+        share = amt / calc.rmd_total if calc.rmd_total > 0 else 0.0
+        qcd_here = min(qcd_remaining, calc.qcd_total * share)
+        qcd_remaining = max(0.0, qcd_remaining - qcd_here)
+        taxable_here = max(0.0, amt - qcd_here)
+        source = f"RMD — {acct['name'] if acct else aid}"
+        if qcd_here > 0:
+            source += f" (net of ${round(qcd_here):,.0f} QCD)"
+        income.append({
+            "source": source,
+            "owner": (acct.get("owner") if acct else "Joint"),
+            "kind": "rmd",
+            "amount": round(amt, 2),                     # gross amount leaving the IRA
+            "taxable_ordinary": round(taxable_here, 2),   # taxable portion only
+            "taxable_preferential": 0.0,
+            "note": (
+                "Required minimum distribution — always taxed as ordinary income."
+                if qcd_here <= 0 else
+                f"Required minimum distribution. ${round(qcd_here):,.0f} routed to charity as a Qualified Charitable Distribution (excluded from AGI)."
+            ),
+        })
+
+    income_subtotal = round(sum(x["amount"] for x in income), 2)
+
+    # ---------- Expenses ----------
+    expenses: list = list(calc.expense_lines)  # copy — we'll append tax/medicare
+
+    # Federal + state tax (rolled together on the same category so the tab can
+    # optionally split them via the taxable_ordinary/preferential columns).
+    if tax_res.get("federal_ordinary_tax", 0) + tax_res.get("federal_ltcg_tax", 0) > 0:
+        expenses.append({
+            "source": "Federal income tax", "owner": "Joint",
+            "category": "taxes",
+            "amount": round(tax_res["federal_ordinary_tax"] + tax_res["federal_ltcg_tax"]
+                            + tax_res.get("niit", 0), 2),
+        })
+    if tax_res.get("state_tax", 0) > 0:
+        expenses.append({
+            "source": "State income tax", "owner": "Joint", "category": "taxes",
+            "amount": round(tax_res["state_tax"], 2),
+        })
+    if tax_res.get("medicare_premiums", 0) > 0:
+        expenses.append({
+            "source": "Medicare + IRMAA", "owner": "Joint", "category": "health",
+            "amount": round(tax_res["medicare_premiums"], 2),
+        })
+
+    # Qualified Charitable Distributions — money routed from IRA to a 501(c)(3).
+    # These dollars ARE a real outflow (they leave the household), but they
+    # NEVER enter taxable income. Rendered as an expense so the cashflow tab
+    # reconciles: income line for the full RMD, expense line for the charity portion.
+    if calc.qcd_total > 0:
+        expenses.append({
+            "source": "Charitable — QCD", "owner": "Joint", "category": "charity",
+            "amount": round(calc.qcd_total, 2),
+            "note": "Qualified Charitable Distribution from IRA to charity — counts toward RMD, excluded from AGI.",
+        })
+
+    expense_subtotal = round(sum(x["amount"] for x in expenses), 2)
+
+    # ---------- Funding block ----------
+    funding = {
+        "from_cash": round(calc.cash_drawn, 2),
+        "from_taxable": calc.taxable_withdraw,
+        "from_ira": round(calc.ira_withdraw, 2),
+        "from_roth": round(calc.roth_withdraw, 2),
+    }
+    funding_total = round(sum(funding.values()), 2)
+
+    # ---------- Reconciliation ----------
+    net_cashflow = round(income_subtotal - expense_subtotal, 2)
+    # Positive surplus = swept back into taxable brokerage; negative = funded by
+    # withdrawals (funding_total covers it). The two paths mean net_cashflow +
+    # funding_total ≈ surplus (calc.surplus is the ground-truth reconciler).
+
+    return {
+        "income": income,
+        "expenses": expenses,
+        "funding": funding,
+        "subtotals": {
+            "income": income_subtotal,
+            "expenses": expense_subtotal,
+            "net_cashflow": net_cashflow,
+            "funding_drawn": funding_total,
+            "surplus": round(calc.surplus, 2),
+        },
+        "non_cash_events": (
+            [{"source": "Roth conversion", "kind": "conversion",
+              "amount": round(calc.conversion, 2),
+              "note": "Not a real cashflow — drives the tax bill only. IRA → Roth transfer."}]
+            if calc.conversion > 0 else []
+        ),
+    }
 
 
 def _build_year_row(plan: Plan, status: YearStatus, year: int, bal: dict, calc: YearCalc) -> dict:
@@ -859,13 +1461,25 @@ def _build_year_row(plan: Plan, status: YearStatus, year: int, bal: dict, calc: 
     ira_ids, roth_ids, other_ids = plan.ira_ids, plan.roth_ids, plan.other_ids
     liquid = sum(bal[i] for i in cash_ids + taxable_ids + ira_ids + roth_ids)
     net_worth = liquid + sum(bal[i] for i in other_ids)
+    # Effective per-year target rate (phased schedules override the flat target).
+    year_target = plan.year_targets.get(year, plan.target_rate)
+    tgt_ceiling = bracket_ceiling(year_target, status.mfj, calc.bracket_index)
+    # `ordinary_taxable_income` already includes the year's conversion. Unused
+    # headroom = dollars the plan could still have converted at the target rate
+    # without pushing into the next bracket — advisors visualize this as a
+    # faint bar behind each conversion so they can see where the plan left
+    # room versus where it filled the bracket.
+    unused_headroom = max(0.0, (tgt_ceiling - tax_res["ordinary_taxable_income"])) if tgt_ceiling != float("inf") else 0.0
     return {
         "year": year,
         "filing_status": status.filing,
         "client_age": _age(plan.client_dob, year) if status.client_alive else None,
         "spouse_age": _age(plan.spouse_dob, year) if (plan.has_spouse and status.spouse_alive) else None,
-        "ordinary_income": round(calc.ordinary_non_ss + calc.rmd_total + calc.cash_interest, 2),
+        # ordinary_income is what enters the ordinary tax bracket → EXCLUDES QCD portion of RMD.
+        "ordinary_income": round(calc.ordinary_non_ss + max(0.0, calc.rmd_total - calc.qcd_total) + calc.cash_interest, 2),
         "rmd": round(calc.rmd_total, 2),
+        "qcd": round(calc.qcd_total, 2),
+        "qcd_by_owner": {"Client": round(calc.qcd_client, 2), "Spouse": round(calc.qcd_spouse, 2)},
         "roth_conversion": round(calc.conversion, 2),
         "preferential_income": round(calc.recurring_div + calc.realized_ltcg, 2),
         "gross_ss": round(calc.gross_ss, 2),
@@ -879,12 +1493,59 @@ def _build_year_row(plan: Plan, status: YearStatus, year: int, bal: dict, calc: 
         "irmaa_tier": tax_res["irmaa_tier"],
         "irmaa_thresholds": irmaa_thresholds(status.mfj, calc.irmaa_index),
         "bracket_fill": bracket_fill(tax_res["ordinary_taxable_income"], status.mfj, calc.bracket_index),
+        # Indexation multiplier applied to the federal bracket floors this year.
+        # Exposed so the frontend Tax Bracket Visualizer can draw the "bucket"
+        # boundaries without re-running the tax engine — bracket_edge_this_year
+        # = base_floor * bracket_index.
+        "bracket_index": round(calc.bracket_index, 6),
+        # Bracket-fill headroom info for the ConversionScheduleChart overlay.
+        # `target_bracket_ceiling`: dollar top of the target bracket in this
+        # year (`None` when target = top marginal, i.e. no ceiling).
+        # `conversion_headroom_unused`: dollars the plan LEFT ON THE TABLE at
+        # the target rate — the "room to ceiling" visualization.
+        "target_bracket_ceiling": None if tgt_ceiling == float("inf") else round(tgt_ceiling, 2),
+        "conversion_headroom_unused": round(unused_headroom, 2),
         "tax_breakdown": {
             "ordinary": tax_res["federal_ordinary_tax"],
             "preferential": tax_res["federal_ltcg_tax"],
             "niit": tax_res["niit"],
             "state": tax_res["state_tax"],
             "medicare": tax_res["medicare_premiums"],
+        },
+        # Full per-year tax detail powering the Tax Detail tab. Everything here is
+        # ALREADY computed by tax_engine.compute_year_tax — this is exposure of
+        # intermediates, not new math. Callout flags (IRMAA step change, LTCG
+        # bump-zone crossing, SS Torpedo step) are diffed year-over-year on the
+        # frontend so the backend row stays stateless.
+        "tax_detail": {
+            "preferential_taxable": tax_res["preferential_within_taxable"],
+            "total_preferential": tax_res["total_preferential"],
+            "taxable_ss": tax_res["taxable_ss"],
+            "provisional_income": tax_res["provisional_income"],
+            "standard_deduction": tax_res["standard_deduction"],
+            "senior_bonus": tax_res["senior_bonus"],
+            # SS Torpedo indicator: what % of gross SS ended up federally taxable
+            # (0 / 50 / 85, or an in-between number when partly across a phase-in).
+            # None when the household received no SS this year.
+            "ss_inclusion_pct": (
+                round(tax_res["taxable_ss"] / calc.gross_ss * 100, 2)
+                if calc.gross_ss > 0 else None
+            ),
+            # How preferential dollars stack across the 0/15/20% LTCG bands plus
+            # the indexed ceilings that draw the cliffs — the Bump-Zone Alert
+            # feeds off these numbers.
+            "ltcg_band_split": ltcg_band_split(
+                tax_res["ordinary_taxable_income"],
+                tax_res["preferential_within_taxable"],
+                status.mfj, calc.bracket_index),
+            # Marginal effective rate on the LAST dollar of ordinary income.
+            # Same as `marginal_rate` above until SS/IRMAA/LTCG interactions
+            # kick in; kept alongside for callout tooling.
+            "marginal_ordinary_rate": tax_res["marginal_ordinary_rate"],
+            "effective_rate": tax_res["effective_rate"],
+            # Per-state tax detail (real state engine when scenario.tax.state_code
+            # is set, else legacy `state_rate × federal_taxable` fallback).
+            "state_detail": tax_res.get("state_detail", {}),
         },
         "cash": round(sum(bal[i] for i in cash_ids), 2),
         "taxable": round(sum(bal[i] for i in taxable_ids), 2),
@@ -903,6 +1564,7 @@ def _build_year_row(plan: Plan, status: YearStatus, year: int, bal: dict, calc: 
             "dividends": round(calc.recurring_div, 2),
             "interest": round(calc.cash_interest, 2),
             "rmd": round(calc.rmd_total, 2),
+            "qcd": round(calc.qcd_total, 2),
             "conversion": round(calc.conversion, 2),
             "expenses": round(calc.total_expense, 2),
             "income_tax": tax_res["total_income_tax"],
@@ -913,10 +1575,18 @@ def _build_year_row(plan: Plan, status: YearStatus, year: int, bal: dict, calc: 
             "from_roth": round(calc.roth_withdraw, 2),
             "surplus": round(calc.surplus, 2),
         },
+        # Full per-year income + expense statement powering the Cashflow tab.
+        # Assembled from the same intermediates the aggregate cashflow uses so
+        # every subtotal reconciles to the row's aggregates to the cent.
+        "line_items": _assemble_line_items(plan, status, calc, tax_res),
     }
 
 
 def run_projection(cfg: dict) -> dict:
+    # Apply Market Scenario overrides (if any). This is a no-op when
+    # cfg.market_scenario is absent, id == "custom", or id is unknown — so
+    # historical_avg / default plans keep the exact V17-aligned outputs.
+    cfg = apply_market_scenario(cfg)
     plan = _parse_plan(cfg)
 
     # mutable balances
@@ -927,6 +1597,15 @@ def run_projection(cfg: dict) -> dict:
     magi_history = {}  # year -> MAGI, for the IRMAA 2-year lookback
     client_alive_prev, spouse_alive_prev = True, plan.has_spouse
     rows = []
+    # Lifetime-giving pot: cumulative gifted dollars compounded at the heir
+    # reinvestment rate (falls back to taxable_return). Tracked separately so
+    # it appears as a bonus family delta at Y2+10 without polluting NW.
+    lc = plan.cfg.get("legacy", {}) or {}
+    _giving_growth = lc.get("heir_reinvest_return")
+    if _giving_growth is None:
+        _giving_growth = next((a["return"] for a in plan.accounts if a["tax_type"] == "Taxable"), 0.06)
+    gift_pot = 0.0
+    gift_pot_by_year = {}  # year -> {contributed, cumulative_pot} for the frontend
     # 5-year/pre-59½ compliance tracking — per-conversion basis (Roth ordering rules):
     #   (1) each conversion has its own 5-yr clock (10% penalty on conversion principal
     #       tapped early),
@@ -948,12 +1627,13 @@ def run_projection(cfg: dict) -> dict:
             break
 
         # --- income streams ---
-        ordinary_non_ss, gross_ss, recurring_div = _aggregate_income(
+        ordinary_non_ss, gross_ss, recurring_div, pension_income = _aggregate_income(
             plan.streams, year, status.client_alive, status.spouse_alive,
             status.both_alive, plan.has_spouse, status.survivor_owner)
 
         # --- RMDs ---
         rmd_total, rmd_by = _total_rmd(plan, status, owner_map, bal, year)
+        qcd_total, qcd_client, qcd_spouse = _qcd_for_year(plan, status, year, rmd_total)
 
         cash_boy = sum(bal[i] for i in plan.cash_ids)
         cash_interest = cash_boy * plan.cash_rate
@@ -981,14 +1661,22 @@ def run_projection(cfg: dict) -> dict:
             plan.expenses, year, status.client_alive, status.spouse_alive,
             status.both_alive, plan.start_year, plan.survivor_spending_reduction)
 
+        # Older-spouse age drives age-gated retirement-income exclusions in some states.
+        _client_age_now = _age(plan.client_dob, year) if status.client_alive else 0
+        _spouse_age_now = (_age(plan.spouse_dob, year) if (plan.has_spouse and status.spouse_alive) else 0)
+        max_age = max(_client_age_now, _spouse_age_now)
+
         # --- circular solve: conversion <-> discretionary IRA withdrawal <-> taxes ---
+        eff_state = _effective_state_code(plan.state_code, plan.state_move, year)
         tax_base = {
             "filing_status": status.filing, "year": year,
             "bracket_index": bracket_index, "irmaa_index": irmaa_index,
             "num_65plus": status.num65, "medicare_count": status.med_count,
             "ordinary_non_ss": ordinary_non_ss, "cash_interest": cash_interest,
             "gross_ss": gross_ss, "recurring_div_ltcg": recurring_div,
-            "state_rate": plan.state_rate, "include_irmaa": plan.include_irmaa,
+            "state_rate": plan.state_rate, "state_code": eff_state,
+            "pension_income": pension_income, "max_age": max_age,
+            "include_irmaa": plan.include_irmaa,
         }
         ctx = _SolveCtx(
             tax_base=tax_base, in_window=in_window, target_rate=year_target,
@@ -996,8 +1684,8 @@ def run_projection(cfg: dict) -> dict:
             irmaa_index_yplus2=irmaa_index_yplus2,
             irmaa_magi=magi_history.get(year - IRMAA_LOOKBACK_YEARS),  # 2-yr lookback
             rmd_total=rmd_total, rmd_by=rmd_by, cash_boy=cash_boy, total_expense=total_expense,
-            ira_balance=ira_balance, plan=plan)
-        conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw = \
+            ira_balance=ira_balance, plan=plan, qcd_total=qcd_total)
+        conversion, tax_res, wd, realized_ltcg, ira_withdraw, roth_withdraw, basis_consumed = \
             _solve_year_conversion(ctx, bal, basis)
         total_tax = tax_res["total_burden"]
 
@@ -1096,17 +1784,69 @@ def run_projection(cfg: dict) -> dict:
         magi_history[year] = tax_res["magi"]  # record for future-year IRMAA lookback
 
         spend_need = total_expense + total_tax
-        funding_income = ordinary_non_ss + gross_ss + recurring_div + rmd_total
+        funding_income = ordinary_non_ss + gross_ss + recurring_div + max(0.0, rmd_total - qcd_total)
         cash_need = spend_need - funding_income           # income covers spending first
         cash_drawn = min(cash_boy, max(0.0, cash_need))
         surplus = funding_income - spend_need
         # grow BOY balances first, then apply year-end flows (matches the sheet's
         # EOY = BOY×(1+r) ± flows convention; current-year flows do not compound)
-        _grow_balances(bal, plan.accounts, plan.div_yield)
+        _grow_balances(bal, plan.accounts, plan.div_yield, _equity_for_year(plan, year))
         flows = YearFlows(cash_need=cash_need, rmd_by=rmd_by, ira_draw=conversion + ira_withdraw,
                           wd=wd, roth_withdraw=roth_withdraw, conversion=conversion, surplus=surplus,
-                          conv_deposits=conv_deposits)
-        _apply_year_flows(plan, bal, basis, flows)
+                          conv_deposits=conv_deposits, basis_consumed=basis_consumed)
+        _apply_year_flows(plan, bal, basis, flows, status)
+
+        # --- Lifetime giving program (§2503(b) annual exclusion + §2503(e)) ---
+        # Drain the taxable-brokerage anchor account by the gifted amount (both
+        # spouses combined) and add it to the family "gift pot" that compounds
+        # at the heir reinvestment rate. Only runs during [gift_start, gift_end]
+        # AND while at least one spouse is alive.
+        gift_pot *= (1.0 + _giving_growth)                       # grow existing pot
+        gift_contrib_this_year = 0.0
+        _gs = plan.gift_start_year or plan.start_year
+        _ge = plan.gift_end_year or plan.end_year
+        if (_gs <= year <= _ge) and (plan.annual_gift_amount + plan.section_2503e_amount > 0):
+            total_gift = plan.annual_gift_amount + plan.section_2503e_amount
+            # Withdraw from Taxable brokerages (cap at available balance across
+            # taxable accounts). Consumes basis proportionally (identical mech
+            # to `_withdraw` — a gift is a "sale then transfer" from the estate's
+            # perspective, and heirs receive stepped-down basis on cash gifts).
+            available_tax = sum(bal.get(aid, 0.0) for aid in plan.taxable_ids)
+            actual_gift = min(total_gift, available_tax)
+            if actual_gift > 0:
+                for aid in plan.taxable_ids:
+                    if actual_gift <= 0:
+                        break
+                    take = min(actual_gift, bal.get(aid, 0.0))
+                    if take <= 0:
+                        continue
+                    # Reduce basis pro-rata just like a taxable sale.
+                    if bal.get(aid, 0.0) > 0:
+                        b_frac = min(1.0, basis.get(aid, 0.0) / bal[aid])
+                        basis[aid] = max(0.0, basis.get(aid, 0.0) - take * b_frac)
+                    bal[aid] = max(0.0, bal.get(aid, 0.0) - take)
+                    actual_gift -= take
+                contributed = min(total_gift, available_tax)
+                gift_pot += contributed
+                gift_contrib_this_year = contributed
+        gift_pot_by_year[year] = {
+            "contributed": round(gift_contrib_this_year, 2),
+            "cumulative_pot": round(gift_pot, 2),
+        }
+
+        # Line-item breakdowns for the Cashflow tab. Same math the aggregates
+        # use, exposed one row per source. Cheap: same helper walks a small list.
+        income_lines = _income_line_items(
+            plan.streams, year, status.client_alive, status.spouse_alive,
+            status.both_alive, plan.has_spouse, status.survivor_owner)
+        expense_lines = _expense_line_items(
+            plan.expenses, year, status.client_alive, status.spouse_alive,
+            status.both_alive, plan.start_year, plan.survivor_spending_reduction)
+
+        # Taxable-account withdrawals routed through the plan's `taxable_set`
+        # accounts — kept separate from `ira_withdraw` / `roth_withdraw` so the
+        # cashflow view can label the funding source correctly per year.
+        taxable_wd = round(sum(v for k, v in wd.items() if k in plan.taxable_set), 2)
 
         calc = YearCalc(
             tax_res=tax_res, bracket_index=bracket_index, irmaa_index=irmaa_index,
@@ -1114,13 +1854,18 @@ def run_projection(cfg: dict) -> dict:
             realized_ltcg=realized_ltcg, cash_interest=cash_interest, rmd_total=rmd_total,
             conversion=conversion, total_tax=total_tax, total_expense=total_expense,
             cash_drawn=cash_drawn, ira_withdraw=ira_withdraw, roth_withdraw=roth_withdraw,
-            surplus=surplus, wd=wd)
+            surplus=surplus, wd=wd,
+            income_lines=income_lines, expense_lines=expense_lines,
+            rmd_by=rmd_by, taxable_dividends=round(taxable_dividends, 2),
+            taxable_withdraw=taxable_wd,
+            qcd_total=qcd_total, qcd_client=qcd_client, qcd_spouse=qcd_spouse)
         rows.append(_build_year_row(plan, status, year, bal, calc))
 
         client_alive_prev, spouse_alive_prev = status.client_alive, status.spouse_alive
 
     return _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger,
-                              auto_accounts=plan.auto_accounts, accounts=plan.accounts)
+                              auto_accounts=plan.auto_accounts, accounts=plan.accounts,
+                              gift_pot_by_year=gift_pot_by_year)
 
 
 def sweep_brackets(cfg: dict) -> dict:
@@ -1167,4 +1912,156 @@ def sweep_brackets(cfg: dict) -> dict:
         "ranked": ranked,
         "best": best,
         "metric": "after_tax_estate_to_heirs",
+    }
+
+
+# Beneficiary combined ordinary marginal rates for the Legacy-page sensitivity.
+# The heir rate is an ASSUMPTION about people whose careers and tax brackets
+# cannot be forecast decades out, so the report shows the after-tax inheritance
+# across a low / middle / high band instead of one presumed future.
+DEFAULT_HEIR_SENS_RATES = (0.14, 0.26, 0.41)
+
+
+def heir_rate_sensitivity(cfg: dict, rates=None) -> dict:
+    """After-tax inheritance under alternative beneficiary marginal rates.
+
+    The heir ordinary rate feeds ONLY the post-death SECURE-10 horizon, never the
+    parents' cash-flow/tax projection — so each branch (with / without conversions)
+    projects once and the heir horizon is re-priced per candidate rate.
+    """
+    import copy
+
+    clean = []
+    for r in (rates or DEFAULT_HEIR_SENS_RATES):
+        try:
+            v = round(float(r), 4)
+        except (TypeError, ValueError):
+            continue
+        if 0.0 <= v <= 0.6:
+            clean.append(v)
+    rate_list = sorted(set(clean)) or list(DEFAULT_HEIR_SENS_RATES)
+
+    lc = cfg.get("legacy", {}) or {}
+    if "heir_federal_rate" in lc or "heir_state_rate" in lc:
+        modeled = round((lc.get("heir_federal_rate") or 0.0) + (lc.get("heir_state_rate") or 0.0), 4)
+    else:
+        modeled = round(lc.get("heir_ordinary_rate", 0.30), 4)
+    all_rates = sorted(set(rate_list + [modeled]))
+
+    out = {"modeled_rate": modeled, "rates": all_rates, "branches": {}, "lifetime_taxes": {}}
+    for key, roth_on in (("with_conversions", True), ("no_conversions", False)):
+        c = apply_market_scenario(copy.deepcopy(cfg))
+        if not roth_on:
+            c.setdefault("roth", {})["enabled"] = False
+        res = run_projection(c)
+        final = res["rows"][-1] if res.get("rows") else {}
+        accounts = _parse_plan(c).accounts
+        entries = []
+        for r in all_rates:
+            cm = copy.deepcopy(c)
+            leg_cfg = cm.setdefault("legacy", {})
+            leg_cfg["heir_federal_rate"] = r
+            leg_cfg["heir_state_rate"] = 0.0
+            leg_cfg["heir_ltcg_rate"] = lc.get("heir_ltcg_rate", 0.228)
+            leg = _compute_legacy(cm, final, accounts=accounts)
+            entries.append({
+                "rate": r,
+                "is_modeled": abs(r - modeled) < 1e-9,
+                "after_tax_estate_to_heirs": leg["after_tax_estate_to_heirs"],
+                "inherited_ira_tax": leg["inherited_ira_tax"],
+                "tax_free_roth_to_heirs": leg["tax_free_roth_to_heirs"],
+            })
+        out["branches"][key] = entries
+        out["lifetime_taxes"][key] = res["summary"]["lifetime_taxes"]
+    return out
+
+
+# Extra years of SURVIVOR life expectancy tested by the longevity trade-off grid.
+# Negative rows matter as much as positive ones: early mortality favours keeping
+# the taxable brokerage for the §1014 step-up, long survival favours a bigger Roth.
+DEFAULT_LONGEVITY_DELTAS = (-10, -5, 0, 5, 10, 20)
+LONGEVITY_ORDERS = (
+    "Cash → Taxable → IRA → Roth",
+    "Cash → IRA → Taxable → Roth",
+    "Split IRA & Taxable",
+)
+
+
+def funding_order_longevity(cfg: dict, deltas=None, orders=None) -> dict:
+    """Funding-order trade-off as the SURVIVING spouse lives longer.
+
+    Taxable-first funding preserves the pre-tax IRA (more conversion room, but a
+    bigger SECURE-10 exposure); IRA-first spends it down and preserves the taxable
+    brokerage for the §1014 step-up. Which side leads is largely a longevity bet —
+    more surviving years means more tax-free Roth compounding. This grid runs the
+    SAME conversion strategy at several survivor life expectancies so the advisor
+    can show the flip instead of asserting it.
+    """
+    import copy
+
+    clean = []
+    for d in (deltas or DEFAULT_LONGEVITY_DELTAS):
+        try:
+            v = int(d)
+        except (TypeError, ValueError):
+            continue
+        if -15 <= v <= 30:
+            clean.append(v)
+    delta_list = sorted(set(clean)) or list(DEFAULT_LONGEVITY_DELTAS)
+    if 0 not in delta_list:
+        delta_list = sorted(delta_list + [0])
+    order_list = [o for o in (orders or LONGEVITY_ORDERS) if o in LONGEVITY_ORDERS] or list(LONGEVITY_ORDERS)
+
+    h = cfg.get("household", {}) or {}
+    client_death_year = (h.get("client_dob_year") or 0) + (h.get("client_life_expectancy") or 0)
+    spouse_death_year = (h.get("spouse_dob_year") or 0) + (h.get("spouse_life_expectancy") or 0)
+    survivor = "spouse" if spouse_death_year >= client_death_year else "client"
+    le_key = "spouse_life_expectancy" if survivor == "spouse" else "client_life_expectancy"
+    base_second_death = max(client_death_year, spouse_death_year)
+    start_year = (cfg.get("projection", {}) or {}).get("start_year") or 0
+    first_death = min(client_death_year, spouse_death_year)
+
+    rows = []
+    for d in delta_list:
+        second_death = base_second_death + d
+        # Never let the survivor "die" before the first death or before the plan
+        # has run a year — those grids are meaningless, so the row is skipped.
+        if second_death <= max(start_year + 1, first_death):
+            continue
+        base = apply_market_scenario(copy.deepcopy(cfg))
+        hh = base.setdefault("household", {})
+        hh[le_key] = (hh.get(le_key) or 0) + d
+        # The projection horizon tracks the second death in BOTH directions so a
+        # shorter life isn't padded with post-death years.
+        base.setdefault("projection", {})["end_year"] = second_death
+        per_order = {}
+        for order in order_list:
+            c = copy.deepcopy(base)
+            c.setdefault("withdrawal", {})["funding_order"] = order
+            res = run_projection(c)
+            final = res["rows"][-1] if res.get("rows") else {}
+            per_order[order] = {
+                "after_tax_estate": res["legacy"]["after_tax_estate_to_heirs"],
+                "lifetime_taxes": res["summary"]["lifetime_taxes"],
+                "total_converted": res["summary"]["total_roth_converted"],
+                "ending_roth": res["summary"]["ending_roth"],
+                "ending_taxable": final.get("taxable", 0.0),
+                "ending_traditional": final.get("traditional", 0.0),
+            }
+        leader = max(per_order.items(),
+                     key=lambda kv: (kv[1]["after_tax_estate"], -kv[1]["lifetime_taxes"]))[0]
+        rows.append({
+            "extra_years": d,
+            "second_death_year": second_death,
+            "survivor_age_at_death": (hh.get(le_key) or 0),
+            "orders": per_order,
+            "leader": leader,
+        })
+
+    return {
+        "survivor": survivor,
+        "orders": order_list,
+        "baseline_order": (cfg.get("withdrawal", {}) or {}).get("funding_order")
+                          or LONGEVITY_ORDERS[0],
+        "rows": rows,
     }

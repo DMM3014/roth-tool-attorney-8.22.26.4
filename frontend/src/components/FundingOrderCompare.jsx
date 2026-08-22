@@ -34,14 +34,14 @@ const METRICS = [
     key: "after_tax_estate_to_heirs",
     label: "Total After-Tax Estate to Heirs (+10 yr SECURE)",
     from: "legacy", higherIsBetter: true,
-    tip: "Everything the heirs actually keep 10 years after the 2nd death: inherited Roth (tax-free) + inherited IRA drawn down over the SECURE window (net of heirs' ordinary tax) + taxable brokerage + cash + real estate (basis step-up at death, LTCG on post-death appreciation), minus estate settlement.",
+    tip: "Everything the heirs actually keep 10 years after the 2nd death: inherited Roth (income-tax free through the SECURE 10-yr window) + inherited IRA drawn down over the SECURE window (net of heirs' ordinary tax) + taxable brokerage + cash + real estate (basis step-up at death, LTCG on post-death appreciation), minus estate settlement.",
   },
-  { key: "roth_to_heirs",            label: "↳ Roth (tax-free)",                     from: "legacy", higherIsBetter: true, sub: true },
+  { key: "roth_to_heirs",            label: "↳ Roth (SECURE-10 sheltered)",          from: "legacy", higherIsBetter: true, sub: true },
   { key: "ira_post_tax_to_heirs",    label: "↳ IRA (post-tax, after SECURE)",        from: "legacy", higherIsBetter: true, sub: true },
   { key: "nonretirement_to_heirs",   label: "↳ Taxable + Cash + Real Estate (net of LTCG)", from: "legacy", higherIsBetter: true, sub: true },
   { key: "inherited_ira_tax",        label: "Heir Income Tax on Inherited IRA",      from: "legacy", higherIsBetter: false },
   { key: "ending_roth",              label: "Ending Roth (2nd death)",               from: "summary", higherIsBetter: true },
-  { key: "tax_free_roth_to_heirs",   label: "Tax-Free Roth to Heirs (+10 yr)",       from: "legacy", higherIsBetter: true },
+  { key: "tax_free_roth_to_heirs",   label: "Roth to Heirs (SECURE-10 sheltered)",   from: "legacy", higherIsBetter: true },
 ];
 
 const readMetric = (result, m) => {
@@ -228,7 +228,7 @@ export const FundingOrderCompare = ({ scenario }) => {
                     ))}
                     <td className={`${cellCls} font-medium ${deltaCls}`} data-testid={`funding-delta-${m.key}`}>
                       {winner == null ? "—" : winner === currentKey
-                        ? "on winner"
+                        ? "on leader"
                         : `${delta > 0 ? "+" : ""}${fmtUSD(delta)}`}
                     </td>
                   </tr>
@@ -295,8 +295,8 @@ export const FundingOrderCompare = ({ scenario }) => {
 
       {runs && (
         <p className="text-[11px] text-muted-foreground mt-3" data-testid="funding-compare-hint">
-          Trophy marks the winning cell per row (best-of-three). The Δ column shows how much each row
-          would change if you switched from your current order to the winning order — &ldquo;on winner&rdquo; means
+          Trophy marks the leading cell per row (best-of-three). The Δ column shows how much each row
+          would change if you switched from your current order to the leading order — &ldquo;on leader&rdquo; means
           your current pick already wins that row. Change your live funding order (and, for Split, the IRA %)
           in the Roth Conversion Controls card if you want to adopt a strategy.
         </p>

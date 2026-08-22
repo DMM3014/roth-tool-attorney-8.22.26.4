@@ -140,7 +140,12 @@ class TestOptimize:
 # ---------- /api/projection ----------
 class TestProjection:
     def test_projection_default_config(self, client):
-        defaults = client.get(f"{BASE_URL}/api/defaults").json()
+        # Built-in code defaults — GET /api/defaults returns user-saved overrides,
+        # which would make the 37-row expectation environment-dependent.
+        import sys, copy
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from defaults import DEFAULT_SCENARIO
+        defaults = copy.deepcopy(DEFAULT_SCENARIO)
         r = client.post(f"{BASE_URL}/api/projection", json={"config": defaults}, timeout=60)
         assert r.status_code == 200, r.text
         d = r.json()

@@ -3,10 +3,21 @@
     "client_name": "John Smith",
     "client_dob_year": 1965,
     "client_life_expectancy": 91,
+    "client_retirement_age": 62,
     "spouse_name": "Jane Smith",
     "spouse_dob_year": 1966,
     "spouse_life_expectancy": 96,
-    "filing_status": "Married Filing Jointly"
+    "spouse_retirement_age": 60,
+    "filing_status": "Married Filing Jointly",
+    "client_ss_claim_age": 70,
+    "spouse_ss_claim_age": 62,
+    "client_dob": "1965-05-12",
+    "spouse_dob": "1966-03-07",
+    "spouse_already_retired": true,
+    "client_already_retired": null,
+    "client_retirement_date": "2027-01-01",
+    "spouse_ss_claim_date": "2028-03-07",
+    "client_ss_claim_date": "2035-05-12"
   },
   "projection": {
     "start_year": 2026,
@@ -15,6 +26,30 @@
     "bracket_indexing": 0.03,
     "irmaa_indexing": 0.03
   },
+  "allocation": {
+    "stocks": 0.65,
+    "bonds": 0.3,
+    "cash": 0.05
+  },
+  "state_exclusions": {
+    "ss": true,
+    "pension": false,
+    "rmds": false
+  },
+  "custom_milestones": [
+    {
+      "name": "Client Retirement",
+      "year": 2031
+    },
+    {
+      "name": "RMD's Begin",
+      "year": 2040
+    },
+    {
+      "name": "First Death",
+      "year": 2056
+    }
+  ],
   "income_streams": [
     {
       "id": "WAG01",
@@ -29,8 +64,25 @@
       "frequency": "Annual",
       "cola": 0.03,
       "tax_character": "Ordinary",
-      "taxable_pct": 1.0,
-      "survivor_pct": 0.0,
+      "taxable_pct": 1,
+      "survivor_pct": 0,
+      "use": true
+    },
+    {
+      "id": "WAG02",
+      "owner": "Spouse",
+      "type": "Wages",
+      "description": "Spouse Wages",
+      "start_date": "2026-01-01",
+      "stop_date": "2026-03-07",
+      "start_year": 2026,
+      "stop_year": 2026,
+      "amount": 0,
+      "frequency": "Annual",
+      "cola": 0.03,
+      "tax_character": "Ordinary",
+      "taxable_pct": 1,
+      "survivor_pct": 0,
       "use": true
     },
     {
@@ -38,16 +90,16 @@
       "owner": "Client",
       "type": "Social Security",
       "description": "Client SS @ claim",
-      "start_date": "2035-05-12",
+      "start_date": "2032-05-12",
       "stop_date": null,
-      "start_year": 2035,
+      "start_year": 2032,
       "stop_year": null,
       "amount": 4152,
       "frequency": "Monthly",
       "cola": 0.03,
       "tax_character": "SS",
-      "taxable_pct": 0.0,
-      "survivor_pct": 1.0,
+      "taxable_pct": 0,
+      "survivor_pct": 1,
       "use": true
     },
     {
@@ -63,8 +115,8 @@
       "frequency": "Monthly",
       "cola": 0.03,
       "tax_character": "SS",
-      "taxable_pct": 0.0,
-      "survivor_pct": 1.0,
+      "taxable_pct": 0,
+      "survivor_pct": 1,
       "use": true
     },
     {
@@ -80,7 +132,7 @@
       "frequency": "Monthly",
       "cola": 0.04,
       "tax_character": "Ordinary",
-      "taxable_pct": 1.0,
+      "taxable_pct": 1,
       "survivor_pct": 0.5,
       "use": true
     },
@@ -97,7 +149,7 @@
       "frequency": "Monthly",
       "cola": 0.04,
       "tax_character": "Ordinary",
-      "taxable_pct": 1.0,
+      "taxable_pct": 1,
       "survivor_pct": 0.5,
       "use": true
     },
@@ -114,9 +166,9 @@
       "frequency": "Annual",
       "cola": 0.03,
       "tax_character": "QDiv/LTCG",
-      "taxable_pct": 1.0,
-      "survivor_pct": 1.0,
-      "use": true
+      "taxable_pct": 1,
+      "survivor_pct": 1,
+      "use": false
     }
   ],
   "expenses": [
@@ -205,7 +257,7 @@
       "owner": "Joint",
       "name": "Cash / Checking",
       "tax_type": "Cash",
-      "beginning_balance": 1000000,
+      "beginning_balance": 500000,
       "cost_basis": 0,
       "return": 0.03
     },
@@ -214,8 +266,8 @@
       "owner": "Client",
       "name": "Client Taxable Brokerage",
       "tax_type": "Taxable",
-      "beginning_balance": 3000000,
-      "cost_basis": 1000000,
+      "beginning_balance": 1000000,
+      "cost_basis": 300000,
       "return": 0.07
     },
     {
@@ -223,8 +275,8 @@
       "owner": "Spouse",
       "name": "Spouse Taxable Brokerage",
       "tax_type": "Taxable",
-      "beginning_balance": 3000000,
-      "cost_basis": 1000000,
+      "beginning_balance": 1000000,
+      "cost_basis": 300000,
       "return": 0.07
     },
     {
@@ -279,18 +331,19 @@
     "community_property": false,
     "include_irmaa": true,
     "survivor_filing_status": "Single",
-    "survivor_spending_reduction": 0.2
+    "survivor_spending_reduction": 0.2,
+    "merge_basis_at_first_death": true
   },
   "roth": {
     "enabled": true,
     "start_year": 2026,
     "end_year": 2062,
     "target_bracket": 0.24,
-    "max_annual": 0.0,
+    "max_annual": 0,
     "stop_at_rmd_age": false,
     "irmaa_tier_cap": null
   },
-  "dividend_yield": 0.02,
+  "dividend_yield": 0.01,
   "mortgage_balance": 0,
   "withdrawal": {
     "funding_order": "Cash \u2192 IRA \u2192 Taxable \u2192 Roth",
@@ -298,13 +351,25 @@
     "surplus_sweep_to": "Taxable"
   },
   "legacy": {
-    "estate_settlement_pct": 0.01,
+    "estate_settlement_pct": 0.0,
     "heir_federal_rate": 0.32,
     "heir_state_rate": 0.04,
-    "heir_ltcg_rate": 0.2345,
+    "heir_ltcg_rate": 0.228,
     "heir_gains_realized": false,
     "step_up_at_death": true,
     "post_death_years": 10,
     "heir_reinvest_return": null
+  },
+  "giving": {
+    "annual_gift_amount": 0,
+    "section_2503e_amount": 0,
+    "start_year": 0,
+    "end_year": 0
+  },
+  "optimizer": {
+    "goal": "after_tax_estate",
+    "include_phased": true,
+    "sweep_funding_orders": true,
+    "preset_id": "legacy_first"
   }
 }

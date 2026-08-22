@@ -35,9 +35,9 @@ def test_default_projection_math(client, base_cfg):
     assert r.status_code == 200, r.text
     data = r.json()
     summary = data["summary"]
-    assert summary["lifetime_taxes"] == pytest.approx(7159874.48, rel=1e-4)
-    assert summary["ending_net_worth"] == pytest.approx(80804720.63, rel=1e-4)
-    assert data["legacy"]["after_tax_estate_to_heirs"] == pytest.approx(152411628.35, rel=1e-4)
+    assert summary["lifetime_taxes"] == pytest.approx(6351096.5, rel=1e-4)
+    assert summary["ending_net_worth"] == pytest.approx(84563211.53, rel=1e-4)
+    assert data["legacy"]["after_tax_estate_to_heirs"] == pytest.approx(162500588.9, rel=1e-4)
 
 
 def test_default_strategy_sweep(client, base_cfg):
