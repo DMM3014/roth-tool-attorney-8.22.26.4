@@ -5,7 +5,7 @@ import copy
 import requests
 import pytest
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://roth-retirement-tool.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://cv-craft-504.preview.emergentagent.com").rstrip("/")
 # ingress blocks python-urllib default UA -> use browser UA
 HDRS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
         "X-Session-Token": "0b7a2f77-49a1-4a6a-9d3e-1c2b3d4e5f60"}

@@ -810,7 +810,7 @@ async def insights_chat(request: Request, req: InsightChatRequest):
 app.include_router(api_router)
 
 # ---------- CORS (P3: explicit allowlist) ----------
-_default_origins = "https://roth-retirement-tool.preview.emergentagent.com,http://localhost:3000"
+_default_origins = "https://cv-craft-504.preview.emergentagent.com,http://localhost:3000"
 _allow_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", _default_origins).split(",") if o.strip()]
 # When credentials=True the browser requires a specific origin, not '*'. If '*' is explicitly
 # configured we drop credentials to keep the browser accepting the response.
