@@ -2630,11 +2630,19 @@ def two_way_sensitivity(cfg: dict) -> dict:
         deltas = {r: round(w[r] - n[r], 2) for r in be["rates"] if r in w and r in n}
         pts = sorted((r, deltas[r]) for r in deltas if r <= 0.41 + 1e-9)
         be_rate, extrap = _break_even_from_points(pts)
+        # Conversion delta at THIS household's modeled heir rate (an exact data point).
+        d_at_modeled = None
+        if modeled is not None:
+            match = next((r for r in deltas if abs(r - modeled) < 1e-9), None)
+            if match is not None:
+                d_at_modeled = deltas[match]
         infl = (apply_market_scenario(copy.deepcopy(rc)).get("projection", {}) or {}).get("general_inflation", 0.03)
-        regimes.append({"preset_id": pid, "label": preset["label"], "general_inflation": round(infl, 4)})
+        regimes.append({"preset_id": pid, "label": preset["label"], "general_inflation": round(infl, 4),
+                        "delta_at_modeled": d_at_modeled})
         per_regime[pid] = {"deltas": deltas, "break_even": be_rate, "break_even_extrapolated": extrap}
 
     matrix = [[per_regime[rg["preset_id"]]["deltas"].get(r) for rg in regimes] for r in rates]
+    wins_at_modeled = sum(1 for rg in regimes if (rg.get("delta_at_modeled") or 0) > 1.0)
     break_even = [
         {"preset_id": rg["preset_id"],
          "rate": per_regime[rg["preset_id"]]["break_even"],
@@ -2649,6 +2657,8 @@ def two_way_sensitivity(cfg: dict) -> dict:
         "matrix": matrix,           # rate-major: matrix[rate_index][regime_index] = nominal conversion delta
         "break_even": break_even,   # per regime
         "modeled_rate": modeled,
+        "wins_at_modeled": wins_at_modeled,
+        "n_regimes": len(regimes),
         "caption": TWO_WAY_CAPTION,
     }
     _TWO_WAY_CACHE[key] = out

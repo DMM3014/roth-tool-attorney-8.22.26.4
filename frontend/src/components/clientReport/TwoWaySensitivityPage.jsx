@@ -23,6 +23,11 @@ const cellBg = (delta, maxAbs) => {
 const cellText = (delta) =>
   delta == null ? "—" : (Math.abs(delta) < 1 ? "$0" : `${delta >= 0 ? "+" : "−"}${fmtUSD(Math.abs(delta))}`);
 
+const railColor = (delta) => {
+  if (delta == null || Math.abs(delta) < 1) return "transparent";
+  return delta > 0 ? `rgba(${GREEN},0.95)` : `rgba(${AMBER},0.95)`;
+};
+
 export const TwoWaySensitivityPage = ({ twoWayData, ...footProps }) => {
   if (!twoWayData || !twoWayData.matrix || twoWayData.matrix.length === 0) {
     return (
@@ -41,6 +46,13 @@ export const TwoWaySensitivityPage = ({ twoWayData, ...footProps }) => {
   return (
     <Page testid="cr-page-two-way" {...footProps}>
       <H2>Two-Way Sensitivity — Heir Rate × Market Regime</H2>
+      <div style={{ background: "#EEF3EC", border: "1px solid rgba(74,103,65,0.35)", borderRadius: 6,
+                    padding: "7px 12px", margin: "2px 0 8px" }} data-testid="cr-two-way-headline">
+        <p style={{ fontSize: 11, color: "#1A1A1A", margin: 0 }}>
+          Conversions win in <strong style={{ color: "#4A6741" }}>{d.wins_at_modeled} of {d.n_regimes}</strong> market
+          regimes at your modeled heir rate{d.modeled_rate != null ? ` of ${fmtPct(d.modeled_rate)}` : ""}.
+        </p>
+      </div>
       <P>
         Every cell is the after-tax wealth delivered to heirs <strong>with</strong> the Roth-conversion plan minus{" "}
         <strong>without</strong> it, at that heir income-tax rate and market regime. Green cells are where converting
@@ -67,6 +79,7 @@ export const TwoWaySensitivityPage = ({ twoWayData, ...footProps }) => {
                   <td key={rg.preset_id}
                     style={{ padding: "4px 3px", fontSize: 8.5, fontWeight: 700, textAlign: "center",
                              fontVariantNumeric: "tabular-nums", color: "#1A1A1A", border: "1px solid #FFFFFF",
+                             borderLeft: `3px solid ${railColor(delta)}`,
                              background: cellBg(delta, maxAbs) }}
                     data-testid={`cr-two-way-cell-${ri}-${ci}`}>
                     {cellText(delta)}

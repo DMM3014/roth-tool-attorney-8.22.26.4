@@ -44,6 +44,11 @@ export const DECK_PAGES = [
   { key: "longevity", label: "Longevity trade-off grid", src: "branding", flag: "include_longevity" },
   { key: "beneficiary_band", label: "Beneficiary tax-rate band", src: "branding", flag: "include_beneficiary_band" },
   {
+    key: "two_way", label: "Two-way sensitivity — heir rate × market regime",
+    src: "branding", flag: "include_two_way",
+    missingHint: "Computing the heir-rate × regime surface — try again in a moment",
+  },
+  {
     key: "recs", label: "Planning considerations + perspective & caveats",
     src: "branding", flag: "include_recommendations", hint: "Prints as two pages",
   },

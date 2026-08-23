@@ -1,0 +1,52 @@
+{
+  "summary": "Frontend-only verification of the four polish tasks on the Two-Way Sensitivity feature (master-PIN login, default scenario). TASK 1 (report page overflow) VERIFIED FIXED: measured unscaled page heights in the Client Report preview -- cr-page-assumptions = 958px (was 1130), cr-page-montecarlo = 1024px (was 1053), cr-page-two-way = 900px; all <= ~1037px frame, scrollHeight == clientHeight on all three (no inner clipping), and both pages render complete content + footer visually. TASK 2 (headline) PASS: in-app two-way-headline and printed cr-two-way-headline both read 'Conversions win in 1 of 6 market regimes at your modeled heir rate of 36.0%' and match the grid (only the Last-50-Years column is positive at the 36% row). TASK 4 (break-even band) PASS: 36/36 cells in the in-app grid (4px rail), 36/36 in the report grid and 36/36 in the deck grid (3px rail) have a left rail whose colour exactly matches the delta sign (green rgba(74,103,65) for positive, amber rgba(184,122,60) for negative) and the ~$0 Lost-Decade column has no rail; each column's rail flips colour at its break-even rate (e.g. Long-term Average flips amber->green between 36% and 41%, break-even 36.4%). TASK 3 (deck slide) PASS on the Presentation tab: pres-toggle-two-way is present, correctly DISABLED until twoWay loads (~3s) then enabled; enabling it renders presentation-page-two-way containing deck-two-way-band, deck-two-way-headline, deck-two-way-grid (7 tbody rows = 6 rates + break-even row: 36.4% / -16.8% extrapolated / 92.5% extrapolated / n/a / 41.1% extrapolated / n/a) and the verbatim deck-two-way-caption; slide height 546px (well inside frame); ordering is immediately after presentation-page-beneficiary-band; page-count line updated to 'Approx. 18 pages'. No React crashes or page errors in any flow.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Presentation.jsx (curated 'Client Deck' tab) / lib/deckPages.js",
+        "issue": "The curated Client Deck tab has NO control for the new two-way slide: pres-toggle-two-way lives inside the `{!curated && (...)}` block (line 553) and DECK_PAGES has no `two_way` row, so deck-page-toggle-two_way does not exist. Yet the render at line 1812 is not curated-gated, so once include_two_way is switched on from the Presentation tab the two-way slide silently prints in the Client Deck too (verified: presentation-page-two-way count = 2 on the curated tab) with no picker row to turn it off. This is inconsistent with the beneficiary_band pattern it was modelled on (src:'branding', flag:'include_beneficiary_band' has a picker row).",
+        "selector": "[data-testid=\"deck-page-toggle-two_way\"] (missing)",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "cr-page-montecarlo",
+        "issue": "Tight headroom: 1024px vs the ~1037px frame (13px). Any future copy/label addition to that page will re-overflow. Consider trimming a further ~30px of slack.",
+        "selector": "[data-testid=\"cr-page-montecarlo\"]",
+        "priority": "LOW"
+      },
+      {
+        "component": "Rail width consistency",
+        "issue": "Cosmetic: in-app grid uses borderLeft 4px, report and deck grids use 3px. Fine if intentional (print density), noting for design consistency.",
+        "selector": "[data-testid^=\"two-way-cell-\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Monte Carlo tab (pre-existing)",
+        "issues": ["Recharts console warnings repeated 6x: 'The width(-1) and height(-1) of chart should be greater than 0' -- a chart container is measured at -1 during mount. Cosmetic/log noise, charts still render."]
+      }
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_32.json"],
+  "action_items": [
+    "Decide how the curated Client Deck should expose the two-way slide: either add a `two_way` row to DECK_PAGES (src:'branding', flag:'include_two_way', missingHint for un-loaded data) so the picker controls it, or curated-gate the render at Presentation.jsx:1812. Today it prints in the curated deck with no on/off control there.",
+    "Sanity-check wins_at_modeled semantics: the handoff note said '4 of 6 at modeled 36%' but the UI/report/deck all show '1 of 6', which IS consistent with the rendered grid at the 36% row (5 amber + 1 green, plus the all-$0 Lost Decade column). Confirm the 1-of-6 count (and that the exact-$0 tie column is intentionally not a win) is the intended message before shipping the headline to clients.",
+    "Optional: trim ~30px more from cr-page-montecarlo for safety margin (currently 1024/1037)."
+  ],
+  "critical_code_review_comments": [
+    "Presentation.jsx is 1925 lines -- well over the 700-line guideline; the deck body (the ~700-line JSX return around line 1132+) should be split into its own module.",
+    "TwoWaySensitivityDeckPage duplicates cellBg/cellText/railColor verbatim from TwoWaySensitivityPanel.jsx and TwoWaySensitivityPage.jsx (3 copies of the same GREEN/AMBER constants and helpers). Extract into a shared lib (e.g. lib/twoWayColors.js) so a colour/threshold change cannot drift between screen, report and deck.",
+    "railColor/cellBg treat exact ties (|delta| < 1) as 'transparent'/neutral in the rail but cellText still prints '$0' for a positive-zero; consistent, but confirm 'no rail' is the intended reading for the whole Lost-Decade column rather than a rendering gap."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (frontend-only request)", "frontend": "100% of the 4 tasks verified; 1 medium gap found (curated deck has no toggle for the new slide)" },
+  "seed_data_creation": "None - default scenario only.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Master passphrase i4m07MnVDhpTYkc1giC6wWDv (login screen -> Master tab; /api/auth/pin/verify rate-limited 5/min)",
+  "context_for_next_testing_agent": "Nav: Master login -> tab-montecarlo -> mc-run (~30s) -> two-way-panel -> two-way-run-btn (~20s) -> two-way-grid. Client Report tab renders pages after ~30-60s; NOTE the preview is CSS-transform scaled (~0.7), so boundingBox height is misleading -- use element.clientHeight/scrollHeight for page-height assertions (assumptions 958, montecarlo 1024, two-way 900, frame ~1037). The report/deck are each rendered twice (preview + print root, print root has height 0) so always use .first or scope the locator. Presentation tab fetches twoWay automatically (~3s) which enables pres-toggle-two-way; the curated Client Deck tab has no such toggle (reported). Verified deck page order: ... longevity -> beneficiary-band -> two-way -> caveats -> appendix-divider -> disclosures.",
+  "rca_of_the_issue": "Curated-deck gap RCA: the toggle was added inside the existing `{!curated && (<>...</>)}` toggle group in Presentation.jsx (line 553) while the deck body render (line 1812) is unconditional, and lib/deckPages.js DECK_PAGES was not given a `two_way` row. The beneficiary-band precedent works because it has both a non-curated toggle AND a DECK_PAGES entry mapping to the same branding flag; the new slide only has the former."
+}

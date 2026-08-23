@@ -78,8 +78,8 @@ export const AssumptionsPage = ({ scenario, withRoth, marketPreset, heirRate, cl
             ] : []),
           ].map(([k, v]) => (
             <tr key={k} style={{ borderBottom: "1px solid #F3F1EC" }}>
-              <td style={{ padding: "6px 4px", color: "#5A5A5A" }}>{k}</td>
-              <td style={{ padding: "6px 4px", textAlign: "right", fontWeight: 600 }}>{v}</td>
+              <td style={{ padding: "3px 4px", color: "#5A5A5A" }}>{k}</td>
+              <td style={{ padding: "3px 4px", textAlign: "right", fontWeight: 600 }}>{v}</td>
             </tr>
           ))}
         </tbody>
@@ -89,10 +89,10 @@ export const AssumptionsPage = ({ scenario, withRoth, marketPreset, heirRate, cl
         (edit them on the Plan Inputs → Accounts tab). Numbers are geometric annual averages before the dividend-yield
         drag on the taxable bucket.
       </Sub>
-      <div style={{ marginTop: 8, padding: 10, background: "#FAFAF8", border: "1px solid #EBE8E0",
+      <div style={{ marginTop: 6, padding: 8, background: "#FAFAF8", border: "1px solid #EBE8E0",
                     borderRadius: 6 }}
            data-testid="cr-assumptions-simplifications">
-        <p style={{ fontSize: 9.5, lineHeight: 1.55, color: "#5A5A5A", margin: 0 }}>
+        <p style={{ fontSize: 9, lineHeight: 1.45, color: "#5A5A5A", margin: 0 }}>
           <strong>Simplifying assumptions, not statements of current law.</strong> The state income tax is
           modeled as a single flat rate ({fmtRate2(t.state_rate)}) held constant for the entire horizon. Several
           states — North Carolina among them — have statutory mechanisms that can reduce the rate in later years
@@ -105,13 +105,13 @@ export const AssumptionsPage = ({ scenario, withRoth, marketPreset, heirRate, cl
           decades-long hypothetical illustration these are reasonable simplifications, but they are simplifications.
         </p>
       </div>
-      <div style={{ marginTop: 8, padding: "10px 12px", background: "#F7F5EF",
+      <div style={{ marginTop: 6, padding: "8px 10px", background: "#F7F5EF",
                     border: "1px solid #D9CFA8", borderLeft: "3px solid #C9A227", borderRadius: 6 }}
            data-testid="cr-assumptions-future-law">
-        <p style={{ fontSize: 10.5, fontWeight: 700, color: "#4A6741", margin: "0 0 4px" }}>
+        <p style={{ fontSize: 10, fontWeight: 700, color: "#4A6741", margin: "0 0 3px" }}>
           Future law — the assumption behind every assumption
         </p>
-        <p style={{ fontSize: 9.5, lineHeight: 1.55, color: "#3A3A3A", margin: 0 }}>
+        <p style={{ fontSize: 9, lineHeight: 1.42, color: "#3A3A3A", margin: 0 }}>
           Every figure in this report assumes the tax law in force today — the OBBBA-2025 framework, under which the federal brackets, the standard deduction, and the estate, gift, and GST exclusions are permanent and inflation-indexed — remains in force for the entire plan horizon. No projection spanning decades has ever enjoyed that luxury: over comparable past spans Congress created the Roth IRA, repealed recharacterization, eliminated the stretch IRA, restructured the brackets more than once, and moved the estate-tax exclusion by an order of magnitude. This report deliberately does not model hypothetical future legislation; speculative law scenarios multiply assumptions without improving decisions. Two structural points, however, are worth holding in mind. First, the conversion decision is asymmetric under law change: dollars already converted are immune to future ordinary-rate increases but cannot benefit from future decreases, and a completed conversion program is unaffected by any shortening of the post-death distribution window that would fall heavily on an unconverted IRA. Second, the correct response to legislative change is not prediction but review — when brackets, exclusions, or the SECURE rules move, this plan should be re-run under the new law. See the Plan Review Discipline page.
         </p>
       </div>

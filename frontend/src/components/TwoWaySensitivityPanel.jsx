@@ -25,6 +25,14 @@ const cellBg = (delta, maxAbs) => {
 const cellText = (delta) =>
   delta == null ? "—" : (Math.abs(delta) < 1 ? "$0" : `${delta >= 0 ? "+" : "−"}${fmtUSD(Math.abs(delta))}`);
 
+// A left rail per cell — green in the winning (converting-wins) zone, amber in the
+// losing zone. Stacked down a column, the rail switches colour at the break-even
+// rate, so each regime's "winning zone" reads as a shaded band at a glance.
+const railColor = (delta) => {
+  if (delta == null || Math.abs(delta) < 1) return "transparent";
+  return delta > 0 ? `rgba(${GREEN},0.95)` : `rgba(${AMBER},0.95)`;
+};
+
 export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
@@ -74,6 +82,11 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
 
       {data && (
         <div className="mt-5">
+          <div className="rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 px-4 py-2.5 mb-4" data-testid="two-way-headline">
+            <p className="text-sm text-[#1A1A1A]">
+              Conversions win in <strong className="text-[#4A6741]">{data.wins_at_modeled} of {data.n_regimes}</strong> market regimes at your modeled heir rate{data.modeled_rate != null ? ` of ${fmtPct(data.modeled_rate)}` : ""}.
+            </p>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm" data-testid="two-way-grid">
               <thead>
@@ -97,7 +110,7 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
                       const delta = data.matrix[ri][ci];
                       return (
                         <td key={rg.preset_id} className="px-1 py-1 text-center tabular-nums text-[10.5px] font-semibold border border-white"
-                          style={{ background: cellBg(delta, maxAbs), color: "#1A1A1A" }}
+                          style={{ background: cellBg(delta, maxAbs), color: "#1A1A1A", borderLeft: `4px solid ${railColor(delta)}` }}
                           data-testid={`two-way-cell-${ri}-${ci}`}>
                           {cellText(delta)}
                         </td>

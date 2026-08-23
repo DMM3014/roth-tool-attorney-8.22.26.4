@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { runEpFlowchart, runProjection, runHeirRateSensitivity, runFundingOrderLongevity, fmtUSD, fmtPct } from "@/lib/api";
+import { runEpFlowchart, runProjection, runHeirRateSensitivity, runFundingOrderLongevity, runTwoWaySensitivity, fmtUSD, fmtPct } from "@/lib/api";
 import { downloadElementAsPdf } from "@/lib/pdf";
 import { downloadElementAsDocx } from "@/lib/docx";
 import {
@@ -27,6 +27,7 @@ import { useAdvisorInfo } from "@/lib/advisorInfo";
 import { Page, H2, H3, P, Sub } from "@/components/presentation/printPrimitives";
 import LongevityTradeoffPage from "@/components/presentation/LongevityTradeoffPage";
 import BeneficiaryBandPage from "@/components/presentation/BeneficiaryBandPage";
+import TwoWaySensitivityDeckPage from "@/components/presentation/TwoWaySensitivityDeckPage";
 import ConvertSkipDeckPage from "@/components/presentation/ConvertSkipDeckPage";
 import ObjectivesDeckPage from "@/components/presentation/ObjectivesDeckPage";
 import EstateComparePage from "@/components/presentation/EstateComparePage";
@@ -165,10 +166,12 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
   // extra requests no matter how many rows are shown.
   const [longevity, setLongevity] = useState(null);
   const [heirSens, setHeirSens] = useState(null);
+  const [twoWay, setTwoWay] = useState(null);
   useEffect(() => {
     let alive = true;
     setLongevity(null);
     setHeirSens(null);
+    setTwoWay(null);
     const t = setTimeout(() => {
       if (scenario?.roth?.enabled) {
         runFundingOrderLongevity(scenario)
@@ -178,6 +181,9 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
       runHeirRateSensitivity(scenario)
         .then((r) => { if (alive) setHeirSens(r); })
         .catch(() => { if (alive) setHeirSens(null); });
+      runTwoWaySensitivity(scenario)
+        .then((r) => { if (alive) setTwoWay(r); })
+        .catch(() => { if (alive) setTwoWay(null); });
     }, 800);
     return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -544,6 +550,14 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
                 Include beneficiary tax-rate band page (low / middle / high heir marginal rate)
               </span>
             </label>
+            <label className={`flex items-center gap-2 ${twoWay ? "cursor-pointer" : "opacity-60"}`}>
+              <Switch checked={branding.include_two_way && !!twoWay} disabled={!twoWay}
+                onCheckedChange={(v) => upd("include_two_way", v)}
+                data-testid="pres-toggle-two-way" />
+              <span className="text-xs text-muted-foreground">
+                Include two-way sensitivity page (heir rate × market regime heat-grid)
+              </span>
+            </label>
             </>)}
           </div>
 
@@ -555,6 +569,7 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
               objectivesOn={objectivesOn} setObjectivesOn={setObjectivesOn}
               availability={{ robustness: !!stressResult, regimes: !!regimeResult,
                               longevity: !!longevity, beneficiary_band: !!heirSens,
+                              two_way: !!twoWay,
                               sequence_risk: !!seqResult, estate: !!flowResult }} />
           )}
         </div>
@@ -604,6 +619,7 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
               + (stress ? 1 : 0) + (regimes ? 1 : 0)
               + (branding.include_longevity && longevity ? 1 : 0)
               + (branding.include_beneficiary_band && heirSens ? 1 : 0)
+              + (branding.include_two_way && twoWay ? 1 : 0)
               + (branding.include_sequence_risk && seqResult ? 1 : 0)} pages
           </p>
           </div>
@@ -642,7 +658,7 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
                   incomeData={incomeData} nwSeries={nwSeries} taxCompData={taxCompData}
                   kpis={kpis} heirDelta={heirDelta} heirTaxSaved={heirTaxSaved} bigYear={bigYear}
                   stress={stress} regimes={regimes} marketPreset={marketPreset} orderCompare={orderCompare}
-                  longevity={longevity} heirSens={heirSens} pvRateOverride={pvRateOverride}
+                  longevity={longevity} heirSens={heirSens} twoWay={twoWay} pvRateOverride={pvRateOverride}
           objectivesOn={objectivesOn}
           curated={curated} flowResult={flowResult} flowSelected={flowSelected}
           deckPages={deckPages} seqResult={seqResult}
@@ -661,7 +677,7 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
           incomeData={incomeData} nwSeries={nwSeries} taxCompData={taxCompData}
           kpis={kpis} heirDelta={heirDelta} heirTaxSaved={heirTaxSaved} bigYear={bigYear}
           stress={stress} regimes={regimes} marketPreset={marketPreset} orderCompare={orderCompare}
-          longevity={longevity} heirSens={heirSens} pvRateOverride={pvRateOverride}
+          longevity={longevity} heirSens={heirSens} twoWay={twoWay} pvRateOverride={pvRateOverride}
           objectivesOn={objectivesOn}
           curated={curated} flowResult={flowResult} flowSelected={flowSelected}
           deckPages={deckPages} seqResult={seqResult}
@@ -1114,7 +1130,7 @@ const FundingOrderRationale = ({ scenario, orderCompare }) => {
 const PresentationReport = ({
   branding, household, clientName, prettyDate, scenario, withRoth, noRoth,
   incomeData, nwSeries, taxCompData, kpis, heirDelta, heirTaxSaved, bigYear, stress,
-  regimes, marketPreset, orderCompare, longevity, heirSens, pvRateOverride, objectivesOn,
+  regimes, marketPreset, orderCompare, longevity, heirSens, twoWay, pvRateOverride, objectivesOn,
   curated = false, flowResult, flowSelected, deckPages, seqResult,
 }) => {
   // The curated Client Deck prints exactly the pages the advisor ticked; the
@@ -1791,6 +1807,11 @@ const PresentationReport = ({
         <BeneficiaryBandPage heirSens={heirSens} heirRate={heirSens.modeled_rate}
           pv={pv} deliverYear={heirDeliverYear}
           includeNarrative={branding.include_narrative} />
+      )}
+
+      {/* ---------- Two-way sensitivity heat-grid (optional) ---------- */}
+      {branding.include_two_way && twoWay && (
+        <TwoWaySensitivityDeckPage twoWay={twoWay} includeNarrative={branding.include_narrative} />
       )}
 
       {/* ---------- Curated deck only: one-page estate scenario comparison ---------- */}

@@ -92,7 +92,7 @@ export const MonteCarloReportPage = ({ mcResult, ...footProps }) => {
               <div style={{ fontSize: 10, color: "#5A5A5A", marginTop: 2 }}>Plan success rate</div>
             </div>
             <div>
-              <div style={{ height: 175 }}>
+              <div style={{ height: 145 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={pctData} margin={{ top: 4, right: 24, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#EBE8E0" />
@@ -139,7 +139,7 @@ export const MonteCarloReportPage = ({ mcResult, ...footProps }) => {
               inh && ["After-tax inheritance", inh, inh.det_value, "approximation"],
             ].filter(Boolean);
             return (
-              <div data-testid="cr-mc-outcome-dist" style={{ marginTop: 14 }}>
+              <div data-testid="cr-mc-outcome-dist" style={{ marginTop: 8 }}>
                 <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 4 }}>
                   Distribution of plan outcomes — not just a success probability
                 </div>
@@ -214,7 +214,7 @@ export const MonteCarloReportPage = ({ mcResult, ...footProps }) => {
               actually models and (crucially) what it does NOT. Advisor and
               client should read this before drawing conclusions. */}
           <div data-testid="cr-mc-methodology"
-               style={{ marginTop: 14, padding: "10px 12px", border: "1px solid #EBE8E0",
+               style={{ marginTop: 10, padding: "10px 12px", border: "1px solid #EBE8E0",
                         borderLeft: "3px solid #C4A64A", background: "#FDFBF4",
                         borderRadius: 6, fontSize: 10, lineHeight: 1.5, color: "#1A1A1A" }}>
             <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 10.5 }}>
