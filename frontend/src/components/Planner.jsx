@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut, RotateCcw, Save, ShieldCheck, User, Presentation as PresentationIcon, Users, Receipt, Wallet, FileText, Scale, IdCard, Landmark, ClipboardCheck, Workflow, Layers, Waves } from "lucide-react";
+import { Leaf, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut, RotateCcw, Save, ShieldCheck, User, Presentation as PresentationIcon, Users, Receipt, Wallet, FileText, Scale, IdCard, Landmark, ClipboardCheck, Workflow, Layers, Waves, Shuffle } from "lucide-react";
 import SequenceRisk from "@/components/SequenceRisk";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import { Concepts } from "@/components/Concepts";
 import { WhitePaper } from "@/components/WhitePaper";
 import { StrategyOptimizer } from "@/components/StrategyOptimizer";
 import { SSOptimizer } from "@/components/SSOptimizer";
+import { FundingOrderLever } from "@/components/FundingOrderLever";
 import { BracketVisualizer } from "@/components/BracketVisualizer";
 import { AdminPanel } from "@/components/AdminPanel";
 import { TabDownloadMenu } from "@/components/shared/TabDownloadMenu";
@@ -340,6 +341,9 @@ export const Planner = ({ session = {} }) => {
             <TabsTrigger value="convert-compare" data-testid="tab-convert-compare" className="gap-2 data-[state=active]:bg-white">
               <Scale className="h-4 w-4" /> Convert vs Skip
             </TabsTrigger>
+            <TabsTrigger value="funding-order" data-testid="tab-funding-order" className="gap-2 data-[state=active]:bg-white">
+              <Shuffle className="h-4 w-4" /> Funding Order
+            </TabsTrigger>
             <TabsTrigger value="estate" data-testid="tab-estate" className="gap-2 data-[state=active]:bg-white">
               <Landmark className="h-4 w-4" /> Estate
             </TabsTrigger>
@@ -405,6 +409,9 @@ export const Planner = ({ session = {} }) => {
           </TabsContent>
           <TabsContent value="convert-compare">
             <ConvertCompare scenario={scenario} />
+          </TabsContent>
+          <TabsContent value="funding-order">
+            <FundingOrderLever scenario={scenario} />
           </TabsContent>
           <TabsContent value="estate">
             <Estate scenario={scenario} mcResult={mcForEstate} />

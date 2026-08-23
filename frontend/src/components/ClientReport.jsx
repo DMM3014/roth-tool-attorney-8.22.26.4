@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runEpFlowchart, runHeirRateSensitivity,
-  runSequenceStress, listScenarios, fmtPct, fmtUSD, allocationToAssets,
+  runSequenceStress, listScenarios, fmtPct, fmtUSD, allocationToAssets, compareFundingOrders,
 } from "@/lib/api";
 import { downloadElementAsPdf } from "@/lib/pdf";
 import { downloadElementAsDocx } from "@/lib/docx";
@@ -38,6 +38,7 @@ import { mcScenarioSig } from "@/lib/mcSignature";
 import { useFlowPlans } from "@/hooks/useFlowPlans";
 import { useObjectivesPage } from "@/hooks/useObjectivesPage";
 import { RothConversionsPage } from "./clientReport/RothConversionsPage";
+import { FundingOrderPage } from "./clientReport/FundingOrderPage";
 import { SavingsPage } from "./clientReport/SavingsPage";
 import { InputsAppendixPage } from "./clientReport/InputsAppendixPage";
 import { IncomeExpensesPage } from "./clientReport/IncomeExpensesPage";
@@ -190,6 +191,29 @@ export const ClientReport = ({ scenario, setScenario }) => {
   useEffect(() => {
     try { window.localStorage.setItem("client_report_basis_on_v1", JSON.stringify(basisOn)); } catch {}
   }, [basisOn]);
+
+  // Funding Order — The Hidden Lever page. Defaults ON. Compares the configured
+  // plan under all three withdrawal orders (conversions unchanged).
+  const [fundingOrderOn, setFundingOrderOn] = useState(() => {
+    try { const raw = window.localStorage.getItem("client_report_funding_order_v1");
+          return raw == null ? true : raw === "1"; } catch { return true; }
+  });
+  useEffect(() => { try { window.localStorage.setItem("client_report_funding_order_v1", fundingOrderOn ? "1" : "0"); } catch {} }, [fundingOrderOn]);
+  const [fundingOrderData, setFundingOrderData] = useState(null);
+  const [fundingOrderRunning, setFundingOrderRunning] = useState(false);
+  useEffect(() => {
+    if (!fundingOrderOn || !withRoth) { setFundingOrderData(null); return; }
+    let alive = true;
+    setFundingOrderRunning(true);
+    compareFundingOrders(scenario, [
+      "Cash → Taxable → IRA → Roth", "Cash → IRA → Taxable → Roth", "Split IRA & Taxable",
+    ])
+      .then((d) => { if (alive) setFundingOrderData(d); })
+      .catch(() => { if (alive) { setFundingOrderData(null); toast.error("Funding order comparison failed."); } })
+      .finally(() => { if (alive) setFundingOrderRunning(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, fundingOrderOn, withRoth]);
 
   // Paired A/B (Roth vs no-conversions on identical seeds) print page —
   // defaults ON because the per-trial delta is the cleanest single-slide
@@ -919,6 +943,24 @@ export const ClientReport = ({ scenario, setScenario }) => {
               </span>
             </label>
           </div>
+
+          <div className="mt-3 rounded-md border border-[#EBE8E0] bg-[#FAFAF8] px-3 py-2">
+            <label className="flex items-start gap-2 cursor-pointer max-w-[720px]">
+              <Switch checked={fundingOrderOn} onCheckedChange={(v) => setFundingOrderOn(!!v)}
+                data-testid="cr-funding-order-toggle" className="mt-0.5" />
+              <div className="flex-1">
+                <p className="text-[12px] font-semibold text-[#1A1A1A]">
+                  Include the &ldquo;Funding Order — The Hidden Lever&rdquo; page
+                  {fundingOrderRunning && <span className="ml-2 text-[10.5px] font-normal text-muted-foreground">(computing…)</span>}
+                </p>
+                <p className="text-[10.5px] text-muted-foreground leading-snug mt-1">
+                  On by default. Prints between &ldquo;Planned Roth Conversions by Year&rdquo; and &ldquo;Savings&rdquo;.
+                  Runs the same plan under all three withdrawal funding orders and compares total conversions, heir
+                  outcomes, estate tax and the beneficiary break-even rate side by side.
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
         {/* Monte Carlo behavioral realism — halt + guardrail toggles that flow into the
@@ -1049,6 +1091,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   stateExclusions={stateExclusions}
                   pvRateOverride={pvRateOverride}
                   objectivesOn={objectivesOn}
+                  fundingOrderData={fundingOrderData}
                 />
               </div>
             </div>
@@ -1079,6 +1122,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
           stateExclusions={scenario?.state_exclusions}
           pvRateOverride={pvRateOverride}
           objectivesOn={objectivesOn}
+          fundingOrderData={fundingOrderData}
         />
       </div>
     </div>
@@ -1092,7 +1136,7 @@ const ClientReportBody = ({
   regimeOn, regimeData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
-  customMilestones, stateExclusions, pvRateOverride, objectivesOn,
+  customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData,
 }) => {
   if (!withRoth || !noRoth) {
     return <div style={{ padding: 40, textAlign: "center", color: "#999" }}>Loading projection…</div>;
@@ -1132,12 +1176,14 @@ const ClientReportBody = ({
   const O = objectivesOn ? 1 : 0;                    // "What are we planning for?" — opt-in
   const basePages = 15;
   const pairedActive = !!(pairedOn && mcResult?.paired_delta);
+  const fundingOrderActive = !!(fundingOrderData?.results?.length);
   // Everything from the appendix divider onward is advisor / attorney reference
   // material rather than client conversation. The divider only prints when at
   // least one of those pages is switched on.
   const techPages = (basisOn ? 1 : 0) + flowPages + (inputsOn ? 2 : 0);
   const dividerOn = techPages > 0;
   const totalPages = basePages + L + O
+    + (fundingOrderActive ? 1 : 0)
     + (bracketOn ? 1 : 0)
     + (pairedActive ? 1 : 0)
     + (regimeOn ? 1 : 0)
@@ -1148,7 +1194,8 @@ const ClientReportBody = ({
     + flowPages
     + (inputsOn ? 2 : 0);
   const pageFooter = (n) => ({ pageNo: n, pageTotal: totalPages, footer: dateFoot, confidential: foot, logo });
-  let cursor = 11 + L + O;                           // through the Taxes page
+  const F = fundingOrderActive ? 1 : 0;             // Funding-order page shifts everything after Roth Conversions
+  let cursor = 11 + L + O + F;                       // through the Taxes page
   const bracketPage = bracketOn ? ++cursor : null;
   const mcPage = ++cursor;
   const pairedPage = pairedActive ? ++cursor : null;
@@ -1187,13 +1234,16 @@ const ClientReportBody = ({
       <ConvertSkipPage withRoth={withRoth} noRoth={noRoth} scenario={scenario}
         pvRateOverride={pvRateOverride} {...pageFooter(4 + L + O)} />
       <RothConversionsPage rows={rows} withRoth={withRoth} scenario={scenario} {...pageFooter(5 + L + O)} />
-      <SavingsPage rows={rows} composeData={composeData} withRoth={withRoth} {...pageFooter(6 + L + O)} />
+      {fundingOrderActive && (
+        <FundingOrderPage data={fundingOrderData} {...pageFooter(6 + L + O)} />
+      )}
+      <SavingsPage rows={rows} composeData={composeData} withRoth={withRoth} {...pageFooter(6 + L + O + F)} />
       <IncomeExpensesPage incomeData={incomeData} rows={rows}
         customMilestones={customMilestones} stateExclusions={stateExclusions}
-        {...pageFooter(7 + L + O)} />
-      <CashFlowPage rows={rows} {...pageFooter(10 + L + O)} />
+        {...pageFooter(7 + L + O + F)} />
+      <CashFlowPage rows={rows} {...pageFooter(10 + L + O + F)} />
       <TaxesPage taxCompData={taxCompData} rows={rows} withRoth={withRoth} noRoth={noRoth}
-        scenario={scenario} pvRateOverride={pvRateOverride} {...pageFooter(11 + L + O)} />
+        scenario={scenario} pvRateOverride={pvRateOverride} {...pageFooter(11 + L + O + F)} />
       {bracketOn && (
         <BracketSnapshotsPage scenario={scenario} rows={rows} {...pageFooter(bracketPage)} />
       )}

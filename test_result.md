@@ -208,9 +208,8 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Bugfix: Paired MC footnote survival % must equal headline success %"
-    - "Bugfix: de minimis RMD (<$100) shows $0/— in income milestone table"
-    - "Bugfix: Convert-or-Don't paragraph split into three clean sentences"
+    - "Backend: /api/funding-order-compare endpoint (Hidden Lever)"
+    - "Frontend: Funding Order tab + report page + PDF insertion + toggle"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -302,3 +301,89 @@ agent_communication:
          - ✓ Contains "relative to the total size of the plan" (critical phrasing verified)
       
       All three defect fixes successfully implemented and verified. No issues found.
+
+  - task: "Backend: POST /api/funding-order-compare (Funding Order — The Hidden Lever)"
+    implemented: true
+    working: true
+    file: "backend/projection.py, backend/routes/planning.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: |
+          New endpoint POST /api/funding-order-compare {config, orders:[1-3 of the 3 valid orders]}.
+          Runs the SAME configured plan (conversions unchanged) under each withdrawal funding order and returns
+          results[] with: total_roth_converted, ending_roth, ending_taxable, embedded_unrealized_gain,
+          step_up_value, net_worth_at_second_death, federal_estate_tax_no_trust (via estate engine, portability
+          baseline), after_tax_to_heirs_secure10, lifetime_tax_nominal, lifetime_tax_npv, heir_secure10_ira_tax,
+          beneficiary_break_even_rate (null => none in tested band). Valid orders: "Cash → Taxable → IRA → Roth",
+          "Cash → IRA → Taxable → Roth", "Split IRA & Taxable". Requires auth (advisor/master). Also added
+          summary.ending_taxable_basis to run_projection (additive; used to derive embedded gain). Manually
+          smoke-tested: returns differentiated metrics per order in <1s. Please verify: (a) 200 with a valid
+          config for 2 and 3 orders; (b) invalid/duplicate orders are cleaned and it still returns >=1 result;
+          (c) metrics differ across orders and are numeric; (d) endpoint rejects unauthenticated calls (401).
+        -working: true
+        -agent: "testing"
+        -comment: |
+          VERIFIED: All 6 tests passed (6/6). Endpoint POST /api/funding-order-compare working correctly.
+          
+          TEST RESULTS:
+          ✅ Two orders: Returns HTTP 200 with correct structure. Response contains required keys (orders, baseline_order, results). Results length = 2. All 13 required metrics present and numeric (total_roth_converted, ending_roth, ending_taxable, embedded_unrealized_gain, step_up_value, net_worth_at_second_death, federal_estate_tax_no_trust, after_tax_to_heirs_secure10, lifetime_tax_nominal, lifetime_tax_npv, heir_secure10_ira_tax, beneficiary_break_even_rate). Sample values: total_roth_converted=5649082.69, after_tax_to_heirs_secure10=65148167.61, lifetime_tax_npv=3037966.84.
+          
+          ✅ Three orders: Returns HTTP 200 with results length = 3. METRICS DIFFER ACROSS ORDERS (proves funding order affects projection): total_roth_converted varies [5649082.69, 3499955.82, 6504578.55], after_tax_to_heirs_secure10 varies [65148167.61, 64786223.08, 61423780.41]. This confirms the funding order logic is working correctly.
+          
+          ✅ Invalid/duplicate orders: Correctly cleans duplicates and invalid entries. Input ["Cash → Taxable → IRA → Roth", "Cash → Taxable → IRA → Roth", "bogus order"] returns HTTP 200 with results length = 1 (only the valid unique order).
+          
+          ✅ Empty orders: Falls back to 2 default orders. Input orders=[] returns HTTP 200 with results length = 2.
+          
+          ✅ No auth: Correctly rejects unauthenticated requests with HTTP 401 (without Authorization header).
+          
+          ✅ Regression check: POST /api/projection still returns HTTP 200 and summary now includes ending_taxable_basis = 1942213.68 (numeric value present as expected).
+          
+          All requirements met. Endpoint is production-ready.
+
+  - task: "Frontend: Funding Order tab + Client Report page + toggle"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/FundingOrderLever.jsx, frontend/src/components/clientReport/FundingOrderPage.jsx, frontend/src/components/Planner.jsx, frontend/src/components/ClientReport.jsx, frontend/src/lib/fundingOrderRows.js, frontend/src/lib/api.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: |
+          New tab "Funding Order" (data-testid=tab-funding-order) renders FundingOrderLever: 3 checkboxes
+          (Taxable-first/IRA-first/Split, default first two), a Run button (fo-run-btn), and a side-by-side table
+          (fo-table). Client Report has a toggle (cr-funding-order-toggle, default ON) that inserts a
+          "Funding Order — The Hidden Lever" page (cr-page-funding-order) BETWEEN the Roth Conversions page and
+          the Savings page in the PDF, comparing all three orders. NOT yet UI-tested.
+
+agent_communication:
+    -agent: "main"
+    -message: |
+      NEW FEATURE "Funding Order — The Hidden Lever". Backend endpoint POST /api/funding-order-compare added and
+      manually smoke-tested OK. Please run BACKEND tests only for now (do NOT test frontend yet).
+      Auth: use MASTER PIN from /app/memory/test_credentials.md via POST /api/auth/pin/verify to get a bearer
+      token, then call POST /api/funding-order-compare with a valid config. You can obtain a valid config from
+      GET /api/defaults (with the bearer token) — pass its body as {"config": <defaults>, "orders": [...]}.
+      Verify status/shape/differentiation as noted in the task above. No other backend endpoints changed except
+      run_projection now also returns summary.ending_taxable_basis (additive) — confirm /api/projection still 200.
+    -agent: "testing"
+    -message: |
+      BACKEND TESTING COMPLETE - ALL TESTS PASSED ✅
+      
+      Comprehensive testing of POST /api/funding-order-compare endpoint completed. All 6 tests passed (6/6):
+      
+      1. ✅ Two orders test: HTTP 200, correct structure (orders/baseline_order/results keys), 2 results with all 13 required metrics (numeric values confirmed)
+      2. ✅ Three orders test: HTTP 200, 3 results, metrics DIFFER across orders (total_roth_converted: [5.6M, 3.5M, 6.5M], after_tax_to_heirs: [65.1M, 64.8M, 61.4M]) - proves funding order logic works
+      3. ✅ Invalid/duplicate cleaning: HTTP 200, correctly cleaned to 1 valid unique result
+      4. ✅ Empty orders fallback: HTTP 200, correctly fell back to 2 default orders
+      5. ✅ Auth enforcement: HTTP 401 without Authorization header (correctly rejects)
+      6. ✅ Regression check: POST /api/projection returns HTTP 200 with summary.ending_taxable_basis = 1942213.68
+      
+      The endpoint is working correctly at /api/funding-order-compare (not /api/planning/...). Auth is properly enforced. All metrics are present, numeric, and vary across funding orders as expected.
+      
+      Backend is production-ready. Frontend testing can proceed when ready.

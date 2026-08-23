@@ -41,8 +41,9 @@ from models import (
 )
 from montecarlo import run_montecarlo
 from projection import (
-    DEFAULT_HEIR_SENS_RATES, DEFAULT_LONGEVITY_DELTAS, funding_order_longevity,
-    heir_rate_sensitivity, run_projection, sweep_brackets,
+    DEFAULT_HEIR_SENS_RATES, DEFAULT_LONGEVITY_DELTAS, funding_order_compare,
+    funding_order_longevity, heir_rate_sensitivity, run_projection, sweep_brackets,
+    VALID_FUNDING_ORDERS,
 )
 from ss_optimizer import sweep_ss_claims
 from strategy_optimizer import strategy_sweep
@@ -228,6 +229,35 @@ async def projection(request: Request, req: ProjectionRequest, _gate: None = Dep
     except Exception:
         logging.exception("projection failed")
         raise HTTPException(status_code=400, detail="Projection request could not be processed")
+
+
+class FundingOrderCompareRequest(ProjectionRequest):
+    """POST /api/planning/funding-order-compare — run the SAME configured plan
+    (conversions unchanged) under 1-3 withdrawal funding orders and return the
+    side-by-side estate/heir comparison. 'The Hidden Lever'."""
+    orders: List[str] = Field(
+        default_factory=lambda: ["Cash → Taxable → IRA → Roth", "Cash → IRA → Taxable → Roth"])
+
+    @field_validator("orders")
+    @classmethod
+    def _clean_orders(cls, v):
+        out = []
+        for o in (v or []):
+            if o in VALID_FUNDING_ORDERS and o not in out:
+                out.append(o)
+        return out[:3] or ["Cash → Taxable → IRA → Roth", "Cash → IRA → Taxable → Roth"]
+
+
+@router.post("/funding-order-compare")
+@limiter.limit("10/minute")
+async def funding_order_compare_route(request: Request, req: FundingOrderCompareRequest,
+                                      _gate: None = Depends(require_advisor_or_share)):
+    validate_config(req.config)
+    try:
+        return await asyncio.to_thread(funding_order_compare, req.config, req.orders)
+    except Exception:
+        logging.exception("funding order compare failed")
+        raise HTTPException(status_code=400, detail="Funding order comparison could not be processed")
 
 
 class SequenceStressRequest(ProjectionRequest):

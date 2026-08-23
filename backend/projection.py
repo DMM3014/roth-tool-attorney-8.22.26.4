@@ -5,6 +5,8 @@ the spreadsheet's CashFlow/Accounts/RMD/Income/Tax circular relationship
 (taxes -> withdrawals -> taxable income -> taxes), resolved by iteration.
 """
 from __future__ import annotations
+import copy
+import logging
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -1863,9 +1865,15 @@ def run_projection(cfg: dict) -> dict:
 
         client_alive_prev, spouse_alive_prev = status.client_alive, status.spouse_alive
 
-    return _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger,
-                              auto_accounts=plan.auto_accounts, accounts=plan.accounts,
-                              gift_pot_by_year=gift_pot_by_year)
+    result = _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger,
+                                auto_accounts=plan.auto_accounts, accounts=plan.accounts,
+                                gift_pot_by_year=gift_pot_by_year)
+    # Surface the ending taxable cost basis (already tracked internally, incl. any
+    # first-death §1014 step-up) so callers can derive the embedded unrealized gain
+    # in the taxable account at end of plan. Additive only — no calc change.
+    result.setdefault("summary", {})["ending_taxable_basis"] = round(
+        sum(basis.get(aid, 0.0) for aid in plan.taxable_ids), 2)
+    return result
 
 
 def sweep_brackets(cfg: dict) -> dict:
@@ -2064,4 +2072,178 @@ def funding_order_longevity(cfg: dict, deltas=None, orders=None) -> dict:
         "baseline_order": (cfg.get("withdrawal", {}) or {}).get("funding_order")
                           or LONGEVITY_ORDERS[0],
         "rows": rows,
+    }
+
+
+
+# ---------------------------------------------------------------------------
+# Funding Order — "The Hidden Lever"
+# Runs the SAME configured plan (conversions unchanged) under two or more
+# withdrawal funding orders and reports the side-by-side estate/heir metrics
+# that otherwise require generating separate reports.
+# ---------------------------------------------------------------------------
+VALID_FUNDING_ORDERS = [
+    "Cash → Taxable → IRA → Roth",   # Taxable-first
+    "Cash → IRA → Taxable → Roth",   # IRA-first
+    "Split IRA & Taxable",           # Split
+]
+
+
+def _fo_death_years(cfg: dict):
+    """First/second death calendar years from household DOB + life expectancy.
+    Mirrors the frontend deriveDeathYears() fallback to projection.end_year."""
+    h = cfg.get("household", {}) or {}
+    def _d(dob, le):
+        return (dob + le) if (dob and le) else None
+    c = _d(h.get("client_dob_year"), h.get("client_life_expectancy"))
+    s = _d(h.get("spouse_dob_year"), h.get("spouse_life_expectancy"))
+    end = (cfg.get("projection", {}) or {}).get("end_year")
+    if c is not None and s is not None:
+        return min(c, s), max(c, s)
+    only = c if c is not None else (s if s is not None else end)
+    return only, only
+
+
+def _fo_row_at(rows: list, yr):
+    if not rows:
+        return {}
+    if yr is None:
+        return rows[-1]
+    for r in rows:
+        if (r.get("year", 0) or 0) >= yr:
+            return r
+    return rows[-1]
+
+
+def _fo_weighted_taxable_return(cfg: dict) -> float:
+    accts = [a for a in cfg.get("accounts", []) if a.get("tax_type") == "Taxable"]
+    total = sum((a.get("beginning_balance", 0) or 0) for a in accts)
+    if total <= 0:
+        return 0.06
+    wr = sum((a.get("return", 0) or 0) * (a.get("beginning_balance", 0) or 0) for a in accts) / total
+    return round(wr, 3) if wr > 0 else 0.06
+
+
+def _fo_fed_estate_tax_no_trust(cfg: dict, rows: list) -> dict:
+    """Federal (+state) estate tax at second death under the no-trust /
+    portability-only baseline (Plan 1), computed with the full estate engine
+    so it reflects the actual balances left under this funding order."""
+    from estate import project_estate  # local import avoids circular import
+    first, second = _fo_death_years(cfg)
+    y1 = _fo_row_at(rows, first)
+    y2 = _fo_row_at(rows, second)
+    y1_roth = y1.get("roth", 0) or 0
+    y1_taxable = (y1.get("taxable", 0) or 0) + (y1.get("real_estate", 0) or 0) + (y1.get("cash", 0) or 0)
+    y1_trad = y1.get("traditional", 0) or 0
+    growth = _fo_weighted_taxable_return(cfg)
+    lc = cfg.get("legacy", {}) or {}
+    heir_rate = (lc.get("heir_federal_rate", 0.32) or 0) + (lc.get("heir_state_rate", 0.04) or 0)
+    indexing = (cfg.get("projection", {}) or {}).get("general_inflation", 0.03)
+    try:
+        res = project_estate(
+            first_death_year=first, second_death_year=second,
+            deceased_roth_at_y1=y1_roth / 2, deceased_taxable_at_y1=y1_taxable / 2,
+            survivor_roth_at_y1=y1_roth / 2, survivor_taxable_at_y1=y1_taxable / 2,
+            traditional_at_y1=y1_trad,
+            trust_growth_rate=growth, survivor_growth_rate=growth,
+            heir_marginal_rate=heir_rate, state_code="",
+            use_portability=True, gst_funding_order="roth_first",
+            indexing_rate=indexing, horizons_after_second_death=(0,),
+            y2_roth=y2.get("roth", 0) or 0,
+            y2_taxable=(y2.get("taxable", 0) or 0) + (y2.get("real_estate", 0) or 0) + (y2.get("cash", 0) or 0),
+            y2_traditional=y2.get("traditional", 0) or 0,
+        )
+        out = (res or {}).get("outcomes", {}).get("portability", {}) or {}
+        return {
+            "federal_estate_tax": out.get("fed_tax"),
+            "state_estate_tax": out.get("state_tax"),
+            "estate_at_second_death": out.get("estate_y2"),
+        }
+    except Exception:
+        logging.exception("funding-order FET (no-trust) failed")
+        return {"federal_estate_tax": None, "state_estate_tax": None, "estate_at_second_death": None}
+
+
+def _fo_break_even_rate(cfg: dict):
+    """Beneficiary marginal rate at which converting vs. not converting produces
+    equal after-tax wealth to heirs. None => no crossover in the tested band."""
+    try:
+        be = heir_rate_sensitivity(cfg)
+    except Exception:
+        logging.exception("funding-order break-even failed")
+        return None
+    rates = be.get("rates", []) or []
+    w = {e["rate"]: e["after_tax_estate_to_heirs"] for e in be.get("branches", {}).get("with_conversions", [])}
+    n = {e["rate"]: e["after_tax_estate_to_heirs"] for e in be.get("branches", {}).get("no_conversions", [])}
+    pts = sorted((r, w[r] - n[r]) for r in rates if r in w and r in n)
+    for i in range(1, len(pts)):
+        r0, d0 = pts[i - 1]
+        r1, d1 = pts[i]
+        if (d0 <= 0 <= d1) or (d0 >= 0 >= d1):
+            span = d1 - d0
+            if abs(span) < 1e-9:
+                return round(r0, 4)
+            return round(r0 + (r1 - r0) * (-d0 / span), 4)
+    return None
+
+
+def _funding_order_metrics(cfg: dict, order: str) -> dict:
+    c = copy.deepcopy(cfg)
+    c.setdefault("withdrawal", {})["funding_order"] = order
+    res = run_projection(c)
+    summ = res.get("summary", {}) or {}
+    leg = res.get("legacy", {}) or {}
+    rows = res.get("rows", []) or []
+
+    proj = c.get("projection", {}) or {}
+    start = proj.get("start_year", rows[0]["year"] if rows else 0)
+    disc = proj.get("general_inflation", 0.03)
+    npv = 0.0
+    for row in rows:
+        yr = row.get("year", start)
+        npv += (row.get("total_tax", 0) or 0) / ((1 + disc) ** max(0, yr - start))
+
+    ending_taxable = summ.get("ending_taxable", 0) or 0
+    ending_basis = summ.get("ending_taxable_basis", 0) or 0
+    embedded_gain = max(0.0, ending_taxable - ending_basis)
+    heir_ltcg = leg.get("heir_ltcg_rate", 0.188) or 0.188
+    step_up_value = embedded_gain * heir_ltcg
+
+    fet = _fo_fed_estate_tax_no_trust(c, rows)
+    break_even = _fo_break_even_rate(c)
+
+    return {
+        "funding_order": order,
+        "total_roth_converted": summ.get("total_roth_converted"),
+        "ending_roth": summ.get("ending_roth"),
+        "ending_taxable": round(ending_taxable, 2),
+        "embedded_unrealized_gain": round(embedded_gain, 2),
+        "step_up_value": round(step_up_value, 2),
+        "heir_ltcg_rate": round(heir_ltcg, 4),
+        "net_worth_at_second_death": leg.get("gross_estate"),
+        "federal_estate_tax_no_trust": fet["federal_estate_tax"],
+        "state_estate_tax_no_trust": fet["state_estate_tax"],
+        "after_tax_to_heirs_secure10": leg.get("after_tax_estate_to_heirs"),
+        "lifetime_tax_nominal": summ.get("lifetime_taxes"),
+        "lifetime_tax_npv": round(npv, 2),
+        "heir_secure10_ira_tax": leg.get("inherited_ira_tax"),
+        "beneficiary_break_even_rate": break_even,
+    }
+
+
+def funding_order_compare(cfg: dict, orders=None) -> dict:
+    """Run the configured plan under each requested funding order and return the
+    side-by-side comparison metrics. `orders` is 1-3 of VALID_FUNDING_ORDERS."""
+    requested = orders or ["Cash → Taxable → IRA → Roth", "Cash → IRA → Taxable → Roth"]
+    seen = []
+    for o in requested:
+        if o in VALID_FUNDING_ORDERS and o not in seen:
+            seen.append(o)
+    if not seen:
+        seen = ["Cash → Taxable → IRA → Roth", "Cash → IRA → Taxable → Roth"]
+    seen = seen[:3]
+    return {
+        "orders": seen,
+        "baseline_order": (cfg.get("withdrawal", {}) or {}).get("funding_order"),
+        "results": [_funding_order_metrics(cfg, o) for o in seen],
     }
