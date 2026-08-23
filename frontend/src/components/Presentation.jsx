@@ -1466,7 +1466,7 @@ const PresentationReport = ({
             </tbody>
           </table>
           <Sub>
-            The engine has been reconciled to a benchmark spreadsheet (Retirement Optimizer V17) to within 0.4% on total conversions
+            The engine has been reconciled to an independent benchmark spreadsheet (model V17) to within 0.4% on total conversions
             and 0.3% on wealth-to-heirs. Full methodology in the White Paper.
           </Sub>
         </Page>

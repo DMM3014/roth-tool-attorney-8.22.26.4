@@ -52,17 +52,17 @@ export const Cashflow = ({ scenario }) => {
   // Display-layer only: de-minimis end-of-plan RMDs (< $100) render as $0 so no
   // stray "$1" rounding artifact appears. Does not affect any calculation.
   const rows = useMemo(() => (data?.rows || []).map((r) => {
-    if (r.rmd != null && r.rmd < 100) {
-      // Also filter line_items.income for RMD entries
-      const filteredLineItems = r.line_items ? {
-        ...r.line_items,
-        income: (r.line_items.income || []).map((item) =>
-          (item.kind === 'rmd' && item.amount < 100) ? { ...item, amount: 0 } : item
-        ),
-      } : r.line_items;
-      return { ...r, rmd: 0, line_items: filteredLineItems };
-    }
-    return r;
+    if (r.rmd == null || r.rmd >= 100) return r;
+    // Also filter line_items.income for RMD entries and the cashflow.rmd field.
+    const filteredLineItems = r.line_items ? {
+      ...r.line_items,
+      income: (r.line_items.income || []).map((item) =>
+        (item.kind === 'rmd' && item.amount < 100) ? { ...item, amount: 0 } : item
+      ),
+    } : r.line_items;
+    const next = { ...r, rmd: 0, line_items: filteredLineItems };
+    if (r.cashflow) next.cashflow = { ...r.cashflow, rmd: 0 };
+    return next;
   }), [data]);
   const firstRetYear = useMemo(() => {
     if (!rows.length) return null;

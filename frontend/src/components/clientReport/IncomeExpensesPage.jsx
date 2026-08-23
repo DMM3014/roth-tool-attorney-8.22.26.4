@@ -154,7 +154,7 @@ export const IncomeExpensesPage = ({ incomeData, rows, customMilestones, stateEx
         "Pension / annuity": pension,
         "Interest": interest,
         "Dividends & LTCG": dividends,
-        "RMDs (taxable portion)": rmd,
+        "RMDs (taxable portion)": rmd < 100 ? 0 : rmd,
         "Social Security (taxable)": ss,
         "Other ordinary": other,
         "Roth conversion": rothConv,

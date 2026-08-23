@@ -61,8 +61,12 @@ export const Analytics = ({ scenario }) => {
 
   // Display-layer only: de-minimis end-of-plan RMDs (< $100) render as $0 so no
   // stray "$1" rounding artifact appears in the RMD chart. No calculation change.
-  const rows = useMemo(() => (withRoth?.rows || []).map((r) =>
-    (r.rmd != null && r.rmd < 100) ? { ...r, rmd: 0 } : r), [withRoth]);
+  const rows = useMemo(() => (withRoth?.rows || []).map((r) => {
+    if (r.rmd == null || r.rmd >= 100) return r;
+    const next = { ...r, rmd: 0 };
+    if (r.cashflow) next.cashflow = { ...r.cashflow, rmd: 0 };
+    return next;
+  }), [withRoth]);
 
   const incomeData = useMemo(() => rows.map((r) => {
     const cf = r.cashflow || {};

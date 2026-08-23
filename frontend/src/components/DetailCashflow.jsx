@@ -61,9 +61,18 @@ export const DetailCashflow = ({ scenario }) => {
   }, [sig]);
 
   // Display-layer only: de-minimis end-of-plan RMDs (< $100) render as $0 so no
-  // stray "$1" rounding artifact appears. Does not affect any calculation.
-  const rows = useMemo(() => (data?.rows || []).map((r) =>
-    (r.rmd != null && r.rmd < 100) ? { ...r, rmd: 0 } : r), [data]);
+  // stray "$1" rounding artifact appears. The grid reads r.cashflow[key], so we
+  // must zero cashflow.rmd (and the raw r.rmd). Does not affect any calculation.
+  const rows = useMemo(() => (data?.rows || []).map((r) => {
+    if (r.rmd == null || r.rmd >= 100) return r;
+    const next = { ...r, rmd: 0 };
+    if (r.cashflow) next.cashflow = { ...r.cashflow, rmd: 0 };
+    if (r.line_items?.income) next.line_items = {
+      ...r.line_items,
+      income: r.line_items.income.map((it) => (it.kind === "rmd" && (it.amount || 0) < 100) ? { ...it, amount: 0 } : it),
+    };
+    return next;
+  }), [data]);
   const postRows = useMemo(() => data?.legacy?.post_death_rows || [], [data]);
   const lastYear = rows.length ? rows[rows.length - 1].year : 2062;
 
