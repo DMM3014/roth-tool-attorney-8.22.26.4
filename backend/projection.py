@@ -883,13 +883,23 @@ def _solve_year_conversion(ctx: _SolveCtx, bal: dict, basis: dict):
 def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
                        ledger: list | None = None, auto_accounts: list | None = None,
                        accounts: list | None = None,
-                       gift_pot_by_year: dict | None = None) -> dict:
+                       gift_pot_by_year: dict | None = None,
+                       taxable_gifts_summary: dict | None = None) -> dict:
     """Roll year rows up into summary totals + the legacy block + Roth compliance."""
     final = rows[-1] if rows else {}
     total_early_penalty = round(sum(w.get("penalty_10pct", 0.0) for w in (warnings or [])), 2)
     _gpby = gift_pot_by_year or {}
     total_gifted = round(sum(v.get("contributed", 0.0) for v in _gpby.values()), 2)
     ending_pot = round((_gpby.get(sorted(_gpby.keys())[-1], {}).get("cumulative_pot", 0.0)) if _gpby else 0.0, 2)
+    giving = {
+        "annual_pot": _gpby,
+        "total_gifted": total_gifted,
+        "ending_pot": ending_pot,
+    }
+    # Additive only — the key is present ONLY when taxable gifts exist, so configs
+    # without them stay byte-identical to the golden baseline.
+    if taxable_gifts_summary:
+        giving["taxable_gifts"] = taxable_gifts_summary
     return {
         "rows": rows,
         "auto_accounts": auto_accounts or [],
@@ -908,11 +918,7 @@ def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
             "gift_pot_at_second_death": ending_pot,
         },
         "legacy": _compute_legacy(cfg, final, accounts=accounts),
-        "giving": {
-            "annual_pot": _gpby,
-            "total_gifted": total_gifted,
-            "ending_pot": ending_pot,
-        },
+        "giving": giving,
         "roth_compliance": {
             "warnings": warnings or [],
             "conversions_ledger": ledger or [],
@@ -991,6 +997,11 @@ class Plan:
     section_2503e_amount: float = 0.0  # $/yr direct medical/tuition (unlimited)
     gift_start_year: int = 0           # 0 = disabled
     gift_end_year: int = 0             # 0 = run through end_year
+    # ----- Taxable lifetime gifts (§2001(b) unified transfer-tax mechanics) -----
+    # Gifts ABOVE the annual exclusion that consume the donor's unified credit.
+    # Each entry: {"year": int, "amount": float, "donor": "Client"|"Spouse"|"Joint"}.
+    # Absent/empty (the normal case) => strict no-op (golden-safe).
+    taxable_gifts: list = field(default_factory=list)
     # ----- Sequence-of-returns path (optional) -----
     # {"start_year": int, "equity_share": float, "equity_returns": [r_2026, r_2027, ...]}
     # Absent (the normal case) => every account compounds at its own flat return.
@@ -1039,6 +1050,120 @@ def _equity_for_year(plan: "Plan", year: int):
     if 0 <= i < len(seq):
         return (rp["equity_share"], seq[i])
     return None
+
+
+def _parse_taxable_gifts(raw) -> list:
+    """Validate the optional taxable-lifetime-gifts array (see Plan.taxable_gifts).
+
+    Each entry: {"year": int, "amount": float, "donor": "Client"|"Spouse"|"Joint"}.
+    These are gifts ABOVE the annual exclusion — they consume the donor's unified
+    credit and enter the §2001(b) tentative-tax base at death. Malformed / zero
+    entries are dropped so an empty/absent array is a strict no-op (golden-safe).
+    """
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for g in raw:
+        if not isinstance(g, dict):
+            continue
+        try:
+            yr = int(g.get("year"))
+            amt = float(g.get("amount") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if amt <= 0:
+            continue
+        donor = (str(g.get("donor") or "Joint")).strip().title()
+        if donor not in ("Client", "Spouse", "Joint"):
+            donor = "Joint"
+        out.append({"year": yr, "amount": amt, "donor": donor})
+    return out
+
+
+def _first_decedent_donor(plan: "Plan") -> str:
+    """Which spouse dies FIRST ('Client' or 'Spouse'). Single filers -> 'Client'."""
+    if not plan.has_spouse or plan.spouse_dob is None:
+        return "Client"
+    c_death = plan.client_dob + plan.client_death
+    s_death = plan.spouse_dob + plan.spouse_death
+    return "Client" if c_death <= s_death else "Spouse"
+
+
+def _split_adjusted_gifts(plan: "Plan", by_donor: dict) -> tuple[float, float]:
+    """Map per-donor cumulative adjusted taxable gifts onto the (first_death,
+    second_death) tuple the estate engine's §2001(b) base expects."""
+    if not plan.has_spouse or plan.spouse_dob is None:
+        # Single filer: everything lands on the (only) decedent.
+        return round(by_donor.get("Client", 0.0) + by_donor.get("Spouse", 0.0), 2), 0.0
+    first = _first_decedent_donor(plan)
+    second = "Spouse" if first == "Client" else "Client"
+    return round(by_donor.get(first, 0.0), 2), round(by_donor.get(second, 0.0), 2)
+
+
+def _cfg_adjusted_gifts(cfg: dict) -> tuple[float, float]:
+    """Approximate (first_death, second_death) adjusted taxable gifts straight from
+    cfg (sum by donor, mapped to first/second decedent). Used by the funding-order
+    estate helper which only has cfg + rows, not the full projection result."""
+    gifts = _parse_taxable_gifts((cfg.get("giving", {}) or {}).get("taxable_gifts"))
+    if not gifts:
+        return 0.0, 0.0
+    by_donor = {"Client": 0.0, "Spouse": 0.0}
+    for g in gifts:
+        if g["donor"] == "Joint":
+            by_donor["Client"] += g["amount"] / 2.0
+            by_donor["Spouse"] += g["amount"] / 2.0
+        else:
+            by_donor[g["donor"]] += g["amount"]
+    h = cfg.get("household", {}) or {}
+    has_spouse = h.get("spouse_dob_year") is not None
+    if not has_spouse:
+        return round(by_donor["Client"] + by_donor["Spouse"], 2), 0.0
+    c_death = (h.get("client_dob_year") or 0) + (h.get("client_life_expectancy") or 0)
+    s_death = (h.get("spouse_dob_year") or 0) + (h.get("spouse_life_expectancy") or 0)
+    first = "Client" if c_death <= s_death else "Spouse"
+    second = "Spouse" if first == "Client" else "Client"
+    return round(by_donor[first], 2), round(by_donor[second], 2)
+
+
+def _drain_for_gift(plan: "Plan", bal: dict, basis: dict, amount: float, donor: str) -> float:
+    """Drain `amount` for a taxable gift from Taxable brokerage (donor-owned first,
+    then Joint, then the other spouse's), then Cash. Consumes basis pro-rata on the
+    taxable side (a gift is a 'sale then transfer' from the estate's view; the donee
+    takes carryover basis — modeled on the income-tax side in a later stage).
+    Returns the UNFUNDED remainder (0.0 when fully funded)."""
+    remaining = float(amount)
+    orig_owner = {a["id"]: a.get("owner", "Client") for a in plan.accounts}
+
+    def _order(ids):
+        if donor in ("Client", "Spouse"):
+            own = [i for i in ids if orig_owner.get(i) == donor]
+            joint = [i for i in ids if orig_owner.get(i) == "Joint"]
+            other = [i for i in ids if i not in own and i not in joint]
+            return own + joint + other
+        return list(ids)
+
+    for aid in _order(plan.taxable_ids):
+        if remaining <= 0:
+            break
+        cur_bal = bal.get(aid, 0.0)
+        take = min(remaining, cur_bal)
+        if take <= 0:
+            continue
+        if cur_bal > 0:
+            b_frac = min(1.0, basis.get(aid, 0.0) / cur_bal)
+            basis[aid] = max(0.0, basis.get(aid, 0.0) - take * b_frac)
+        bal[aid] = max(0.0, cur_bal - take)
+        remaining -= take
+    for aid in _order(plan.cash_ids):
+        if remaining <= 0:
+            break
+        take = min(remaining, bal.get(aid, 0.0))
+        if take <= 0:
+            continue
+        bal[aid] = max(0.0, bal.get(aid, 0.0) - take)
+        remaining -= take
+    return max(0.0, remaining)
+
 
 
 def _parse_plan(cfg: dict) -> Plan:
@@ -1113,6 +1238,7 @@ def _parse_plan(cfg: dict) -> Plan:
         section_2503e_amount=float(cfg.get("giving", {}).get("section_2503e_amount") or 0.0),
         gift_start_year=int(cfg.get("giving", {}).get("start_year") or 0),
         gift_end_year=int(cfg.get("giving", {}).get("end_year") or 0),
+        taxable_gifts=_parse_taxable_gifts(cfg.get("giving", {}).get("taxable_gifts")),
         return_path=_parse_return_path(cfg),
     )
 
@@ -1611,6 +1737,10 @@ def run_projection(cfg: dict) -> dict:
         _giving_growth = next((a["return"] for a in plan.accounts if a["tax_type"] == "Taxable"), 0.06)
     gift_pot = 0.0
     gift_pot_by_year = {}  # year -> {contributed, cumulative_pot} for the frontend
+    # Taxable lifetime gifts (§2001(b)): cumulative adjusted taxable gifts per donor
+    # + a per-year ledger for the reporting stage.
+    adj_gifts_by_donor = {"Client": 0.0, "Spouse": 0.0}
+    taxable_gift_rows = []
     # 5-year/pre-59½ compliance tracking — per-conversion basis (Roth ordering rules):
     #   (1) each conversion has its own 5-yr clock (10% penalty on conversion principal
     #       tapped early),
@@ -1834,6 +1964,35 @@ def run_projection(cfg: dict) -> dict:
                 contributed = min(total_gift, available_tax)
                 gift_pot += contributed
                 gift_contrib_this_year = contributed
+        # --- Taxable lifetime gifts (§2001(b) unified transfer-tax mechanics) ---
+        # Gifts above the annual exclusion: drain the donor's Taxable (then Cash)
+        # balance, accumulate the donor's cumulative adjusted taxable gift, and add
+        # the gifted principal to the family gift pot (it left the estate but stays
+        # in the family). A dead donor cannot gift (Joint needs at least one alive).
+        for g in plan.taxable_gifts:
+            if g["year"] != year:
+                continue
+            donor = g["donor"]
+            donor_can_gift = (
+                (donor == "Client" and status.client_alive)
+                or (donor == "Spouse" and status.spouse_alive)
+                or (donor == "Joint" and (status.client_alive or status.spouse_alive))
+            )
+            if not donor_can_gift:
+                continue
+            unfunded = _drain_for_gift(plan, bal, basis, g["amount"], donor)
+            contributed = g["amount"] - unfunded
+            if contributed <= 0:
+                continue
+            if donor == "Joint":
+                adj_gifts_by_donor["Client"] += contributed / 2.0
+                adj_gifts_by_donor["Spouse"] += contributed / 2.0
+            else:
+                adj_gifts_by_donor[donor] += contributed
+            gift_pot += contributed
+            gift_contrib_this_year += contributed
+            taxable_gift_rows.append(
+                {"year": year, "donor": donor, "amount": round(contributed, 2)})
         gift_pot_by_year[year] = {
             "contributed": round(gift_contrib_this_year, 2),
             "cumulative_pot": round(gift_pot, 2),
@@ -1868,9 +2027,24 @@ def run_projection(cfg: dict) -> dict:
 
         client_alive_prev, spouse_alive_prev = status.client_alive, status.spouse_alive
 
+    # Build the taxable-gifts summary (empty -> None so the result stays byte-
+    # identical to pre-gift behavior; the golden baseline has no taxable gifts).
+    _tg_summary = None
+    if taxable_gift_rows:
+        first_adj, second_adj = _split_adjusted_gifts(plan, adj_gifts_by_donor)
+        _tg_summary = {
+            "by_donor": {"Client": round(adj_gifts_by_donor["Client"], 2),
+                         "Spouse": round(adj_gifts_by_donor["Spouse"], 2)},
+            "first_decedent": _first_decedent_donor(plan),
+            "adjusted_gifts_first_death": first_adj,
+            "adjusted_gifts_second_death": second_adj,
+            "total": round(adj_gifts_by_donor["Client"] + adj_gifts_by_donor["Spouse"], 2),
+            "rows": taxable_gift_rows,
+        }
     result = _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger,
                                 auto_accounts=plan.auto_accounts, accounts=plan.accounts,
-                                gift_pot_by_year=gift_pot_by_year)
+                                gift_pot_by_year=gift_pot_by_year,
+                                taxable_gifts_summary=_tg_summary)
     # Surface the ending taxable cost basis (already tracked internally, incl. any
     # first-death §1014 step-up) so callers can derive the embedded unrealized gain
     # in the taxable account at end of plan. Additive only — no calc change.
@@ -2142,6 +2316,7 @@ def _fo_fed_estate_tax_no_trust(cfg: dict, rows: list) -> dict:
     lc = cfg.get("legacy", {}) or {}
     heir_rate = (lc.get("heir_federal_rate", 0.32) or 0) + (lc.get("heir_state_rate", 0.04) or 0)
     indexing = (cfg.get("projection", {}) or {}).get("general_inflation", 0.03)
+    adj_first, adj_second = _cfg_adjusted_gifts(cfg)
     try:
         res = project_estate(
             first_death_year=first, second_death_year=second,
@@ -2155,6 +2330,8 @@ def _fo_fed_estate_tax_no_trust(cfg: dict, rows: list) -> dict:
             y2_roth=y2.get("roth", 0) or 0,
             y2_taxable=(y2.get("taxable", 0) or 0) + (y2.get("real_estate", 0) or 0) + (y2.get("cash", 0) or 0),
             y2_traditional=y2.get("traditional", 0) or 0,
+            adjusted_gifts_first_death=adj_first,
+            adjusted_gifts_second_death=adj_second,
         )
         out = (res or {}).get("outcomes", {}).get("portability", {}) or {}
         return {

@@ -404,6 +404,14 @@ def project_estate(
     y2_roth: float | None = None,
     y2_taxable: float | None = None,
     y2_traditional: float | None = None,
+    # Lifetime taxable gifts (adjusted taxable gifts, §2001(b)) per decedent.
+    # Defaults 0.0 -> byte-identical to pre-gift behavior. Standard unified
+    # computation: gifts are added once to the tentative-tax base and the FULL
+    # current exclusion + DSUE apply as shelter (no separate exclusion reduction),
+    # so a within-exclusion gift creates no phantom estate tax and the benefit
+    # shows up as a smaller gross estate (appreciation escaped the estate).
+    adjusted_gifts_first_death: float = 0.0,
+    adjusted_gifts_second_death: float = 0.0,
 ) -> dict:
     """Full 4-strategy estate comparison.
 
@@ -490,7 +498,12 @@ def project_estate(
         trad_y2 = _to_y2(traditional_at_y1, "trad") + _orph["trad"]
         estate_y2 = roth_y2 + taxable_y2 + trad_y2
 
-        fed_taxable = max(0.0, estate_y2 - avail_y2)
+        # §2001(b): adjusted taxable gifts are added ONCE to the tentative-tax base;
+        # the full exclusion + DSUE shelter still applies (unified credit is not
+        # separately reduced). Within-exclusion gifts thus add no estate tax; the
+        # benefit is the smaller estate_y2 (gifted principal + growth already left).
+        adjusted_gifts = adjusted_gifts_first_death + adjusted_gifts_second_death
+        fed_taxable = max(0.0, estate_y2 + adjusted_gifts - avail_y2)
         fed_tax = fed_taxable * FED_ESTATE_TAX_RATE
         st_tax = state_estate_tax(estate_y2, state_code, second_death_year, dsue=dsue, indexing_rate=indexing_rate)
 

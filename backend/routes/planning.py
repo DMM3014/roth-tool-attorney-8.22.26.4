@@ -670,6 +670,10 @@ class EstateAnalyzeRequest(BaseModel):
     y2_roth: Optional[float] = Field(None, ge=0.0, le=1e12)
     y2_taxable: Optional[float] = Field(None, ge=0.0, le=1e12)
     y2_traditional: Optional[float] = Field(None, ge=0.0, le=1e12)
+    # Adjusted taxable lifetime gifts (§2001(b)) per decedent. Added ONCE to the
+    # tentative-tax base with full exclusion + DSUE as shelter (no double count).
+    adjusted_gifts_first_death: float = Field(0.0, ge=0.0, le=1e12)
+    adjusted_gifts_second_death: float = Field(0.0, ge=0.0, le=1e12)
 
     @field_validator("horizons_after_second_death")
     @classmethod
@@ -728,6 +732,8 @@ async def estate_analyze(request: Request, req: EstateAnalyzeRequest,
         y2_roth=req.y2_roth,
         y2_taxable=req.y2_taxable,
         y2_traditional=req.y2_traditional,
+        adjusted_gifts_first_death=req.adjusted_gifts_first_death,
+        adjusted_gifts_second_death=req.adjusted_gifts_second_death,
     )
     return result
 
