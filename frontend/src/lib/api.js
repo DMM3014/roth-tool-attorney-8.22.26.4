@@ -136,6 +136,9 @@ export const runEpFlowchart = (opts) =>
 // compact per-regime table (success, P10/P50/P90 legacy, depleted %). Synchronous;
 // backend is rate-limited to 6/minute given the 6× workload of each call.
 export const runRegimeCompare = (opts) => http.post(`/montecarlo/regime-compare`, opts).then((r) => r.data);
+// Deterministic (single-path) projection under every named regime, both branches.
+export const runRegimeDeterministicCompare = (config) =>
+  http.post(`/regime-deterministic-compare`, { config }).then((r) => r.data);
 
 // Two configs for the "deplete IRA now vs. leave it for the children" comparison:
 // fund the conversion tax / spending IRA-first (deplete) vs Taxable-first (leave IRA).

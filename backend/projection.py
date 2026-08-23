@@ -2455,3 +2455,95 @@ def funding_order_compare(cfg: dict, orders=None) -> dict:
         "baseline_order": (cfg.get("withdrawal", {}) or {}).get("funding_order"),
         "results": [_funding_order_metrics(cfg, o) for o in seen],
     }
+
+
+# ---------------------------------------------------------------------------
+# Regime deterministic comparison
+# Re-runs the FULL deterministic projection under each named market regime's
+# return + inflation profile (not a scaling of baseline), for both the
+# with-conversions and no-conversions branches. Reuses the paired-branch
+# pattern the funding-order comparison uses. Cached per plan-config hash since
+# this is 7 regimes x 2 branches = 14 full projections.
+# ---------------------------------------------------------------------------
+_REGIME_DET_CACHE = {}
+_REGIME_DET_CACHE_ORDER = []
+
+
+def _regime_branch_metrics(cfg: dict) -> dict:
+    """Deterministic headline numbers for one regime+branch full projection."""
+    res = run_projection(cfg)
+    leg = res.get("legacy", {}) or {}
+    summ = res.get("summary", {}) or {}
+    return {
+        "net_worth_at_second_death": leg.get("gross_estate"),
+        "after_tax_to_heirs_secure10": leg.get("after_tax_estate_to_heirs"),
+        "lifetime_taxes": summ.get("lifetime_taxes"),
+        "ending_net_worth": summ.get("ending_net_worth"),
+    }
+
+
+def regime_deterministic_compare(cfg: dict) -> dict:
+    """For every named regime, re-run the deterministic projection (with & without
+    conversions) under that regime's return/inflation profile and return per-regime
+    net worth at second death, after-tax wealth to heirs at the SECURE-window end,
+    and the conversion delta in nominal AND today's dollars. Cached per config hash."""
+    import hashlib
+    import json as _json
+    from market_scenarios import PRESETS, DEFAULT_ID
+
+    key = hashlib.sha256(_json.dumps(cfg, sort_keys=True, default=str).encode()).hexdigest()
+    if key in _REGIME_DET_CACHE:
+        return _REGIME_DET_CACHE[key]
+
+    baseline_id = (cfg.get("market_scenario") or {}).get("id") or DEFAULT_ID
+    start = (cfg.get("projection", {}) or {}).get("start_year")
+    first, second = _fo_death_years(cfg)
+    horizon = int((cfg.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
+    deliver_year = (second + horizon) if second else None
+
+    rows = []
+    for pid, preset in PRESETS.items():
+        if pid == "custom":
+            continue  # 'custom' is a no-op passthrough == the baseline; skip (matches the MC regime table)
+        regime_cfg = copy.deepcopy(cfg)
+        regime_cfg["market_scenario"] = {"id": pid}
+        regime_cfg = apply_market_scenario(regime_cfg)  # no-op for 'custom' (uses user inputs)
+        disc = (regime_cfg.get("projection", {}) or {}).get("general_inflation", 0.03) or 0.03
+
+        with_cfg = copy.deepcopy(regime_cfg)
+        no_cfg = copy.deepcopy(regime_cfg)
+        no_cfg["roth"] = {**(no_cfg.get("roth") or {}), "enabled": False}
+
+        m_with = _regime_branch_metrics(with_cfg)
+        m_no = _regime_branch_metrics(no_cfg)
+
+        w = m_with.get("after_tax_to_heirs_secure10") or 0.0
+        n = m_no.get("after_tax_to_heirs_secure10") or 0.0
+        delta_nom = w - n
+        yrs = max(0, (deliver_year - start)) if (deliver_year and start) else 0
+        delta_today = delta_nom / ((1.0 + disc) ** yrs) if yrs else delta_nom
+
+        rows.append({
+            "preset_id": pid,
+            "label": preset["label"],
+            "general_inflation": round(disc, 4),
+            "with_conversions": m_with,
+            "no_conversions": m_no,
+            "conversion_delta_to_heirs_nominal": round(delta_nom, 2),
+            "conversion_delta_to_heirs_today": round(delta_today, 2),
+        })
+
+    out = {
+        "baseline_id": baseline_id,
+        "start_year": start,
+        "first_death_year": first,
+        "second_death_year": second,
+        "heir_deliver_year": deliver_year,
+        "discount_note": "Today's dollars discount each regime's nominal delta by that regime's own assumed CPI (general_inflation) from the SECURE-window delivery year back to the plan start year.",
+        "rows": rows,
+    }
+    _REGIME_DET_CACHE[key] = out
+    _REGIME_DET_CACHE_ORDER.append(key)
+    if len(_REGIME_DET_CACHE_ORDER) > 32:
+        _REGIME_DET_CACHE.pop(_REGIME_DET_CACHE_ORDER.pop(0), None)
+    return out

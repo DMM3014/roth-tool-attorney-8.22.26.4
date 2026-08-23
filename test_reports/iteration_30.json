@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 30 — tested the new deterministic (single-path) regime comparison end to end. Backend: created /app/backend/tests/test_iter30_regime_det_http.py (7 HTTP tests through the public ingress with a master token) covering response shape, per-row fields, historical_avg == plain /api/projection legacy figures EXACTLY, regime differentiation, cache stability on repeat POST, different result for a modified config, and 401 for unauthenticated calls. Ran alongside offline test_phase64_regime_deterministic.py and the MC regime-compare regression test_phase32: 22/22 passed. Frontend: Playwright — master login, Monte Carlo tab, ran MC (300 trials) then 'Run Comparison': the existing MC regime table (6 rows) plus the new mc-regime-det-section/mc-regime-det-table rendered with 7 rows (one per preset), exactly one 'Worst regime' badge (lost_decade, correctly the lowest to-heirs), 'Your baseline' badge on historical_avg, all 6 columns populated (42/42 cells non-blank) and the single-path/dispersion caption present. Client Report tab: enabling the Market Regimes section rendered cr-page-regime-compare with BOTH tables (deterministic table is the 2nd table, i.e. beneath the MC table), 7 per-regime rows, 1 worst + 1 baseline badge, caption present, in both the preview root and the print root. Page frame check: content bottom 723px vs 1037px page frame — no overflow/clipping. No console errors.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Deterministic outcomes by regime (in-app panel + printed Regime Comparison page)",
+        "issues": [
+          "The deterministic table includes a 'Custom (user inputs)' row whose numbers are byte-identical to the 'Long-term Average (1928+)' baseline row ($33,197,393 / $64,786,223 / $64,864,091 / -$77,868 / -$19,991). In a client-facing printed report this reads as a duplicated row. The Monte Carlo table above it deliberately excludes the 'custom' preset (6 rows vs 7), so the two tables also disagree on row count. Consider dropping 'custom' (or labelling it 'Your assumptions' and suppressing it when it equals the baseline).",
+          "Lost Decade row shows 'Conversion Δ +$0 / +$0' with identical with/no-conv to-heirs (plan depleted). Displaying '—' or a 'plan depleted' note would read better than a signed +$0."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_regime_det_http.py",
+    "/app/backend/tests/test_phase64_regime_deterministic.py",
+    "/app/test_reports/pytest/iter30.xml"
+  ],
+  "action_items": [
+    "Optional polish only: decide whether the 'custom' preset row belongs in the client-facing deterministic table (currently duplicates the baseline row and makes det table 7 rows vs MC table 6 rows).",
+    "Optional: render '—' instead of '+$0' for the conversion delta when a regime depletes the plan (Lost Decade)."
+  ],
+  "critical_code_review_comments": [
+    "projection._REGIME_DET_CACHE is an unbounded module-level dict keyed by config hash — every distinct scenario POSTed adds a permanent entry holding 14 projection result summaries. Add an LRU cap (e.g. functools.lru_cache / bounded OrderedDict) to avoid slow memory growth in a long-lived worker.",
+    "The panel and the printed report duplicate the worst-regime reduce + row-rendering logic (~40 lines each in RegimeComparePanel.jsx and clientReport/RegimeComparePage.jsx). Extract worstRegimeId(rows) into a shared helper to keep the two surfaces from drifting.",
+    "Frontend swallows the deterministic fetch failure silently (catch with empty body in both RegimeComparePanel.run() and ClientReport's regime effect). Fine as 'additive', but the report then silently prints only the MC table with no indication the deterministic block was requested — consider a small inline note on failure."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter30_regime_det_http.py"],
+  "success_rate": { "backend": "100% (22/22)", "frontend": "100% of tested flows (panel + report deterministic tables, MC regression)" },
+  "seed_data_creation": "None — used GET /api/defaults scenario; no persisted data created.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Master passphrase i4m07MnVDhpTYkc1giC6wWDv (login screen -> Master tab -> pin-input -> pin-unlock-btn)",
+  "context_for_next_testing_agent": "Preset ids are historical_avg, last_50_years, 70s_stagflation, lost_decade, high_inflation, low_return, custom (NOT last_50/high_inflation_5/bogle_4). backend/tests/conftest.py auto-injects an advisor bearer token into all requests — send header X-Test-No-Auth: 1 to test unauthenticated behaviour. config['accounts'] is a LIST of account dicts (beginning_balance), not a dict. The RegimeComparePanel only appears after the main MC sim has been run once (needs data-testid mc-run, then mc-regime-compare-run). ClientReport renders every page TWICE (client-report-preview-inner and client-report-print-root) so all cr-* testids must be scoped to one root to avoid strict-mode violations. Report page frame is 1037px client height; regime page content measured 723px.",
+  "rca_of_the_issue": "No defects found. Three initial test failures were all test-side: wrong preset ids, accounts treated as dict, and conftest's auto-auth injection masking the 401 check — all fixed in the test file; endpoint behaviour (401 unauthenticated, exact baseline match, per-config caching) is correct."
+}

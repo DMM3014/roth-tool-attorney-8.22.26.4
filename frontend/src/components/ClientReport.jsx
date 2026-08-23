@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
-  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runEpFlowchart, runHeirRateSensitivity,
+  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runRegimeDeterministicCompare, runEpFlowchart, runHeirRateSensitivity,
   runSequenceStress, listScenarios, fmtPct, fmtUSD, allocationToAssets, compareFundingOrders, getLawConstants,
 } from "@/lib/api";
 import { downloadElementAsPdf } from "@/lib/pdf";
@@ -99,6 +99,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
     try { return window.localStorage.getItem("client_report_regime_v1") === "1"; } catch { return false; }
   });
   const [regimeData, setRegimeData] = useState(null);
+  const [regimeDetData, setRegimeDetData] = useState(null);
   const [regimeRunning, setRegimeRunning] = useState(false);
   useEffect(() => { try { window.localStorage.setItem("client_report_regime_v1", regimeOn ? "1" : "0"); } catch {} }, [regimeOn]);
   const [downloading, setDownloading] = useState(false);
@@ -375,11 +376,15 @@ export const ClientReport = ({ scenario, setScenario }) => {
   // plan / behavioral rules change. Pairs with/without behavior when either the halt
   // or guardrail is active so clients see the "behavior lift" per regime.
   useEffect(() => {
-    if (!regimeOn) { setRegimeData(null); return; }
+    if (!regimeOn) { setRegimeData(null); setRegimeDetData(null); return; }
     let alive = true;
     setRegimeRunning(true);
     setRegimeData(null);
+    setRegimeDetData(null);
     const t = setTimeout(() => {
+      runRegimeDeterministicCompare(scenario)
+        .then((r) => { if (alive) setRegimeDetData(r); })
+        .catch(() => { /* additive table — ignore */ });
       runRegimeCompare({
         config: scenario,
         n_trials: 300,
@@ -1138,7 +1143,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   heirRate={heirRate}
                   aiText={aiText}
                   logo={logo}
-                  regimeOn={regimeOn} regimeData={regimeData} seqOn={seqOn} seqData={seqData}
+                  regimeOn={regimeOn} regimeData={regimeData} regimeDetData={regimeDetData} seqOn={seqOn} seqData={seqData}
                   basisOn={basisOn}
                   pairedOn={pairedOn}
                   inputsOn={inputsOn}
@@ -1171,7 +1176,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
           heirRate={heirRate}
           aiText={aiText}
           logo={logo}
-          regimeOn={regimeOn} regimeData={regimeData} seqOn={seqOn} seqData={seqData}
+          regimeOn={regimeOn} regimeData={regimeData} regimeDetData={regimeDetData} seqOn={seqOn} seqData={seqData}
           basisOn={basisOn}
           pairedOn={pairedOn}
           inputsOn={inputsOn}
@@ -1198,7 +1203,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
 const ClientReportBody = ({
   branding, household, clientName, spouseName, prettyDate, scenario, withRoth, noRoth,
   incomeData, composeData, taxCompData, nwSeries, mcResult, marketPreset, heirRate, aiText, logo,
-  regimeOn, regimeData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens,
+  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
   customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, unifiedCreditOn, lawData,
@@ -1320,7 +1325,7 @@ const ClientReportBody = ({
         <PairedMcPage mcResult={mcResult} {...pageFooter(pairedPage)} />
       )}
       {regimeOn && (
-        <RegimeCompareReportPage regimeData={regimeData} {...pageFooter(regimePage)} />
+        <RegimeCompareReportPage regimeData={regimeData} regimeDetData={regimeDetData} {...pageFooter(regimePage)} />
       )}
       {seqOn && seqData && (
         <SequenceRiskPage seqData={seqData} {...pageFooter(seqPage)} />

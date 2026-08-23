@@ -11,7 +11,7 @@ import { Page, H2, P, Sub } from "./helpers";
  * regime with a "+N pts from behavior" chip so clients see the resilience-from-plan
  * vs. resilience-from-behavior split.
  */
-export const RegimeCompareReportPage = ({ regimeData, ...footProps }) => {
+export const RegimeCompareReportPage = ({ regimeData, regimeDetData, ...footProps }) => {
   const rows = regimeData?.rows || [];
   const paired = !!regimeData?.include_no_behavior_pair;
 
@@ -120,6 +120,72 @@ export const RegimeCompareReportPage = ({ regimeData, ...footProps }) => {
         rather than compounding a depletion artifact.
         {paired && " Paired sub-rows share the same seed as their parent, so the delta between them is entirely due to the behavioral rules (guardrail and/or halt)."}
       </Sub>
+
+      {regimeDetData && regimeDetData.rows && regimeDetData.rows.length > 0 && (() => {
+        const drows = regimeDetData.rows;
+        const worstId = drows.reduce((w, r) =>
+          ((r.with_conversions?.after_tax_to_heirs_secure10 ?? Infinity) <
+           (w.with_conversions?.after_tax_to_heirs_secure10 ?? Infinity)) ? r : w, drows[0]).preset_id;
+        return (
+          <div style={{ marginTop: 16 }} data-testid="cr-regime-det-section">
+            <H2>Deterministic Outcomes by Regime</H2>
+            <P>
+              These are <strong>single-path deterministic runs</strong> — the full projection re-run under each
+              regime&apos;s own return &amp; inflation profile, not a scaling of the baseline. The Monte Carlo table
+              above shows the dispersion <em>around</em> these central outcomes. Dollars to heirs are at the end of the
+              SECURE{regimeDetData.heir_deliver_year ? ` window (Y${regimeDetData.heir_deliver_year})` : " window"};
+              the conversion Δ is after-tax wealth to heirs with vs. without the conversion plan, shown in nominal and
+              today&apos;s dollars (each regime discounted by its own assumed CPI).
+            </P>
+            <table style={{ width: "100%", fontSize: 9.5, borderCollapse: "collapse", marginTop: 8 }}
+                   data-testid="cr-regime-det-table">
+              <thead>
+                <tr style={{ background: "#F3F1EC", color: "#5A5A5A" }}>
+                  <th style={thStyle}>Market regime</th>
+                  <th style={thStyleRight}>Net worth @ 2nd death</th>
+                  <th style={thStyleRight}>To heirs — conv</th>
+                  <th style={thStyleRight}>To heirs — no conv</th>
+                  <th style={thStyleRight}>Δ nominal</th>
+                  <th style={thStyleRight}>Δ today&apos;s $</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drows.map((r) => {
+                  const isBaseline = r.preset_id === regimeDetData.baseline_id;
+                  const isWorst = r.preset_id === worstId;
+                  const dNom = r.conversion_delta_to_heirs_nominal || 0;
+                  const dTdy = r.conversion_delta_to_heirs_today || 0;
+                  return (
+                    <tr key={r.preset_id} data-testid={`cr-regime-det-row-${r.preset_id}`}
+                        style={{ borderBottom: "1px solid #EBE8E0",
+                                 background: isWorst ? "#B84A4A12" : (isBaseline ? "#4A67410D" : "#FFFFFF") }}>
+                      <td style={tdStyle}>
+                        <span style={{ fontWeight: 600 }}>{r.label}</span>
+                        {isBaseline && <span style={badgeStyle("#C87941")}>Your baseline</span>}
+                        {isWorst && <span style={badgeStyle("#B84A4A")}>Worst regime</span>}
+                      </td>
+                      <td style={tdStyleRight}>{fmtUSD(r.with_conversions?.net_worth_at_second_death)}</td>
+                      <td style={{ ...tdStyleRight, fontWeight: 700 }}>{fmtUSD(r.with_conversions?.after_tax_to_heirs_secure10)}</td>
+                      <td style={tdStyleRight}>{fmtUSD(r.no_conversions?.after_tax_to_heirs_secure10)}</td>
+                      <td style={{ ...tdStyleRight, fontWeight: 700, color: dNom >= 0 ? "#4A6741" : "#B84A4A" }}>
+                        {dNom >= 0 ? "+" : "−"}{fmtUSD(Math.abs(dNom))}
+                      </td>
+                      <td style={{ ...tdStyleRight, color: dTdy >= 0 ? "#4A6741" : "#B84A4A" }}>
+                        {dTdy >= 0 ? "+" : "−"}{fmtUSD(Math.abs(dTdy))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <Sub>
+              Single deterministic path per regime (no random draws). The Monte Carlo table above is the dispersion
+              around these numbers. The worst regime by after-tax wealth to heirs is highlighted so this report never
+              shows only the baseline case.
+            </Sub>
+          </div>
+        );
+      })()}
     </Page>
   );
 };

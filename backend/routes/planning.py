@@ -269,6 +269,22 @@ async def funding_order_compare_route(request: Request, req: FundingOrderCompare
         raise HTTPException(status_code=400, detail="Funding order comparison could not be processed")
 
 
+@router.post("/regime-deterministic-compare")
+@limiter.limit("10/minute")
+async def regime_deterministic_compare_route(request: Request, req: ProjectionRequest,
+                                             _gate: None = Depends(require_advisor_or_share)):
+    """Deterministic (single-path) projection under every named market regime, for
+    both the with- and no-conversions branches. Complements the Monte Carlo
+    regime-compare with actual dollars. Cached per plan-config hash."""
+    validate_config(req.config)
+    try:
+        from projection import regime_deterministic_compare
+        return await asyncio.to_thread(regime_deterministic_compare, req.config)
+    except Exception:
+        logging.exception("regime deterministic compare failed")
+        raise HTTPException(status_code=400, detail="Regime deterministic comparison could not be processed")
+
+
 class SequenceStressRequest(ProjectionRequest):
     """POST /api/planning/sequence-stress — the same plan under early-bear,
     late-bear and volatile return SEQUENCES instead of one flat rate."""

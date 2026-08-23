@@ -15,12 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Layers, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { runRegimeCompare, fmtUSD, fmtPct } from "@/lib/api";
+import { runRegimeCompare, runRegimeDeterministicCompare, fmtUSD, fmtPct } from "@/lib/api";
 import { mcScenarioSig } from "@/lib/mcSignature";
 
 export const RegimeComparePanel = ({ scenario, mcRequestBase, onResult }) => {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
+  const [det, setDet] = useState(null);
   const [err, setErr] = useState(null);
   const [pairBehavior, setPairBehavior] = useState(false);
   // Detect whether at least one behavioral rule is active — the pair toggle is only
@@ -47,7 +48,12 @@ export const RegimeComparePanel = ({ scenario, mcRequestBase, onResult }) => {
       };
       const res = await runRegimeCompare(payload);
       setData(res);
-      onResult?.({ result: res, scenarioSig: mcScenarioSig(scenario), ranAt: Date.now() });
+      let detRes = null;
+      try {
+        detRes = await runRegimeDeterministicCompare(scenario);
+        setDet(detRes);
+      } catch (_e) { /* deterministic table is additive — don't fail the whole panel */ }
+      onResult?.({ result: res, deterministic: detRes, scenarioSig: mcScenarioSig(scenario), ranAt: Date.now() });
       toast.success(`Compared ${new Set(res.rows.map((r) => r.preset_id)).size} market regimes`);
     } catch (e) {
       setErr("Regime comparison failed. Please try again.");
@@ -271,6 +277,78 @@ export const RegimeComparePanel = ({ scenario, mcRequestBase, onResult }) => {
           </tbody>
         </table>
       </div>
+
+      {det && det.rows && det.rows.length > 0 && (() => {
+        const drows = det.rows;
+        const worstId = drows.reduce((w, r) =>
+          ((r.with_conversions?.after_tax_to_heirs_secure10 ?? Infinity) <
+           (w.with_conversions?.after_tax_to_heirs_secure10 ?? Infinity)) ? r : w, drows[0]).preset_id;
+        return (
+          <div className="mt-8" data-testid="mc-regime-det-section">
+            <h4 className="font-display text-base font-bold tracking-tight mb-1">Deterministic outcomes by regime</h4>
+            <p className="text-[11px] text-muted-foreground mb-3 max-w-3xl leading-relaxed">
+              These are <strong>single-path deterministic runs</strong> — the full projection re-run under each regime&apos;s
+              own return &amp; inflation profile (not a scaling of the baseline). The Monte Carlo table above shows the
+              dispersion <em>around</em> these central outcomes. Dollars to heirs are at the end of the SECURE
+              {det.heir_deliver_year ? ` window (Y${det.heir_deliver_year})` : " window"}.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="mc-regime-det-table">
+                <thead className="text-muted-foreground text-[11px]">
+                  <tr className="border-b border-[#EBE8E0]">
+                    <th className="text-left px-2 py-1.5 font-semibold">Market Regime</th>
+                    <th className="text-right px-2 font-semibold">Net worth @ 2nd death (conv)</th>
+                    <th className="text-right px-2 font-semibold">To heirs — with conv</th>
+                    <th className="text-right px-2 font-semibold">To heirs — no conv</th>
+                    <th className="text-right px-2 font-semibold">Conversion Δ (nominal)</th>
+                    <th className="text-right px-2 font-semibold">Conversion Δ (today&apos;s $)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drows.map((r) => {
+                    const isBaseline = r.preset_id === det.baseline_id;
+                    const isWorst = r.preset_id === worstId;
+                    const dNom = r.conversion_delta_to_heirs_nominal || 0;
+                    const dTdy = r.conversion_delta_to_heirs_today || 0;
+                    return (
+                      <tr key={r.preset_id} data-testid={`mc-regime-det-row-${r.preset_id}`}
+                          className="border-b border-[#F3F1EC]"
+                          style={{ background: isWorst ? "#B84A4A12" : (isBaseline ? "#4A67410D" : undefined) }}>
+                        <td className="px-2 py-2">
+                          <span className="font-medium">{r.label}</span>
+                          {isBaseline && (
+                            <span className="ml-2 inline-block rounded-full border border-[#C87941] bg-[#C87941]/10 px-2 py-0.5 text-[9px] font-semibold text-[#C87941] tracking-wide uppercase">Your baseline</span>
+                          )}
+                          {isWorst && (
+                            <span className="ml-2 inline-block rounded-full border border-[#B84A4A] bg-[#B84A4A]/10 px-2 py-0.5 text-[9px] font-semibold text-[#B84A4A] tracking-wide uppercase"
+                                  data-testid={`mc-regime-det-worst-${r.preset_id}`}>Worst regime</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-xs">{fmtUSD(r.with_conversions?.net_worth_at_second_death)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-xs font-semibold">{fmtUSD(r.with_conversions?.after_tax_to_heirs_secure10)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-xs">{fmtUSD(r.no_conversions?.after_tax_to_heirs_secure10)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-xs font-bold"
+                            style={{ color: dNom >= 0 ? "#4A6741" : "#B84A4A" }}>
+                          {dNom >= 0 ? "+" : "−"}{fmtUSD(Math.abs(dNom))}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-xs"
+                            style={{ color: dTdy >= 0 ? "#4A6741" : "#B84A4A" }}>
+                          {dTdy >= 0 ? "+" : "−"}{fmtUSD(Math.abs(dTdy))}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-[10px] text-muted-foreground max-w-3xl leading-relaxed">
+              Conversion Δ = after-tax dollars to heirs WITH the conversion plan minus WITHOUT it, within each regime.
+              Today&apos;s-dollar figures discount each regime&apos;s nominal delta by that regime&apos;s own assumed CPI.
+              The worst regime is flagged so this comparison never shows only the baseline.
+            </p>
+          </div>
+        );
+      })()}
       <p className="mt-3 text-[10px] text-muted-foreground max-w-3xl leading-relaxed">
         {data.n_trials.toLocaleString()} trials per regime{paired ? " × 2 (with/without behavior)" : ""}, engine: <strong>{data.engine === "historical" ? "historical bootstrap" : "lognormal"}</strong>.
         All runs share seed = 42 so trial-to-trial differences are driven entirely by the regime&apos;s return + inflation
