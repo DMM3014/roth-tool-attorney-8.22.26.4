@@ -407,7 +407,7 @@ export const PlanInputs = ({ scenario, setScenario, onRequestRunSweep = null }) 
           <div>
             <h3 className="font-display text-lg font-bold tracking-tight">Planning Goal</h3>
             <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
-              Pick what this plan should optimize for. The Strategy Analyzer's sweep,
+              Pick what this plan should illustrate. The Strategy Analyzer's sweep,
               ranked table, and AI analysis all follow this lens — change it anytime
               here or on the Strategy Analyzer tab.
             </p>

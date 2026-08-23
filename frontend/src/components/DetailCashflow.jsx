@@ -60,8 +60,11 @@ export const DetailCashflow = ({ scenario }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
-  const rows = data?.rows || [];
-  const postRows = data?.legacy?.post_death_rows || [];
+  // Display-layer only: de-minimis end-of-plan RMDs (< $100) render as $0 so no
+  // stray "$1" rounding artifact appears. Does not affect any calculation.
+  const rows = useMemo(() => (data?.rows || []).map((r) =>
+    (r.rmd != null && r.rmd < 100) ? { ...r, rmd: 0 } : r), [data]);
+  const postRows = useMemo(() => data?.legacy?.post_death_rows || [], [data]);
   const lastYear = rows.length ? rows[rows.length - 1].year : 2062;
 
   // ---------- Column model: lifetime years + heir years ----------

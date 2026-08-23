@@ -59,7 +59,10 @@ export const Analytics = ({ scenario }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
-  const rows = useMemo(() => withRoth?.rows || [], [withRoth]);
+  // Display-layer only: de-minimis end-of-plan RMDs (< $100) render as $0 so no
+  // stray "$1" rounding artifact appears in the RMD chart. No calculation change.
+  const rows = useMemo(() => (withRoth?.rows || []).map((r) =>
+    (r.rmd != null && r.rmd < 100) ? { ...r, rmd: 0 } : r), [withRoth]);
 
   const incomeData = useMemo(() => rows.map((r) => {
     const cf = r.cashflow || {};

@@ -208,8 +208,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Backend: /api/funding-order-compare endpoint (Hidden Lever)"
-    - "Frontend: Funding Order tab + report page + PDF insertion + toggle"
+    - "Label audit: no user-facing Optimizer/Optimize remains (verb->Illustrate)"
+    - "RMD < $100 shows $0/— in milestone table AND Cashflow views"
+    - "MC survival footnote == headline success rate (same variable)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -387,3 +388,83 @@ agent_communication:
       The endpoint is working correctly at /api/funding-order-compare (not /api/planning/...). Auth is properly enforced. All metrics are present, numeric, and vary across funding orders as expected.
       
       Backend is production-ready. Frontend testing can proceed when ready.
+
+  - task: "Client-facing label audit (remaining Optimize -> Illustrate) + RMD/MC verifications"
+    implemented: true
+    working: true
+    file: "StrategyOptimizer.jsx, strategy/GoalPresetButtons.jsx, strategy/BestFundingChipStrip.jsx, ssReport/RecommendationsPage.jsx, PlanInputs.jsx, ClientReport.jsx, SSReport.jsx, Cashflow.jsx, DetailCashflow.jsx, Analytics.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: |
+          (1) LABEL AUDIT: Replaced remaining user-facing "Optimize/Optimization" verbs with "Illustrate/Illustration":
+          "Optimization goal"->"Illustration goal" (Strategy Analyzer tab); "sets the optimization goal"->"illustration goal";
+          "follows your optimization goal"->"illustration goal"; "Roth-conversion optimization"->"illustration"; PlanInputs
+          "Pick what this plan should optimize for."->"...should illustrate."; two "print-optimized narrative"->"print-ready
+          narrative" (Client Report + SS Report descriptions). Tab NAV labels remain "Strategy Analyzer"/"SS Analyzer" (prior
+          decision). Left unchanged intentionally: benchmark proper noun "Retirement Optimizer V17" and all code identifiers.
+          VERIFY: no visible word "Optimizer"/"Optimize"/"Optimization" anywhere in the UI except "Retirement Optimizer V17".
+          (2) RMD DISPLAY: de-minimis RMD (<$100) now renders $0/blank in the Income & Expenses milestone table (already) AND
+          in the Cashflow tab (data-testid tab-cashflow -> Cashflow.jsx), the Detail/Cashflow view, and Analytics RMD chart
+          (display-layer clamp on a copy of rows). VERIFY no "$1" RMD artifact in these views.
+          (3) MC FOOTNOTE: PairedMcPage footnote (line 149) reads successPct = Math.round(mcResult.with_conversions.success*100),
+          identical to the MonteCarlo headline "Plan success rate". VERIFY the paired-MC footnote % equals the headline %.
+        -working: false
+        -agent: "testing"
+        -comment: |
+          CRITICAL BUG FOUND: App crashed with "Cannot access 'sig' before initialization" error in ClientReport.jsx.
+          Root cause: Variable 'sig' was used in useEffect dependency array (line 216) before being declared (line 281).
+          FIXED: Moved 'sig' and 'mcSig' declarations to before the first useEffect that uses them. Also wrapped 'rows',
+          's', 'sn', 'lg', 'lgn' variables in useMemo to prevent re-creation on every render (ESLint warnings).
+          
+          ADDITIONAL FIX: Cashflow.jsx de-minimis RMD filter was only modifying r.rmd field but not r.line_items.income array
+          which buildGrid() uses. Updated filter to also modify line_items.income for RMD entries < $100.
+        -working: true
+        -agent: "testing"
+        -comment: |
+          VERIFIED ALL THREE ITEMS ✅
+          
+          ITEM 1 - LABEL AUDIT: ✅ PASS
+          • Strategy Analyzer tab: "ILLUSTRATION GOAL" label present, no inappropriate "Optimiz*" text
+          • Plan Inputs tab: "Pick what this plan should illustrate." present, no inappropriate "Optimiz*" text
+          • Client Report tab: "print-ready narrative" present, no inappropriate "Optimiz*" text
+          • SS Report tab: "print-ready narrative" present, no inappropriate "Optimiz*" text
+          • Only allowed occurrence: "Retirement Optimizer V17" benchmark name (correctly preserved)
+          
+          ITEM 2 - RMD DE-MINIMIS DISPLAY: ✅ PASS
+          • Cashflow tab: No de-minimis RMD values (< $100) found. All displayed RMDs are >= $100 or shown as blank/dash
+          • Client Report milestone table: RMD row shows "2036 RMD'S BEGIN" with no de-minimis artifacts
+          • No "$1", "$9", or other sub-$100 RMD values visible in any view
+          
+          ITEM 3 - MONTE CARLO FOOTNOTE CONSISTENCY: ✅ PASS
+          • Plan success rate headline: 84%
+          • Paired MC footnote: "Based on 500 paired trials; the plan reached second death with assets remaining in 84% of them."
+          • RESULT: Footnote percentage (84%) EXACTLY MATCHES headline percentage (84%)
+          • Both values correctly derive from mcResult.with_conversions.success with Math.round
+          
+          All three verification items passed. Attorney Edition label changes and bug fixes working correctly.
+
+agent_communication:
+    -agent: "main"
+    -message: |
+      Label audit + two verifications. Login: MASTER PIN from /app/memory/test_credentials.md. No backend changes.
+      Please verify the three items in the task above. For RMD: open the Cashflow tab and Client Report; a sub-$100
+      end-of-plan RMD must show $0 or blank (no "$1"). For MC: run Monte Carlo, open Client Report, compare the
+      Paired MC footnote % to the "Plan success rate" headline — must match. For labels: scan the Strategy Analyzer
+      tab, Plan Inputs, and the Client Report / SS Report intro cards for any leftover "Optimize"/"Optimizer"
+      (only "Retirement Optimizer V17" is allowed).
+    -agent: "testing"
+    -message: |
+      TESTING COMPLETE - ALL THREE ITEMS VERIFIED ✅
+      
+      Fixed critical bug (ClientReport.jsx "sig" initialization order) and Cashflow.jsx RMD filter issue.
+      All three verification items now passing:
+      
+      1. ✅ LABEL AUDIT: No inappropriate "Optimiz*" text found across all tabs (Strategy Analyzer, Plan Inputs, Client Report, SS Report)
+      2. ✅ RMD DE-MINIMIS: No "$1" or sub-$100 RMD artifacts in Cashflow or milestone tables
+      3. ✅ MC FOOTNOTE: Success rate (84%) matches Paired MC footnote (84%) exactly
+      
+      Attorney Edition is production-ready. Please summarize and finish.

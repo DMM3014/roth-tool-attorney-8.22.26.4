@@ -81,7 +81,7 @@ const BestFundingChipStrip = ({ result, applyStrategy, sortKey = "after_tax_esta
         <Trophy className="h-4 w-4 text-[#4A6741]" />
         <p className="text-xs font-semibold text-[#4A6741]">Best funding order per bracket</p>
         <span className="text-[10px] text-muted-foreground" data-testid="best-funding-metric-note">
-          (best {metricShort} at each target bracket — follows your optimization goal · hover for talking points)
+          (best {metricShort} at each target bracket — follows your illustration goal · hover for talking points)
         </span>
       </div>
       <div className="flex flex-wrap gap-2" data-testid="best-funding-chips">

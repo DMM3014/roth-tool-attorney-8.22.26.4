@@ -192,6 +192,10 @@ export const ClientReport = ({ scenario, setScenario }) => {
     try { window.localStorage.setItem("client_report_basis_on_v1", JSON.stringify(basisOn)); } catch {}
   }, [basisOn]);
 
+  // Scenario signature for tracking changes
+  const sig = mcScenarioSig(scenario);
+  const mcSig = `${haltOn}|${haltDrop}|${haltResume}|${grOn}|${grCut}`;
+
   // Funding Order — The Hidden Lever page. Defaults ON. Compares the configured
   // plan under all three withdrawal orders (conversions unchanged).
   const [fundingOrderOn, setFundingOrderOn] = useState(() => {
@@ -278,8 +282,6 @@ export const ClientReport = ({ scenario, setScenario }) => {
   const upd = (k, v) => setBranding((b) => ({ ...b, [k]: v }));
   const persistBranding = () => { saveBranding(branding); toast.success("Client Report settings saved."); };
 
-  const sig = mcScenarioSig(scenario);
-  const mcSig = `${haltOn}|${haltDrop}|${haltResume}|${grOn}|${grCut}`;
   // Track the sig+mcSig that produced the CURRENT mcResult so the UI can prompt
   // the advisor to rerun when the projection or behavioral rules have changed
   // since the last successful run (e.g. their auto-rerun failed silently, or
@@ -536,11 +538,11 @@ export const ClientReport = ({ scenario, setScenario }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, flowOn, flowScenarioCompareId]);
 
-  const rows = withRoth?.rows || [];
-  const s = withRoth?.summary || {};
-  const sn = noRoth?.summary || {};
-  const lg = withRoth?.legacy || {};
-  const lgn = noRoth?.legacy || {};
+  const rows = useMemo(() => withRoth?.rows || [], [withRoth]);
+  const s = useMemo(() => withRoth?.summary || {}, [withRoth]);
+  const sn = useMemo(() => noRoth?.summary || {}, [noRoth]);
+  const lg = useMemo(() => withRoth?.legacy || {}, [withRoth]);
+  const lgn = useMemo(() => noRoth?.legacy || {}, [noRoth]);
 
   const h = scenario.household || {};
   // Anonymization: when the advisor has ticked the "Anonymize" toggle, every
@@ -826,7 +828,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
               <div>
                 <p className="font-display text-base font-bold tracking-tight text-[#1A1A1A]">Retirement & Wealth-Transfer Illustration — Attorney Edition</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5 max-w-2xl leading-relaxed">
-                  Long-form, print-optimized narrative report for the client. Covers the plan overview, savings, income &amp; expenses, cash flow, taxes, Monte Carlo, the SECURE Act legacy analysis, and an AI-generated review the advisor can edit before delivering.
+                  Long-form, print-ready narrative report for the client. Covers the plan overview, savings, income &amp; expenses, cash flow, taxes, Monte Carlo, the SECURE Act legacy analysis, and an AI-generated review the advisor can edit before delivering.
                 </p>
               </div>
             </div>

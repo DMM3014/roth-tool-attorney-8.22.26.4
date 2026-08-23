@@ -344,7 +344,7 @@ export const SSReport = ({ scenario, setScenario }) => {
               <div>
                 <p className="font-display text-base font-bold tracking-tight text-[#1A1A1A]">Social Security Analysis &amp; Strategy Report</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5 max-w-2xl leading-relaxed">
-                  Long-form, print-optimized narrative Social Security analysis. Covers how SS works, benefits by claim age (62/65/67/70), cumulative lifetime benefits, coordinated household claiming, the Roth-conversion interaction, SS taxation &amp; IRMAA, survivor and spousal benefits, and an AI-generated review.
+                  Long-form, print-ready narrative Social Security analysis. Covers how SS works, benefits by claim age (62/65/67/70), cumulative lifetime benefits, coordinated household claiming, the Roth-conversion interaction, SS taxation &amp; IRMAA, survivor and spousal benefits, and an AI-generated review.
                 </p>
               </div>
             </div>

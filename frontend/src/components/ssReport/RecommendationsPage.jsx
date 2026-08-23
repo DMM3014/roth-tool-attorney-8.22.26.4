@@ -87,7 +87,7 @@ export const RecommendationsPage = ({ ssResult, scenario, fraAmounts, ...footPro
         </li>
         <li>
           <strong>Revisit annually.</strong> COLA announcements, tax-law changes, and any health-status update should
-          trigger a re-run of the SS sweep and Roth-conversion optimization together (they interact).
+          trigger a re-run of the SS sweep and Roth-conversion illustration together (they interact).
         </li>
       </ul>
 

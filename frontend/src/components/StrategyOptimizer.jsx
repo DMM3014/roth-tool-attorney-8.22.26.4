@@ -378,7 +378,7 @@ export const StrategyOptimizer = ({
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-[#4A6741]" />
                 <Label className="text-[10px] uppercase tracking-wide font-semibold text-[#4A6741]">
-                  Optimization goal
+                  Illustration goal
                 </Label>
               </div>
               <p className="text-[11px] text-muted-foreground mt-1 leading-snug">

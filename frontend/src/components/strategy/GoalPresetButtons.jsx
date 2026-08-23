@@ -53,7 +53,7 @@ export const GoalPresetButtons = ({
           <Sparkles className="h-4 w-4 text-[#4A6741]" />
           <h4 className="font-display text-sm font-bold tracking-tight">Goal presets</h4>
           <span className="text-[11px] text-muted-foreground">
-            One-click setup: sets the optimization goal, phased schedules, and funding-order sweep in one shot.
+            One-click setup: sets the illustration goal, phased schedules, and funding-order sweep in one shot.
           </span>
         </div>
       )}
