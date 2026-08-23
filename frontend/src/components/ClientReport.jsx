@@ -53,6 +53,7 @@ import { RegimeCompareReportPage } from "./clientReport/RegimeComparePage";
 import { LegacyPage } from "./clientReport/LegacyPage";
 import { HeirRateSensitivityPage } from "./clientReport/HeirRateSensitivityPage";
 import { TwoWaySensitivityPage } from "./clientReport/TwoWaySensitivityPage";
+import { AuditMemoPage } from "./clientReport/AuditMemoPage";
 import { BasisStepUpPage } from "./clientReport/BasisStepUpPage";
 import { EpFlowchartPage, EpFlowchartComparePage, EpFlowchartCombinedComparePage } from "./clientReport/EpFlowchartPage";
 import { SensitivityPage } from "./clientReport/SensitivityPage";
@@ -107,6 +108,11 @@ export const ClientReport = ({ scenario, setScenario }) => {
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const [logo] = useAdvisorLogo();
   const [advisorInfo] = useAdvisorInfo();
+  // Assumption Review Memorandum — included only when an audit has been run
+  // (the Audit Mode tab persists its last result to localStorage).
+  const [auditResult] = useState(() => {
+    try { const raw = window.localStorage.getItem("audit_last_result_v1"); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  });
   // Merge advisor-level fields (name, firm, email, phone) into the branding
   // object consumed by the report pages. Report-level fields (client override,
   // subtitle, intro, date, confidentiality) still live in `branding`.
@@ -1164,6 +1170,8 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   bracketOn={bracketOn}
                   heirSens={heirSens}
                   twoWayData={twoWayData}
+                  auditResult={auditResult}
+                  advisorInfo={advisorInfo}
                   flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
                   flowCompareResult={flowCompareResult} flowCompareLabel={flowCompareLabel}
                   customMilestones={customMilestones}
@@ -1198,6 +1206,8 @@ export const ClientReport = ({ scenario, setScenario }) => {
           bracketOn={bracketOn}
           heirSens={heirSens}
           twoWayData={twoWayData}
+          auditResult={auditResult}
+          advisorInfo={advisorInfo}
           flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
           flowCompareResult={flowCompareResult} flowCompareLabel={flowCompareLabel}
           sensitivity={sensitivityData}
@@ -1219,7 +1229,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
 const ClientReportBody = ({
   branding, household, clientName, spouseName, prettyDate, scenario, withRoth, noRoth,
   incomeData, composeData, taxCompData, nwSeries, mcResult, marketPreset, heirRate, aiText, logo,
-  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData,
+  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData, auditResult, advisorInfo,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
   customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, unifiedCreditOn, lawData,
@@ -1276,6 +1286,7 @@ const ClientReportBody = ({
     + (seqOn && seqData ? 1 : 0)
     + (heirSens ? 1 : 0)
     + (twoWayData ? 1 : 0)
+    + (auditResult ? 1 : 0)
     + (dividerOn ? 1 : 0)
     + (basisOn ? 1 : 0)
     + flowPages
@@ -1295,6 +1306,7 @@ const ClientReportBody = ({
   cursor += 3;                                       // Legacy spans 3 pages
   const heirSensPage = heirSens ? ++cursor : null;    // beneficiary rate band
   const twoWayPage = twoWayData ? ++cursor : null;    // heir rate × regime surface
+  const auditMemoPage = auditResult ? ++cursor : null; // assumption review memorandum
   const dividerPage = dividerOn ? ++cursor : null;
   const basisPage = basisOn ? ++cursor : null;
   const flowPageStart = flowPages > 0 ? cursor + 1 : null;
@@ -1358,6 +1370,9 @@ const ClientReportBody = ({
       )}
       {twoWayData && (
         <TwoWaySensitivityPage twoWayData={twoWayData} {...pageFooter(twoWayPage)} />
+      )}
+      {auditResult && (
+        <AuditMemoPage audit={auditResult} advisor={advisorInfo} {...pageFooter(auditMemoPage)} />
       )}
       {dividerOn && (
         <AppendixDividerPage items={[

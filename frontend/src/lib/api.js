@@ -136,6 +136,9 @@ export const runEpFlowchart = (opts) =>
 // compact per-regime table (success, P10/P50/P90 legacy, depleted %). Synchronous;
 // backend is rate-limited to 6/minute given the 6× workload of each call.
 export const runRegimeCompare = (opts) => http.post(`/montecarlo/regime-compare`, opts).then((r) => r.data);
+// Audit Mode — compare a third-party planner's config against the review plan.
+export const runAuditCompare = (review_config, planner_config) =>
+  http.post(`/audit/compare`, { review_config, planner_config }).then((r) => r.data);
 // Deterministic (single-path) projection under every named regime, both branches.
 export const runRegimeDeterministicCompare = (config) =>
   http.post(`/regime-deterministic-compare`, { config }).then((r) => r.data);

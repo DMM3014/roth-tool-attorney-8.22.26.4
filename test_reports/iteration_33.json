@@ -1,0 +1,50 @@
+{
+  "summary": "Frontend-only test of the new AUDIT MODE tab + printed Assumption Review Memorandum (master-PIN login, default scenario). ALL 6 requested items PASS. (1) tab-audit present in Planner tabs; opening renders audit-mode + audit-editor with 6 quick levers (audit-lever-projection-general_inflation=3, legacy-heir_federal_rate=32, legacy-heir_state_rate=4, roth-target_bracket=24, tax-state_rate=3.99, dividend_yield=1) and 8 per-account return rows (audit-acct-return-0..7); Review column read-only, Planner column editable number inputs. Row tinting verified: 0 tinted rows after Reset, exactly the 2 edited rows tinted (#C879410D) after editing heir_federal_rate 32->40 and accounts[3].return 7->5. (2) Run Comparison (audit-run) with 2 edits returned in ~5s: 6 outcome delta cards (after-tax-to-heirs +$9,456,122 / +$2,427,732 today's $, Review $64,786,223 vs Planner $55,330,101; plus net worth @2nd death, lifetime tax nominal/NPV, total conversions, federal estate tax), 5-row waterfall (audit-wf-row-0 'Planner outcome' $55,330,101 -> accounts[3].return +$9,456,122 -> legacy.heir_federal_rate +$0 -> 'Interaction & residual' +$0 -> 'Review outcome' $64,786,223 — closes exactly), and audit-diff with heading 'Assumption differences (2)' and 2 audit-diff-row entries grouped ACCOUNTS / LEGACY & HEIRS showing Review 0.07 vs Planner 0.05 and Review 0.32 vs Planner 0.4. (3) Identical config (audit-reset then run): audit-diff-empty present, all 6 cards +$0, waterfall collapses to 3 rows, success toast 'Compared — 0 assumption differences'. (4) Import JSON: toggle reveals audit-import-text + audit-import-apply; '{not json' and a valid-JSON-but-no-accounts payload both raise the error toast 'Invalid JSON — expected a full plan config' and keep the panel open; a full config with general_inflation 0.055 imported successfully (toast 'Planner config imported', panel closed, lever input updated to 5.5). (5) Client Report memo: after an audit run, cr-page-audit-memo renders at page 21 of 24 with cr-audit-memo-header, cr-audit-memo-outcomes (6 rows), cr-audit-memo-waterfall (5 rows), 2 cr-audit-memo-diff-row rows and cr-audit-memo-signature; clientHeight = scrollHeight = 900px (inside the ~1037px frame, no clipping); page numbering fully contiguous 1..24 across all 24 rendered pages with the memo inserted after cr-page-two-way and before cr-page-appendix-divider. Signature falls back to 'Reviewing attorney' when Advisor Info is blank and correctly shows 'Jane Q. Attorney' + 'TEST Law LLP' (and 'Reviewing firm:' in the header) after saving Advisor Info. (6) REGRESSION: Estate (22k chars) and Monte Carlo panels render; Client Report existing pages all render. Zero page errors / React crashes in every flow.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AuditMode OutcomeCard data-testid generation",
+        "issue": "Card testids are derived from the label verbatim, producing ids containing '(' , ')' and '@': audit-card-lifetime-tax-(nominal), audit-card-lifetime-tax-(npv), audit-card-net-worth-@-2nd-death, audit-card-federal-estate-tax. These are not valid CSS ident-safe attribute values for shorthand selectors and are brittle for automation. Suggest explicit stable keys (e.g. audit-card-lifetime-tax-nominal). Only audit-card-after-tax-to-heirs matches the spec exactly.",
+        "selector": "[data-testid^=\"audit-card-\"]",
+        "priority": "LOW"
+      },
+      {
+        "component": "AuditMode planner persistence (audit_planner_config_v1)",
+        "issue": "The Planner column is seeded from localStorage on first mount only and is never reconciled with the current workspace scenario. If the user later changes the plan (accounts added/removed, assumptions edited), the Planner column keeps the stale copy and per-index account rows can misalign (rows are matched by array index: revAccounts[i] vs planner accounts[i]). Consider validating the stored planner against the current scenario shape / showing a 'stale' hint.",
+        "selector": "[data-testid=\"audit-editor\"]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Audit Mode tab",
+        "issues": [
+          "Zero deltas render as '+$0' in green-neutral grey; readable, but a '—' or 'no change' would read better in the identical-config case.",
+          "Quick-lever percent inputs round to 2dp of a percent (state_rate 0.0399 displays as 3.99 in the Planner input while the Review column prints the rounded '4.0%'), which looks like a mismatch even though the row is correctly untinted. Consider rendering the Review column at the same precision as the input."
+        ]
+      }
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_33.json"],
+  "action_items": [
+    "MODEL SANITY (not a UI bug, needs product confirmation): legacy.heir_federal_rate is inert for the audit metric on the default scenario. Changing it alone (32% -> 45%) yields a completely flat comparison: total gap $0, step +$0, residual +$0, all 6 outcome cards +$0, while the diff table still reports 1 difference. Root cause appears to be that the default plan fully converts the traditional IRA (total conversions $3.5M) so end_trad ~ 0 and heir_ord_rate no longer touches after_tax_estate_to_heirs (projection.py _compute_legacy / _audit_outcomes). This is exactly the lever the handoff note recommends for demos, so either pick a lever with real impact for the demo copy, or add a UI hint when a diff has $0 attributed impact so an attorney does not read '+$0' as a bug.",
+    "Optional: rename the OutcomeCard data-testids to ident-safe slugs (remove parentheses / '@').",
+    "Optional: reconcile the persisted audit_planner_config_v1 with the live scenario (account-count/shape change) instead of index-matching a possibly stale copy."
+  ],
+  "critical_code_review_comments": [
+    "AuditMode.jsx run(): the caught error is swallowed into a generic string (`catch (e) { setErr(...) }`) — the API error/status is never surfaced or logged, so a 4xx/5xx from /api/audit/compare is indistinguishable from a validation problem. Log e / include the server detail.",
+    "AuditMode.jsx doImport(): validation is only `parsed.accounts` truthy — a JSON with an accounts key of the wrong shape (e.g. accounts: 5) is accepted and will only fail later at Run Comparison. Validate Array.isArray(parsed.accounts) and the presence of projection/legacy.",
+    "ClientReport.jsx reads audit_last_result_v1 once in useState initialiser, so an audit run in the same session while the Client Report tab is already mounted will not appear until remount; the memo page also has no invalidation if the workspace plan changes after the audit (memo could print against a plan that no longer matches the rest of the report).",
+    "AuditMode diff rows all share data-testid=\"audit-diff-row\" (no index suffix) — fine for counting but makes targeted assertions impossible; consider audit-diff-row-{i}."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (frontend-only request)", "frontend": "100% of the 6 requested items verified; 0 blocking bugs, 2 LOW UI notes + 1 model-sanity question" },
+  "seed_data_creation": "Default scenario only. Advisor Info was saved with name 'Jane Q. Attorney' / firm 'TEST Law LLP' to verify the signature block — main agent may want to clear these (Advisor Info -> advisor-info-clear-all).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Master passphrase i4m07MnVDhpTYkc1giC6wWDv (login screen -> login-mode-master -> input[data-testid=pin-input] -> pin-unlock-btn); /api/auth/pin/verify rate-limited 5/min",
+  "context_for_next_testing_agent": "Audit flow: master login -> tab-audit -> audit-editor (levers audit-lever-<path joined by '-'>, accounts audit-acct-return-<i>) -> edit inputs with fill() + dispatch_event('change') -> audit-run (~5s) -> audit-outcomes / audit-waterfall / audit-diff. Use audit-reset for the identical-config case (audit-diff-empty). The report memo requires the audit to have been run in the SAME browser session BEFORE the Client Report tab mounts (ClientReport reads localStorage audit_last_result_v1 in a useState initialiser). Client Report renders in ~20-40s; the preview is CSS-transform scaled so use clientHeight/scrollHeight, not boundingBox, for page-height checks (memo = 900px vs ~1037px frame). Report pages are rendered twice (preview + zero-height print root) so filter by clientHeight>100 or use .first. Verified page order: ... two-way (20) -> audit-memo (21) -> appendix-divider (22) -> inputs-appendix (23,24), total 24, contiguous.",
+  "rca_of_the_issue": "No frontend defect to RCA. The only anomaly (heir_federal_rate producing a $0 attribution step) traces to the projection engine: after_tax_estate_to_heirs applies heir_ord_rate to the inherited traditional balance, and the default plan converts the entire traditional IRA to Roth before the second death, so the heir ordinary rate has no remaining base to tax. The UI faithfully renders the backend's $0."
+}

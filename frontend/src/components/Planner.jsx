@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Leaf, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut, RotateCcw, Save, ShieldCheck, User, Presentation as PresentationIcon, Users, Receipt, Wallet, FileText, Scale, IdCard, Landmark, ClipboardCheck, Workflow, Layers, Waves, Shuffle } from "lucide-react";
+import { Leaf, TrendingUp, FolderOpen, Table2, ListTree, GitCompareArrows, BarChart3, Dices, Lightbulb, BadgeCheck, ScrollText, Trophy, CalendarClock, Share2, LogOut, RotateCcw, Save, ShieldCheck, User, Presentation as PresentationIcon, Users, Receipt, Wallet, FileText, Scale, IdCard, Landmark, ClipboardCheck, Workflow, Layers, Waves, Shuffle, ScanSearch } from "lucide-react";
 import SequenceRisk from "@/components/SequenceRisk";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { ClientReport } from "@/components/ClientReport";
 import { SSReport } from "@/components/SSReport";
 import { ConvertCompare } from "@/components/ConvertCompare";
 import { Estate } from "@/components/Estate";
+import { AuditMode } from "@/components/AuditMode";
 import { EpFlowchart } from "@/components/EpFlowchart";
 import { DsueChecklist } from "@/components/DsueChecklist";
 import { AdvisorInfo } from "@/components/AdvisorInfo";
@@ -347,6 +348,9 @@ export const Planner = ({ session = {} }) => {
             <TabsTrigger value="estate" data-testid="tab-estate" className="gap-2 data-[state=active]:bg-white">
               <Landmark className="h-4 w-4" /> Estate
             </TabsTrigger>
+            <TabsTrigger value="audit" data-testid="tab-audit" className="gap-2 data-[state=active]:bg-white">
+              <ScanSearch className="h-4 w-4" /> Audit Mode
+            </TabsTrigger>
             <TabsTrigger value="ep-flowchart" data-testid="tab-ep-flowchart" className="gap-2 data-[state=active]:bg-white">
               <Workflow className="h-4 w-4" /> EP Flowchart
             </TabsTrigger>
@@ -415,6 +419,9 @@ export const Planner = ({ session = {} }) => {
           </TabsContent>
           <TabsContent value="estate">
             <Estate scenario={scenario} mcResult={mcForEstate} />
+          </TabsContent>
+          <TabsContent value="audit">
+            <AuditMode scenario={scenario} />
           </TabsContent>
           <TabsContent value="ep-flowchart">
             <EpFlowchart scenario={scenario} />
