@@ -43,6 +43,7 @@ from routes.insights import router as insights_router
 from routes.planning import router as planning_router
 from routes.scenarios import router as scenarios_router
 from routes.workspaces import router as workspaces_router
+from routes.audit import router as audit_router
 
 
 # --------------------------------------------------------------------------
@@ -85,6 +86,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(scenarios_router)
 app.include_router(workspaces_router)
+app.include_router(audit_router)
 app.include_router(planning_router)
 app.include_router(insights_router)
 

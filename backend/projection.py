@@ -2666,3 +2666,194 @@ def two_way_sensitivity(cfg: dict) -> dict:
     if len(_TWO_WAY_CACHE_ORDER) > 32:
         _TWO_WAY_CACHE.pop(_TWO_WAY_CACHE_ORDER.pop(0), None)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Audit Mode — compare a third-party planner's config against the review plan.
+# ---------------------------------------------------------------------------
+_AUDIT_SECTION_MAP = {
+    "accounts": "accounts", "income": "income", "expenses": "expenses",
+    "tax": "tax settings", "roth": "Roth strategy", "giving": "giving",
+    "projection": "projection settings", "legacy": "legacy & heirs",
+    "withdrawal": "withdrawal", "household": "household",
+    "market_scenario": "market scenario",
+}
+
+
+def _audit_section(top_key: str) -> str:
+    return _AUDIT_SECTION_MAP.get(top_key, top_key)
+
+
+def _audit_leaf_diffs(a, b, tokens, out):
+    """Recurse two config sub-trees, appending leaf differences to `out`.
+    tokens is the path (list of str keys / int indices) from the config root."""
+    if isinstance(a, dict) or isinstance(b, dict):
+        a = a if isinstance(a, dict) else {}
+        b = b if isinstance(b, dict) else {}
+        for k in sorted(set(a.keys()) | set(b.keys())):
+            _audit_leaf_diffs(a.get(k), b.get(k), tokens + [k], out)
+        return
+    if isinstance(a, list) or isinstance(b, list):
+        a = a if isinstance(a, list) else []
+        b = b if isinstance(b, list) else []
+        for i in range(max(len(a), len(b))):
+            av = a[i] if i < len(a) else None
+            bv = b[i] if i < len(b) else None
+            _audit_leaf_diffs(av, bv, tokens + [i], out)
+        return
+    # Leaf: compare with tolerance for floats.
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        if abs(float(a) - float(b)) < 1e-9:
+            return
+    elif a == b:
+        return
+    out.append({"tokens": tokens, "review": a, "planner": b})
+
+
+def _audit_path_str(tokens) -> str:
+    s = ""
+    for t in tokens:
+        s += f"[{t}]" if isinstance(t, int) else (f".{t}" if s else t)
+    return s
+
+
+def _audit_get(cfg, tokens):
+    cur = cfg
+    for t in tokens:
+        cur = cur[t] if (isinstance(t, int) or (isinstance(cur, dict) and t in cur)) else None
+        if cur is None:
+            return None
+    return cur
+
+
+def _audit_set(cfg, tokens, value):
+    cur = cfg
+    for t in tokens[:-1]:
+        cur = cur[t]
+    cur[tokens[-1]] = value
+
+
+def _audit_outcomes(cfg: dict) -> dict:
+    res = run_projection(cfg)
+    summ = res.get("summary", {}) or {}
+    leg = res.get("legacy", {}) or {}
+    rows = res.get("rows", []) or []
+    proj = cfg.get("projection", {}) or {}
+    start = proj.get("start_year", rows[0]["year"] if rows else 0)
+    disc = proj.get("general_inflation", 0.03) or 0.03
+    npv = 0.0
+    for row in rows:
+        yr = row.get("year", start)
+        npv += (row.get("total_tax", 0) or 0) / ((1 + disc) ** max(0, yr - start))
+    fet = _fo_fed_estate_tax_no_trust(cfg, rows)
+    return {
+        "net_worth_at_second_death": leg.get("gross_estate") or 0.0,
+        "after_tax_to_heirs_secure10": leg.get("after_tax_estate_to_heirs") or 0.0,
+        "lifetime_tax_nominal": summ.get("lifetime_taxes") or 0.0,
+        "lifetime_tax_npv": round(npv, 2),
+        "total_conversions": summ.get("total_roth_converted") or 0.0,
+        "federal_estate_tax_no_trust": fet.get("federal_estate_tax") or 0.0,
+        "state_estate_tax_no_trust": fet.get("state_estate_tax") or 0.0,
+    }
+
+
+def audit_compare(review_cfg: dict, planner_cfg: dict, max_attribution: int = 12) -> dict:
+    """Compare the review plan against a third-party planner's config: assumption
+    diff, outcomes + deltas (nominal & today's dollars), and a single-variable
+    attribution waterfall (planner -> review) on after-tax wealth to heirs."""
+    # ---- (a) assumption diff ----
+    raw = []
+    _audit_leaf_diffs(review_cfg, planner_cfg, [], raw)
+    diffs = []
+    grouped = {}
+    for d in raw:
+        section = _audit_section(d["tokens"][0]) if d["tokens"] else "other"
+        entry = {"path": _audit_path_str(d["tokens"]), "section": section,
+                 "review": d["review"], "planner": d["planner"]}
+        diffs.append({**entry, "tokens": d["tokens"]})
+        grouped.setdefault(section, []).append(entry)
+
+    # ---- (b) outcomes + deltas ----
+    o_review = _audit_outcomes(review_cfg)
+    o_planner = _audit_outcomes(planner_cfg)
+    proj = review_cfg.get("projection", {}) or {}
+    start = proj.get("start_year", 0)
+    disc = proj.get("general_inflation", 0.03) or 0.03
+    _, second = _fo_death_years(review_cfg)
+    horizon = int((review_cfg.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
+    deliver_year = (second + horizon) if second else None
+    f_second = 1.0 / ((1 + disc) ** max(0, (second - start))) if second else 1.0
+    f_deliver = 1.0 / ((1 + disc) ** max(0, (deliver_year - start))) if deliver_year else 1.0
+    # which discount factor anchors each metric's "today's dollars"
+    anchor = {
+        "net_worth_at_second_death": f_second,
+        "after_tax_to_heirs_secure10": f_deliver,
+        "lifetime_tax_nominal": f_second,
+        "lifetime_tax_npv": 1.0,   # already a present value
+        "total_conversions": f_second,
+        "federal_estate_tax_no_trust": f_second,
+        "state_estate_tax_no_trust": f_second,
+    }
+    outcomes = {"review": o_review, "planner": o_planner, "deltas": {}}
+    for k in o_review:
+        dn = round(o_review[k] - o_planner[k], 2)
+        outcomes["deltas"][k] = {
+            "review": round(o_review[k], 2),
+            "planner": round(o_planner[k], 2),
+            "delta_nominal": dn,
+            "delta_today": round(dn * anchor.get(k, 1.0), 2),
+        }
+
+    # ---- (c) attribution waterfall on after-tax to heirs ----
+    base = o_planner["after_tax_to_heirs_secure10"]
+    target = o_review["after_tax_to_heirs_secure10"]
+    total_gap = round(target - base, 2)
+    contribs = []
+    for d in diffs:
+        trial = copy.deepcopy(planner_cfg)
+        try:
+            _audit_set(trial, d["tokens"], d["review"])
+        except (KeyError, IndexError, TypeError):
+            continue
+        single = _audit_outcomes(trial)["after_tax_to_heirs_secure10"]
+        contribs.append({
+            "path": d["path"], "section": d["section"],
+            "review": d["review"], "planner": d["planner"],
+            "impact_on_heirs": round(single - base, 2),
+        })
+    contribs.sort(key=lambda c: abs(c["impact_on_heirs"]), reverse=True)
+    kept = contribs[:max_attribution]
+    explained = round(sum(c["impact_on_heirs"] for c in kept), 2)
+    residual = round(total_gap - explained, 2)
+
+    waterfall = [{"label": "Planner outcome", "type": "start",
+                  "value": round(base, 2), "cumulative": round(base, 2)}]
+    running = base
+    for c in kept:
+        running += c["impact_on_heirs"]
+        waterfall.append({"label": c["path"], "section": c["section"], "type": "step",
+                          "review": c["review"], "planner": c["planner"],
+                          "value": c["impact_on_heirs"], "cumulative": round(running, 2)})
+    waterfall.append({"label": "Interaction & residual", "type": "residual",
+                      "value": residual, "cumulative": round(running + residual, 2)})
+    waterfall.append({"label": "Review outcome", "type": "end",
+                      "value": round(target, 2), "cumulative": round(target, 2)})
+
+    return {
+        "assumption_diff": {"count": len(diffs), "grouped": grouped,
+                            "list": [{k: v for k, v in d.items() if k != "tokens"} for d in diffs]},
+        "outcomes": outcomes,
+        "attribution": {
+            "metric": "after_tax_to_heirs_secure10",
+            "planner_outcome": round(base, 2),
+            "review_outcome": round(target, 2),
+            "total_gap": total_gap,
+            "explained": explained,
+            "interaction_residual": residual,
+            "n_diffs": len(diffs),
+            "n_attributed": len(kept),
+            "waterfall": waterfall,
+        },
+        "meta": {"start_year": start, "second_death_year": second,
+                 "heir_deliver_year": deliver_year, "discount_rate": round(disc, 4)},
+    }
