@@ -2873,3 +2873,113 @@ def audit_compare(review_cfg: dict, planner_cfg: dict, max_attribution: int = 12
         "meta": {"start_year": start, "second_death_year": second,
                  "heir_deliver_year": deliver_year, "discount_rate": round(disc, 4)},
     }
+
+
+# ---------------------------------------------------------------------------
+# Mortality Timing sensitivity — re-run the deterministic projection under five
+# death-timing scenarios (base; first death ±5y; second death ±5y).
+# ---------------------------------------------------------------------------
+def _mortality_shift_cfg(cfg, which, delta):
+    """Return a cfg copy with `which` ('first'|'second') decedent's death moved by
+    `delta` years, clamped so first<=second and neither death predates the start year."""
+    from tax_engine import federal_ordinary_tax  # noqa: F401 (import guard)
+    out = copy.deepcopy(cfg)
+    h = out.get("household", {}) or {}
+    start = (out.get("projection", {}) or {}).get("start_year", 0)
+    has_spouse = h.get("spouse_dob_year") is not None
+    c_dob = h.get("client_dob_year") or start
+    s_dob = h.get("spouse_dob_year") or c_dob
+    c_le = h.get("client_life_expectancy") or 0
+    s_le = h.get("spouse_life_expectancy") or 0
+    c_death, s_death = c_dob + c_le, s_dob + s_le
+    if not has_spouse:
+        first_owner = "client"
+    else:
+        first_owner = "client" if c_death <= s_death else "spouse"
+    second_owner = "spouse" if first_owner == "client" else "client"
+    target = first_owner if which == "first" else second_owner
+    if target == "client":
+        new_death = max(start, c_death + delta)
+        if which == "first" and has_spouse:
+            new_death = min(new_death, s_death)          # first cannot pass second
+        if which == "second":
+            new_death = max(new_death, s_death) if has_spouse else new_death
+        out["household"]["client_life_expectancy"] = max(0, new_death - c_dob)
+    else:
+        new_death = max(start, s_death + delta)
+        if which == "first":
+            new_death = min(new_death, c_death)
+        if which == "second":
+            new_death = max(new_death, c_death)
+        out["household"]["spouse_life_expectancy"] = max(0, new_death - s_dob)
+    return out
+
+
+def _mortality_metrics(cfg):
+    from tax_engine import federal_ordinary_tax
+    res = run_projection(cfg)
+    rows = res.get("rows", []) or []
+    summ = res.get("summary", {}) or {}
+    leg = res.get("legacy", {}) or {}
+    proj = cfg.get("projection", {}) or {}
+    start = proj.get("start_year", rows[0]["year"] if rows else 0)
+    infl = proj.get("bracket_indexing") or proj.get("general_inflation", 0.03) or 0.03
+    single_years, comp = 0, 0.0
+    for row in rows:
+        fs = row.get("filing_status")
+        if fs and fs != "MFJ":
+            single_years += 1
+            ordv = row.get("ordinary_taxable_income", 0) or 0
+            idx = (1 + infl) ** max(0, (row.get("year", start) - start))
+            comp += max(0.0, federal_ordinary_tax(ordv, False, idx) - federal_ordinary_tax(ordv, True, idx))
+    fet = _fo_fed_estate_tax_no_trust(cfg, rows)
+    _, second = _fo_death_years(cfg)
+    horizon = int((cfg.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
+    no_cfg = copy.deepcopy(cfg)
+    no_cfg["roth"] = {**(cfg.get("roth") or {}), "enabled": False}
+    heirs_no = (run_projection(no_cfg).get("legacy", {}) or {}).get("after_tax_estate_to_heirs") or 0.0
+    heirs_with = leg.get("after_tax_estate_to_heirs") or 0.0
+    return {
+        "single_filer_years": single_years,
+        "bracket_compression_cost": round(comp, 2),
+        "net_worth_at_second_death": leg.get("gross_estate") or 0.0,
+        "federal_estate_tax_no_trust": fet.get("federal_estate_tax") or 0.0,
+        "after_tax_to_heirs_secure10": heirs_with,
+        "conversion_delta": round(heirs_with - heirs_no, 2),
+        "second_death_year": second,
+        "secure_window_end_year": (second + horizon) if second else None,
+        "_start": start, "_infl": infl,
+    }
+
+
+def mortality_timing_compare(cfg: dict) -> dict:
+    """Five death-timing scenarios with per-scenario widow-year, estate and heir
+    metrics + the conversion delta in nominal and today's dollars."""
+    base_m = _mortality_metrics(cfg)
+    start = base_m["_start"]
+    infl = base_m["_infl"]
+    scen_defs = [
+        ("base", "Base case", None, 0),
+        ("first_earlier", "First death 5 yrs earlier", "first", -5),
+        ("first_later", "First death 5 yrs later", "first", 5),
+        ("second_earlier", "Second death 5 yrs earlier", "second", -5),
+        ("second_later", "Second death 5 yrs later", "second", 5),
+    ]
+    rows = []
+    for sid, label, which, delta in scen_defs:
+        m = base_m if which is None else _mortality_metrics(_mortality_shift_cfg(cfg, which, delta))
+        end_yr = m.get("secure_window_end_year")
+        f_deliver = 1.0 / ((1 + infl) ** max(0, ((end_yr or start) - start))) if end_yr else 1.0
+        rows.append({
+            "id": sid, "label": label,
+            "single_filer_years": m["single_filer_years"],
+            "bracket_compression_cost": m["bracket_compression_cost"],
+            "net_worth_at_second_death": round(m["net_worth_at_second_death"], 2),
+            "federal_estate_tax_no_trust": round(m["federal_estate_tax_no_trust"], 2),
+            "after_tax_to_heirs_secure10": round(m["after_tax_to_heirs_secure10"], 2),
+            "conversion_delta_nominal": round(m["conversion_delta"], 2),
+            "conversion_delta_today": round(m["conversion_delta"] * f_deliver, 2),
+            "second_death_year": m["second_death_year"],
+            "secure_window_end_year": end_yr,
+        })
+    return {"start_year": start, "discount_rate": round(infl, 4), "rows": rows}

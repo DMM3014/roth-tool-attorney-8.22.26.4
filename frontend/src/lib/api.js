@@ -143,6 +143,8 @@ export const saveAuditPlanner = (workspaceId, planner_config, label) =>
   http.put(`/audit/${workspaceId}`, { planner_config, label }).then((r) => r.data);
 export const loadAuditPlanner = (workspaceId) =>
   http.get(`/audit/${workspaceId}`).then((r) => r.data);
+export const runMortalityTiming = (config) =>
+  http.post(`/mortality-timing`, { config }).then((r) => r.data);
 // Deterministic (single-path) projection under every named regime, both branches.
 export const runRegimeDeterministicCompare = (config) =>
   http.post(`/regime-deterministic-compare`, { config }).then((r) => r.data);

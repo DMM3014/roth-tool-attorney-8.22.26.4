@@ -1,0 +1,25 @@
+{
+  "summary": "Frontend-only testing of the new Mortality Timing feature (per review request). Master PIN login OK. Monte Carlo tab: mortality-panel is absent before a run and appears below the Two-Way Sensitivity panel after a 300-trial MC run (twoWay top 5423px < mortality top 5565px). 'Run scenarios' returned a 5-row table (mortality-row-base, first_earlier, first_later, second_earlier, second_later) with proper USD formatting and signed conversion deltas; no horizontal overflow (table scrollW == clientW 1182, no document overflow). Client Report: cr-mortality-toggle default state=unchecked, no cr-page-mortality in deck; turning ON fetched data and rendered cr-page-mortality with cr-mortality-table (5 rows), cr-mortality-row-base and cr-mortality-note. Printed page fits within page bounds (page min-height 900px, content bottom 3px inside the page box, table width 720px inside 720px column, no clipping). Page numbering stayed sequential and unique with footer 'Page 21 of 24' for the mortality page; turning the toggle OFF removed the page and totals returned to 23 of 23 with no console/page errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Monte Carlo tab (pre-existing, unrelated to this feature)", "issues": ["Recharts console warnings: 'The width(-1) and height(-1) of chart should be greater than 0' emitted x6 while charts mount in hidden/zero-size containers"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ClientReport page shells render at 900px min-height (helpers.jsx Page), not the ~1050px mentioned in the request — verify against the actual PDF export target so the deck's page breaks stay aligned; the Mortality page itself has ample headroom either way.",
+    "MortalityTimingPanel swallows the error object in catch (toast only) — consider surfacing status/detail for advisor debugging; ClientReport's mortality fetch silently sets null on failure, so a failed fetch shows the toggle ON with no page and no error message to the advisor."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100%"},
+  "seed_data_creation": "None; used default workspace scenario",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Master PIN from /app/memory/test_credentials.md (worked)",
+  "context_for_next_testing_agent": "Both Mortality Timing flows verified end-to-end on the public URL. Note: ClientReport renders TWO DOM trees (client-report-preview-inner and client-report-print-root), so any [data-testid^=cr-] selector resolves to 2 elements — scope with page.get_by_test_id('client-report-preview-inner') to avoid strict-mode violations. localStorage key client_report_mortality_timing_v1 was left at '0' (default OFF).",
+  "rca_of_the_issue": "N/A — no defects found in the tested flows."
+}

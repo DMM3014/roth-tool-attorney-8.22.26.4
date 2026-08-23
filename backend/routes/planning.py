@@ -300,6 +300,21 @@ async def two_way_sensitivity_route(request: Request, req: ProjectionRequest,
         raise HTTPException(status_code=400, detail="Two-way sensitivity could not be processed")
 
 
+@router.post("/mortality-timing")
+@limiter.limit("10/minute")
+async def mortality_timing_route(request: Request, req: ProjectionRequest,
+                                 _gate: None = Depends(require_advisor_or_share)):
+    """Five death-timing scenarios (base; first/second death ±5y) with widow-year,
+    estate and heir metrics + the conversion delta (nominal & today's dollars)."""
+    validate_config(req.config)
+    try:
+        from projection import mortality_timing_compare
+        return await asyncio.to_thread(mortality_timing_compare, req.config)
+    except Exception:
+        logging.exception("mortality timing failed")
+        raise HTTPException(status_code=400, detail="Mortality timing comparison could not be processed")
+
+
 class SequenceStressRequest(ProjectionRequest):
     """POST /api/planning/sequence-stress — the same plan under early-bear,
     late-bear and volatile return SEQUENCES instead of one flat rate."""

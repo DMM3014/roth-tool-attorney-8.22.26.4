@@ -104,6 +104,16 @@ export const AuditMode = ({ scenario }) => {
     } catch { toast.error("Load failed"); }
   };
 
+  // Auto-load a workspace's saved planner config the moment it is opened/selected,
+  // so a review resumes without a separate Load click.
+  useEffect(() => {
+    if (!selectedWs) return;
+    loadAuditPlanner(selectedWs)
+      .then((r) => { if (r?.planner_config) { setPlanner(r.planner_config); persist(r.planner_config); toast.success("Loaded saved planner config for this workspace"); } })
+      .catch(() => { /* none saved yet — leave the current planner */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWs]);
+
   const exportMemo = async () => {
     if (!result || !memoRef.current) return;
     setExporting(true);

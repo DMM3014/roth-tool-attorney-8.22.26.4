@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
-  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runRegimeDeterministicCompare, runTwoWaySensitivity, runEpFlowchart, runHeirRateSensitivity,
+  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runRegimeDeterministicCompare, runTwoWaySensitivity, runMortalityTiming, runEpFlowchart, runHeirRateSensitivity,
   runSequenceStress, listScenarios, fmtPct, fmtUSD, allocationToAssets, compareFundingOrders, getLawConstants,
 } from "@/lib/api";
 import { downloadElementAsPdf } from "@/lib/pdf";
@@ -53,6 +53,7 @@ import { RegimeCompareReportPage } from "./clientReport/RegimeComparePage";
 import { LegacyPage } from "./clientReport/LegacyPage";
 import { HeirRateSensitivityPage } from "./clientReport/HeirRateSensitivityPage";
 import { TwoWaySensitivityPage } from "./clientReport/TwoWaySensitivityPage";
+import { MortalityTimingPage } from "./clientReport/MortalityTimingPage";
 import { AuditMemoPage } from "./clientReport/AuditMemoPage";
 import { BasisStepUpPage } from "./clientReport/BasisStepUpPage";
 import { EpFlowchartPage, EpFlowchartComparePage, EpFlowchartCombinedComparePage } from "./clientReport/EpFlowchartPage";
@@ -242,6 +243,12 @@ export const ClientReport = ({ scenario, setScenario }) => {
           return raw == null ? false : raw === "1"; } catch { return false; }
   });
   useEffect(() => { try { window.localStorage.setItem("client_report_unified_credit_v1", unifiedCreditOn ? "1" : "0"); } catch {} }, [unifiedCreditOn]);
+  // Mortality Timing sensitivity page — OFF by default; advisor opts in per report.
+  const [mortalityOn, setMortalityOn] = useState(() => {
+    try { const raw = window.localStorage.getItem("client_report_mortality_timing_v1");
+          return raw == null ? false : raw === "1"; } catch { return false; }
+  });
+  useEffect(() => { try { window.localStorage.setItem("client_report_mortality_timing_v1", mortalityOn ? "1" : "0"); } catch {} }, [mortalityOn]);
 
   const [lawData, setLawData] = useState(null);
   useEffect(() => {
@@ -392,7 +399,23 @@ export const ClientReport = ({ scenario, setScenario }) => {
     return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
-  // Regime comparison fetch — auto-run when the advisor toggles it on, or when the
+  // Mortality timing surface — only fetched when the advisor toggles the page on.
+  const [mortalityData, setMortalityData] = useState(null);
+  const [mortalityRunning, setMortalityRunning] = useState(false);
+  useEffect(() => {
+    if (!mortalityOn) { setMortalityData(null); setMortalityRunning(false); return; }
+    let alive = true;
+    setMortalityRunning(true);
+    setMortalityData(null);
+    const t = setTimeout(() => {
+      runMortalityTiming(scenario)
+        .then((r) => { if (alive) setMortalityData(r); })
+        .catch(() => { if (alive) setMortalityData(null); })
+        .finally(() => { if (alive) setMortalityRunning(false); });
+    }, 900);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, mortalityOn]);
   // plan / behavioral rules change. Pairs with/without behavior when either the halt
   // or guardrail is active so clients see the "behavior lift" per regime.
   useEffect(() => {
@@ -1045,8 +1068,25 @@ export const ClientReport = ({ scenario, setScenario }) => {
               </div>
             </label>
           </div>
-        </div>
 
+          <div className="mt-3 rounded-md border border-[#EBE8E0] bg-[#FAFAF8] px-3 py-2">
+            <label className="flex items-start gap-2 cursor-pointer max-w-[720px]">
+              <Switch checked={mortalityOn} onCheckedChange={(v) => setMortalityOn(!!v)}
+                data-testid="cr-mortality-toggle" className="mt-0.5" />
+              <div className="flex-1">
+                <p className="text-[12px] font-semibold text-[#1A1A1A]">
+                  Add the &ldquo;Mortality Timing&rdquo; sensitivity page
+                  {mortalityRunning && <span className="ml-2 text-[10.5px] font-normal text-muted-foreground">(computing…)</span>}
+                </p>
+                <p className="text-[10.5px] text-muted-foreground leading-snug mt-1">
+                  Off by default. Re-runs the full projection under five death-timing scenarios (base; first/second
+                  death ±5 years), isolating widow-year single-filer exposure, federal estate tax, wealth to heirs,
+                  and the conversion delta in nominal and today&rsquo;s dollars.
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
         {/* Monte Carlo behavioral realism — halt + guardrail toggles that flow into the
             report's MC page. The methodology block auto-updates from the result payload. */}
         <MonteCarloBehaviorCard
@@ -1170,6 +1210,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   bracketOn={bracketOn}
                   heirSens={heirSens}
                   twoWayData={twoWayData}
+                  mortalityOn={mortalityOn} mortalityData={mortalityData}
                   auditResult={auditResult}
                   advisorInfo={advisorInfo}
                   flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
@@ -1206,6 +1247,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
           bracketOn={bracketOn}
           heirSens={heirSens}
           twoWayData={twoWayData}
+          mortalityOn={mortalityOn} mortalityData={mortalityData}
           auditResult={auditResult}
           advisorInfo={advisorInfo}
           flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
@@ -1229,7 +1271,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
 const ClientReportBody = ({
   branding, household, clientName, spouseName, prettyDate, scenario, withRoth, noRoth,
   incomeData, composeData, taxCompData, nwSeries, mcResult, marketPreset, heirRate, aiText, logo,
-  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData, auditResult, advisorInfo,
+  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData, mortalityOn, mortalityData, auditResult, advisorInfo,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
   customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, unifiedCreditOn, lawData,
@@ -1286,6 +1328,7 @@ const ClientReportBody = ({
     + (seqOn && seqData ? 1 : 0)
     + (heirSens ? 1 : 0)
     + (twoWayData ? 1 : 0)
+    + (mortalityOn && mortalityData ? 1 : 0)
     + (auditResult ? 1 : 0)
     + (dividerOn ? 1 : 0)
     + (basisOn ? 1 : 0)
@@ -1306,6 +1349,7 @@ const ClientReportBody = ({
   cursor += 3;                                       // Legacy spans 3 pages
   const heirSensPage = heirSens ? ++cursor : null;    // beneficiary rate band
   const twoWayPage = twoWayData ? ++cursor : null;    // heir rate × regime surface
+  const mortalityPage = (mortalityOn && mortalityData) ? ++cursor : null; // death-timing sensitivity
   const auditMemoPage = auditResult ? ++cursor : null; // assumption review memorandum
   const dividerPage = dividerOn ? ++cursor : null;
   const basisPage = basisOn ? ++cursor : null;
@@ -1370,6 +1414,9 @@ const ClientReportBody = ({
       )}
       {twoWayData && (
         <TwoWaySensitivityPage twoWayData={twoWayData} {...pageFooter(twoWayPage)} />
+      )}
+      {mortalityOn && mortalityData && (
+        <MortalityTimingPage mortalityData={mortalityData} {...pageFooter(mortalityPage)} />
       )}
       {auditResult && (
         <AuditMemoPage audit={auditResult} advisor={advisorInfo} {...pageFooter(auditMemoPage)} />

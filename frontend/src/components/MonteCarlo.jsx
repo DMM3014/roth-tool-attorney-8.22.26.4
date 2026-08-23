@@ -12,6 +12,7 @@ import { MarketScenarioSelector } from "@/components/MarketScenarioSelector";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { RegimeComparePanel } from "@/components/RegimeComparePanel";
 import { TwoWaySensitivityPanel } from "@/components/TwoWaySensitivityPanel";
+import { MortalityTimingPanel } from "@/components/MortalityTimingPanel";
 import AIAnalysisCard from "@/components/AIAnalysisCard";
 import { GuardrailCard, HaltCard, RebalanceCadenceCard } from "@/components/monteCarlo/BehaviorRuleCards";
 import { PairedRothVsNoRothCard } from "@/components/monteCarlo/PairedRothVsNoRothCard";
@@ -668,6 +669,12 @@ export const MonteCarlo = ({ scenario, setScenario, onResult, onRegimeResult, on
           gated on a completed MC run so allocation/regime machinery is warm. */}
       {res && (
         <TwoWaySensitivityPanel scenario={scenario} onResult={onTwoWayResult} />
+      )}
+
+      {/* Mortality timing — five death-timing scenarios. Also gated on a
+          completed MC run to stay consistent with the panels above. */}
+      {res && (
+        <MortalityTimingPanel scenario={scenario} />
       )}
     </div>
   );
