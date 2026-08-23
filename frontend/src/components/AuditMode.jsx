@@ -2,14 +2,18 @@
 // current workspace plan. Side-by-side assumption editor (Review vs. Planner),
 // a Run Comparison action, the assumption diff, outcome-delta cards, and a
 // single-variable attribution waterfall.
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, ScanSearch, Upload, Play } from "lucide-react";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Loader2, ScanSearch, Upload, Play, Save, FolderOpen, Download } from "lucide-react";
 import { toast } from "sonner";
-import { runAuditCompare, fmtUSD, fmtPct } from "@/lib/api";
+import { runAuditCompare, saveAuditPlanner, loadAuditPlanner, listWorkspaces, fmtUSD, fmtPct } from "@/lib/api";
+import { downloadElementAsPdf } from "@/lib/pdf";
+import { useAdvisorInfo } from "@/lib/advisorInfo";
+import { AuditMemoPage } from "@/components/clientReport/AuditMemoPage";
 
 const PLANNER_KEY = "audit_planner_config_v1";
 
@@ -73,6 +77,44 @@ export const AuditMode = ({ scenario }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState(null);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [selectedWs, setSelectedWs] = useState("");
+  const [metric, setMetric] = useState("after_tax_to_heirs_secure10");
+  const [exporting, setExporting] = useState(false);
+  const [advisorInfo] = useAdvisorInfo();
+  const memoRef = useRef(null);
+
+  useEffect(() => {
+    listWorkspaces().then((r) => setWorkspaces(r.workspaces || [])).catch(() => setWorkspaces([]));
+  }, []);
+
+  const saveToWorkspace = async () => {
+    if (!selectedWs) { toast.error("Pick a workspace first"); return; }
+    try {
+      await saveAuditPlanner(selectedWs, planner, workspaces.find((w) => w.id === selectedWs)?.name || null);
+      toast.success("Planner config saved to workspace");
+    } catch { toast.error("Save failed"); }
+  };
+  const loadFromWorkspace = async () => {
+    if (!selectedWs) { toast.error("Pick a workspace first"); return; }
+    try {
+      const r = await loadAuditPlanner(selectedWs);
+      if (r?.planner_config) { setPlanner(r.planner_config); persist(r.planner_config); toast.success("Planner config loaded"); }
+      else toast.message("No saved planner config on this workspace");
+    } catch { toast.error("Load failed"); }
+  };
+
+  const exportMemo = async () => {
+    if (!result || !memoRef.current) return;
+    setExporting(true);
+    try {
+      await downloadElementAsPdf({
+        target: memoRef.current, filename: "assumption_review_memorandum.pdf",
+        bodyClass: "printing-report", pageSelector: ".pdf-page",
+      });
+    } catch { toast.error("PDF export failed"); }
+    finally { setExporting(false); }
+  };
 
   const persist = (p) => { try { window.localStorage.setItem(PLANNER_KEY, JSON.stringify(p)); } catch { /* noop */ } };
   const updPlanner = (tokens, val) => setPlanner((p) => { const np = setPath(p, tokens, val); persist(np); return np; });
@@ -100,7 +142,9 @@ export const AuditMode = ({ scenario }) => {
 
   const accounts = planner?.accounts || [];
   const revAccounts = scenario?.accounts || [];
-  const wf = result?.attribution?.waterfall || [];
+  const wfData = result ? (result.attribution_by_metric?.[metric] || result.attribution) : null;
+  const wf = wfData?.waterfall || [];
+  const metricLabels = result?.metric_labels || { after_tax_to_heirs_secure10: "After-tax wealth to heirs" };
   const maxCum = wf.length ? Math.max(...wf.map((w) => Math.abs(w.cumulative || 0)), 1) : 1;
 
   return (
@@ -118,7 +162,23 @@ export const AuditMode = ({ scenario }) => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            {workspaces.length > 0 && (
+              <>
+                <Select value={selectedWs} onValueChange={setSelectedWs}>
+                  <SelectTrigger className="h-8 text-xs w-40" data-testid="audit-ws-select"><SelectValue placeholder="Workspace…" /></SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map((w) => (<SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={saveToWorkspace} disabled={!selectedWs} data-testid="audit-save">
+                  <Save className="h-3.5 w-3.5 mr-1" /> Save
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={loadFromWorkspace} disabled={!selectedWs} data-testid="audit-load">
+                  <FolderOpen className="h-3.5 w-3.5 mr-1" /> Load
+                </Button>
+              </>
+            )}
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowImport((v) => !v)} data-testid="audit-import-toggle">
               <Upload className="h-3.5 w-3.5 mr-1" /> Import JSON
             </Button>
@@ -199,7 +259,13 @@ export const AuditMode = ({ scenario }) => {
         <>
           {/* Outcome deltas */}
           <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="audit-outcomes">
-            <h3 className="font-display text-base font-bold tracking-tight mb-1">Outcome deltas — Review minus Planner</h3>
+            <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
+              <h3 className="font-display text-base font-bold tracking-tight">Outcome deltas — Review minus Planner</h3>
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={exportMemo} disabled={exporting} data-testid="audit-export-pdf">
+                {exporting ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
+                Export Memorandum PDF
+              </Button>
+            </div>
             <p className="text-[11px] text-muted-foreground mb-4">Positive = the review plan delivers more; today&apos;s-dollar figures discount to plan start.</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <OutcomeCard id="after-tax-to-heirs" label="After-tax to heirs" d={result.outcomes.deltas.after_tax_to_heirs_secure10} />
@@ -213,20 +279,32 @@ export const AuditMode = ({ scenario }) => {
 
           {/* Attribution waterfall */}
           <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="audit-waterfall">
-            <h3 className="font-display text-base font-bold tracking-tight mb-1">Attribution — what explains the gap in after-tax wealth to heirs</h3>
+            <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
+              <h3 className="font-display text-base font-bold tracking-tight">Attribution — what explains the gap</h3>
+              <Select value={metric} onValueChange={setMetric}>
+                <SelectTrigger className="h-8 text-xs w-64" data-testid="audit-metric-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(metricLabels).map(([k, lbl]) => (
+                    <SelectItem key={k} value={k} data-testid={`audit-metric-${k}`}>{lbl}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <p className="text-[11px] text-muted-foreground mb-4">
-              Each row re-runs the planner&apos;s plan changing only that one assumption to the review value. Steps plus the
-              interaction residual reconstruct the full gap ({result.attribution.total_gap >= 0 ? "+" : "−"}{fmtUSD(Math.abs(result.attribution.total_gap))}).
+              Each row re-runs the planner&apos;s plan changing only that one assumption to the review value, measured on{" "}
+              <strong>{metricLabels[metric]}</strong>. Steps plus the interaction residual reconstruct the full gap
+              ({(wfData?.total_gap || 0) >= 0 ? "+" : "−"}{fmtUSD(Math.abs(wfData?.total_gap || 0))}).
             </p>
             <div className="space-y-1.5">
               {wf.map((w, i) => {
                 const isEnd = w.type === "start" || w.type === "end";
                 const val = isEnd ? w.cumulative : w.value;
+                const zero = w.type === "step" && Math.abs(w.value || 0) < 1;
                 const barPct = Math.min(100, (Math.abs(w.cumulative || 0) / maxCum) * 100);
                 const color = w.type === "start" ? "#5A5A5A" : w.type === "end" ? "#1A1A1A"
-                  : w.type === "residual" ? "#8A5A20" : ((w.value || 0) >= 0 ? "#4A6741" : "#B84A4A");
+                  : w.type === "residual" ? "#8A5A20" : (zero ? "#B8B4AC" : ((w.value || 0) >= 0 ? "#4A6741" : "#B84A4A"));
                 return (
-                  <div key={i} className="flex items-center gap-3" data-testid={`audit-wf-row-${i}`}>
+                  <div key={i} className="flex items-center gap-3" data-testid={`audit-wf-row-${i}`} style={{ opacity: zero ? 0.55 : 1 }}>
                     <div className="w-56 shrink-0 text-[11px] truncate" title={w.label}>
                       <span className={isEnd || w.type === "residual" ? "font-semibold" : ""}>{w.label}</span>
                     </div>
@@ -234,7 +312,7 @@ export const AuditMode = ({ scenario }) => {
                       <div className="h-full rounded-sm" style={{ width: `${barPct}%`, background: color, opacity: isEnd ? 1 : 0.85 }} />
                     </div>
                     <div className="w-32 shrink-0 text-right text-[11px] tabular-nums font-semibold" style={{ color }}>
-                      {isEnd ? fmtUSD(val) : `${(w.value || 0) >= 0 ? "+" : "−"}${fmtUSD(Math.abs(w.value || 0))}`}
+                      {isEnd ? fmtUSD(val) : (zero ? "no impact" : `${(w.value || 0) >= 0 ? "+" : "−"}${fmtUSD(Math.abs(w.value || 0))}`)}
                     </div>
                     <div className="w-28 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
                       {fmtUSD(w.cumulative)}
@@ -271,6 +349,12 @@ export const AuditMode = ({ scenario }) => {
               ))
             )}
           </Card>
+
+          {/* Off-screen memo for one-click PDF export */}
+          <div ref={memoRef} aria-hidden="true"
+            style={{ position: "absolute", left: -10000, top: 0, width: 794, background: "#fff" }}>
+            <AuditMemoPage audit={result} advisor={advisorInfo} pageNumber={1} totalPages={1} />
+          </div>
         </>
       )}
     </div>

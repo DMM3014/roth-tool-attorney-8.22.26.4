@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 34 (Audit Mode enhancements) tested end-to-end. Backend: new pytest file (14 tests) covering POST /api/audit/compare attribution_by_metric (3 metrics: waterfall start/end anchors, steps+residual == total_gap == outcome delta, top_driver == largest |step|, legacy `attribution` identical to after_tax_to_heirs_secure10) and PUT/GET /api/audit/{workspace_id} persistence (roundtrip, overwrite, bad-id 400, missing-id 404, unauthenticated 401). All 14 pass; the pre-existing test_audit_mode.py regression suite still 5/5. Frontend: master login, Audit tab metric dropdown switching across all three metrics re-renders audit-wf-row-* with different values and updates the gap sentence; workspace picker appears once a workspace exists, Save -> 'Planner config saved to workspace' toast, edited value + Load -> 'Planner config loaded' toast and the saved value (4%) restored; Export Memorandum PDF click causes no page error/crash and the button returns to idle with no failure toast; Client Report Assumption Review Memorandum renders with the 'accounts[0].return  \u2605 largest driver' marker on the top-driver diff row and the signature block. No console/page errors observed.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Audit Mode - attribution waterfall", "issues": ["Zero-impact steps (e.g. legacy.heir_federal_rate, and the whole Federal estate tax metric on the default scenario) render as full-width cumulative bars with '+$0' labels, which reads as if the driver mattered; consider dimming/collapsing zero-impact rows or noting 'no impact on this metric'."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_audit_metrics_persist.py",
+    "/app/backend/tests/test_audit_mode.py",
+    "/app/test_reports/pytest/iter34_audit.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Docs/handoff note said audit PUT/GET use 'standard Authorization: Bearer' only; require_session actually needs the X-Session-Token UUID header too (frontend axios interceptor supplies it). Keep this in the handoff notes so future API tests don't chase a false 401.",
+    "Audit persistence is scoped by owner_token (browser session UUID). A workspace created from another session/device is invisible and PUT/GET returns 404 rather than 403 - acceptable but worth documenting.",
+    "data-testid=\"cr-page-audit-memo\" resolves to 2 nodes when the Audit tab has been visited (AuditMode's off-screen memo stays mounted alongside the Client Report page). Consider a distinct testid for the off-screen PDF-export clone to keep selectors unambiguous.",
+    "In the DEFAULT scenario legacy.heir_federal_rate produces exactly $0 attribution on every metric (no inherited pre-tax balance left after conversions). Not a bug, but per-metric waterfall demos will look flat unless a scenario with residual pre-tax is used."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter34_audit_metrics_persist.py"],
+  "success_rate": {"backend": "100% (19/19: 14 new + 5 regression)", "frontend": "100% (all 5 targeted flows + regression checks passed)"},
+  "seed_data_creation": "Transient: workspace 'TEST_audit_ws' (pytest, deleted in teardown) and 'TEST_WS_AuditQA' (browser session, deleted at end of Playwright run). No persistent data left.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Master passphrase i4m07MnVDhpTYkc1giC6wWDv (from /app/memory/test_credentials.md); login via Master tab.",
+  "context_for_next_testing_agent": "Backend audit tests: /app/backend/tests/test_iter34_audit_metrics_persist.py (session-scoped master token from /api/auth/pin/verify; MUST also send X-Session-Token: <uuid4> for /api/workspaces and /api/audit/{id}). Frontend: log in via [data-testid=login-mode-master] + pin-input (accepts the passphrase) -> tab-audit. Workspace picker only renders when the browser session already owns a workspace - create one with page.evaluate fetch POST /api/workspaces using localStorage 'roth-planner-session-token' + 'roth-planner-advisor-token'. Run the audit on the Audit tab before checking tab-client-report memo (uses localStorage audit_last_result_v1). Auth endpoint is rate-limited 5/min - reuse tokens.",
+  "rca_of_the_issue": "No defects found. The only initial test failure was in my own harness (missing X-Session-Token header), fixed in the test file, not in app code."
+}

@@ -139,6 +139,10 @@ export const runRegimeCompare = (opts) => http.post(`/montecarlo/regime-compare`
 // Audit Mode — compare a third-party planner's config against the review plan.
 export const runAuditCompare = (review_config, planner_config) =>
   http.post(`/audit/compare`, { review_config, planner_config }).then((r) => r.data);
+export const saveAuditPlanner = (workspaceId, planner_config, label) =>
+  http.put(`/audit/${workspaceId}`, { planner_config, label }).then((r) => r.data);
+export const loadAuditPlanner = (workspaceId) =>
+  http.get(`/audit/${workspaceId}`).then((r) => r.data);
 // Deterministic (single-path) projection under every named regime, both branches.
 export const runRegimeDeterministicCompare = (config) =>
   http.post(`/regime-deterministic-compare`, { config }).then((r) => r.data);

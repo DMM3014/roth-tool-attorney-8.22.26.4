@@ -34,6 +34,7 @@ export const AuditMemoPage = ({ audit, advisor, ...footProps }) => {
   const attr = audit.attribution || {};
   const wf = attr.waterfall || [];
   const gap = attr.total_gap || 0;
+  const topDriver = attr.top_driver || null;
   const cell = { padding: "4px 6px", fontSize: 9.5, borderBottom: "1px solid #F3F1EC" };
   const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
@@ -120,13 +121,18 @@ export const AuditMemoPage = ({ audit, advisor, ...footProps }) => {
               <div style={{ fontSize: 9, fontWeight: 700, color: "#4A6741", textTransform: "uppercase", letterSpacing: 0.3 }}>{section}</div>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <tbody>
-                  {items.map((it, i) => (
-                    <tr key={i} style={{ borderBottom: "1px solid #F6F5F1" }} data-testid="cr-audit-memo-diff-row">
-                      <td style={{ ...cell, fontFamily: "monospace", fontSize: 8.5, color: "#5A5A5A" }}>{it.path}</td>
-                      <td style={{ ...cell, textAlign: "right" }}>Review: <strong>{String(it.review)}</strong></td>
-                      <td style={{ ...cell, textAlign: "right", color: "#8A5A20" }}>Planner: <strong>{String(it.planner)}</strong></td>
+                  {items.map((it, i) => {
+                    const isTop = topDriver && it.path === topDriver;
+                    return (
+                    <tr key={i} style={{ borderBottom: "1px solid #F6F5F1", background: isTop ? "#EEF3EC" : undefined }} data-testid="cr-audit-memo-diff-row">
+                      <td style={{ ...cell, fontFamily: "monospace", fontSize: 8.5, color: "#5A5A5A", fontWeight: isTop ? 700 : 400 }}>
+                        {it.path}{isTop && <span style={{ fontFamily: "inherit", color: "#4A6741", fontWeight: 700 }}> ★ largest driver</span>}
+                      </td>
+                      <td style={{ ...cell, textAlign: "right", fontWeight: isTop ? 700 : 400 }}>Review: <strong>{String(it.review)}</strong></td>
+                      <td style={{ ...cell, textAlign: "right", color: "#8A5A20", fontWeight: isTop ? 700 : 400 }}>Planner: <strong>{String(it.planner)}</strong></td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

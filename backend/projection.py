@@ -2804,56 +2804,72 @@ def audit_compare(review_cfg: dict, planner_cfg: dict, max_attribution: int = 12
             "delta_today": round(dn * anchor.get(k, 1.0), 2),
         }
 
-    # ---- (c) attribution waterfall on after-tax to heirs ----
-    base = o_planner["after_tax_to_heirs_secure10"]
-    target = o_review["after_tax_to_heirs_secure10"]
-    total_gap = round(target - base, 2)
-    contribs = []
+    # ---- (c) attribution — single-variable trials, waterfall per target metric ----
+    # Run each single-variable trial ONCE, capturing the FULL outcome set, then build
+    # a waterfall for any target metric from the same runs (no extra projections).
+    trials = []
     for d in diffs:
         trial = copy.deepcopy(planner_cfg)
         try:
             _audit_set(trial, d["tokens"], d["review"])
         except (KeyError, IndexError, TypeError):
             continue
-        single = _audit_outcomes(trial)["after_tax_to_heirs_secure10"]
-        contribs.append({
-            "path": d["path"], "section": d["section"],
-            "review": d["review"], "planner": d["planner"],
-            "impact_on_heirs": round(single - base, 2),
-        })
-    contribs.sort(key=lambda c: abs(c["impact_on_heirs"]), reverse=True)
-    kept = contribs[:max_attribution]
-    explained = round(sum(c["impact_on_heirs"] for c in kept), 2)
-    residual = round(total_gap - explained, 2)
+        trials.append({"path": d["path"], "section": d["section"],
+                       "review": d["review"], "planner": d["planner"],
+                       "out": _audit_outcomes(trial)})
 
-    waterfall = [{"label": "Planner outcome", "type": "start",
-                  "value": round(base, 2), "cumulative": round(base, 2)}]
-    running = base
-    for c in kept:
-        running += c["impact_on_heirs"]
-        waterfall.append({"label": c["path"], "section": c["section"], "type": "step",
-                          "review": c["review"], "planner": c["planner"],
-                          "value": c["impact_on_heirs"], "cumulative": round(running, 2)})
-    waterfall.append({"label": "Interaction & residual", "type": "residual",
-                      "value": residual, "cumulative": round(running + residual, 2)})
-    waterfall.append({"label": "Review outcome", "type": "end",
-                      "value": round(target, 2), "cumulative": round(target, 2)})
+    def _build_wf(metric):
+        base_m = o_planner[metric]
+        target_m = o_review[metric]
+        total = round(target_m - base_m, 2)
+        contribs = [{"path": t["path"], "section": t["section"], "review": t["review"],
+                     "planner": t["planner"], "impact": round(t["out"][metric] - base_m, 2)}
+                    for t in trials]
+        contribs.sort(key=lambda c: abs(c["impact"]), reverse=True)
+        kept = contribs[:max_attribution]
+        explained = round(sum(c["impact"] for c in kept), 2)
+        residual = round(total - explained, 2)
+        wf = [{"label": "Planner outcome", "type": "start",
+               "value": round(base_m, 2), "cumulative": round(base_m, 2)}]
+        running = base_m
+        for c in kept:
+            running += c["impact"]
+            wf.append({"label": c["path"], "section": c["section"], "type": "step",
+                       "review": c["review"], "planner": c["planner"],
+                       "value": c["impact"], "cumulative": round(running, 2)})
+        wf.append({"label": "Interaction & residual", "type": "residual",
+                   "value": residual, "cumulative": round(running + residual, 2)})
+        wf.append({"label": "Review outcome", "type": "end",
+                   "value": round(target_m, 2), "cumulative": round(target_m, 2)})
+        top_driver = kept[0]["path"] if kept else None
+        return {
+            "metric": metric,
+            "planner_outcome": round(base_m, 2),
+            "review_outcome": round(target_m, 2),
+            "total_gap": total,
+            "explained": explained,
+            "interaction_residual": residual,
+            "n_diffs": len(diffs),
+            "n_attributed": len(kept),
+            "top_driver": top_driver,
+            "waterfall": wf,
+        }
+
+    metric_labels = {
+        "after_tax_to_heirs_secure10": "After-tax wealth to heirs",
+        "lifetime_tax_nominal": "Lifetime income tax",
+        "federal_estate_tax_no_trust": "Federal estate tax (no trust)",
+    }
+    by_metric = {m: _build_wf(m) for m in metric_labels}
+    attribution = by_metric["after_tax_to_heirs_secure10"]
 
     return {
         "assumption_diff": {"count": len(diffs), "grouped": grouped,
                             "list": [{k: v for k, v in d.items() if k != "tokens"} for d in diffs]},
         "outcomes": outcomes,
-        "attribution": {
-            "metric": "after_tax_to_heirs_secure10",
-            "planner_outcome": round(base, 2),
-            "review_outcome": round(target, 2),
-            "total_gap": total_gap,
-            "explained": explained,
-            "interaction_residual": residual,
-            "n_diffs": len(diffs),
-            "n_attributed": len(kept),
-            "waterfall": waterfall,
-        },
+        "attribution": attribution,
+        "attribution_by_metric": by_metric,
+        "metric_labels": metric_labels,
         "meta": {"start_year": start, "second_death_year": second,
                  "heir_deliver_year": deliver_year, "discount_rate": round(disc, 4)},
     }
