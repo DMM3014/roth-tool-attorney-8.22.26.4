@@ -1,0 +1,87 @@
+{
+  "summary": "Tested Stage-2 Taxable Lifetime Gifts work end-to-end. BACKEND: created /app/backend/tests/test_iter28_taxable_gifts_http.py (8 HTTP tests, 8/8 pass) against the public URL, plus re-ran the existing offline suite tests/test_taxable_gifts.py (8/8 pass) — 16/16 total. Verified POST /api/projection returns giving.taxable_gifts {by_donor, first_decedent, adjusted_gifts_first_death, adjusted_gifts_second_death, total, rows} and giving.carryover_basis {pot_basis, embedded_gain, heir_ltcg_rate, ltcg_owed_at_sale, pot_after_tax} with internally consistent math; Joint gift splits 50/50; both keys absent when no gifts exist; POST /api/estate/analyze accepts adjusted_gifts_first_death/_second_death, defaults are a strict no-op, a $5M first-decedent gift raises portability fed_tax by exactly $2,000,000 (0.40x), split gifts are equivalent, negative gifts rejected 422. FRONTEND (master-PIN login, public URL): Plan Inputs gift editor (add/edit/donor select/remove/running total) works; Estate tab gifting-impact callout renders with self-consistent values; Client Report Unified Credit page toggles on with contiguous monotonic page numbering (22 -> 23 pages, no dupes/gaps); Basis Step-Up page shows the carryover-basis gift row. Found 3 HIGH-priority numeric/narrative defects and 3 medium/minor issues — all frontend presentation/consistency; no backend defects.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/projection", "issue": "A taxable gift larger than the household's liquid taxable+cash balance is silently funded only in part (e.g. a $5,000,000 request funded as $2,544,698). No warning/capped flag is returned in giving.taxable_gifts, so the UI cannot tell the user the gift was capped."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "clientReport/BasisStepUpPage.jsx",
+        "issue": "HIGH: The 'Total investable accounts' row EXCLUDES the new 'Gifted during life (carryover basis)' row shown directly above it. Observed: Roth $5,451,781 + Taxable $0 + Trad $0 + Gifted $27,168,680, yet Total nominal = $5,451,781 and total tax drag = -$400,053 while the gift row alone shows a -$5,989,829 carryover-LTCG drag. Root cause: L79-82 total_nominal/total_after/tax_drag sum roth+taxable+trad only and never add giftPot/giftAfter. The attorney-facing table does not foot.",
+        "selector": "[data-testid='cr-basis-gift-row'] + total row",
+        "priority": "HIGH"
+      },
+      {
+        "component": "clientReport/UnifiedCreditPage.jsx vs Estate.jsx callout",
+        "issue": "HIGH: The same plan reports two contradictory estate-tax savings. Unified Credit page shows 'Estimated federal estate tax saved $9,849,593' (computed unconditionally as 0.40 x appreciation escaped, L21/L75) while the Estate tab callout for the identical plan shows 'Estate tax saved by gifting +$0' (correct — the household is well under the combined $79.9M exclusion). The fine-print caveat is easy to miss; the headline should be the actual counterfactual saving or explicitly labelled hypothetical.",
+        "selector": "[data-testid='cr-unified-credit-tax-saved']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Estate.jsx gift-impact narrative",
+        "issue": "HIGH: The narrative 'Net-to-heirs at Y2062: $33,197,393 without -> $9,022,807 with' compares net_to_heirs_at_y2 of the two runs, but the WITH-gifting figure EXCLUDES the family gift pot (~$27M in the same plan). As written it tells the attorney gifting destroys ~$24M of net-to-heirs value — the opposite of the true result. Add giving.ending_pot (or pot_after_tax) to the 'with' side.",
+        "selector": "[data-testid='estate-gift-impact-narrative']",
+        "priority": "HIGH"
+      },
+      {
+        "component": "PlanInputs.jsx taxable-gifts-total",
+        "issue": "MEDIUM: 'Total taxable gifts: $5,000,000' echoes the REQUESTED amount while the engine only funded $2,544,698 (capped at available taxable+cash); the Estate tab then says '$2,544,698 gifted during life'. Two different totals for the same gift with no explanation.",
+        "selector": "[data-testid='taxable-gifts-total']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Estate.jsx exemption headroom card",
+        "issue": "MINOR (pre-existing): 'HEADROOM REMAINING' renders as '-$70,860,305' for a positive $70.86M of unused exclusion (combined excl $79,883,112 - estate $9,022,807). Sign should be positive.",
+        "selector": "Estate 'Well under the combined exemption' card",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Estate gifting-impact counterfactual",
+        "issue": "MEDIUM: The no-gift counterfactual (Estate.jsx L262-275) re-uses `baseRequest` — whose deceased_*/survivor_*_at_y1 balances come from the GIFTED projection — and only overrides y2_roth/y2_taxable/y2_traditional. The two runs therefore use inconsistent first-death bases. Rebuild Y1 balances from the counterfactual projection too.",
+        "affected_selectors": ["[data-testid='estate-gift-impact-notax']", "[data-testid='estate-gift-impact-saved']"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Client Report DOM",
+        "issues": ["Every report page is rendered twice (client-report-preview-inner + client-report-print-root) so every report data-testid resolves to 2 nodes and Playwright strict mode fails. Testing note only — scope to the preview root or use .first."]
+      },
+      {
+        "screen": "Plan Inputs — Household & Longevity",
+        "issues": ["Date fields use the native browser <input type=\"date\"> picker instead of the shadcn calendar component (pre-existing, outside this feature set)."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter28_taxable_gifts_http.py",
+    "/app/backend/tests/test_taxable_gifts.py",
+    "/app/test_reports/pytest/iter28_taxable_gifts.xml"
+  ],
+  "action_items": [
+    "BasisStepUpPage.jsx: include giftPot/giftAfter in total_nominal, total_after, tax_drag and drag_pct so the table foots when the carryover-basis row is shown.",
+    "UnifiedCreditPage.jsx: replace the unconditional 0.40 x appreciation 'Estimated federal estate tax saved' with the actual counterfactual saving (or relabel as hypothetical) so it cannot contradict the Estate tab's $0.",
+    "Estate.jsx: add the family gift pot to the 'with gifting' net-to-heirs figure in the callout narrative.",
+    "Estate.jsx: rebuild Y1 balances (not just Y2) from the no-gift counterfactual projection for an apples-to-apples comparison.",
+    "PlanInputs.jsx: surface the actually-funded gift amount (or a liquidity-cap warning); optionally have the backend return a funded/capped flag in giving.taxable_gifts.",
+    "Estate.jsx: fix the negative sign on 'HEADROOM REMAINING'."
+  ],
+  "critical_code_review_comments": [
+    "BasisStepUpPage.jsx L79-82: totals derived from three buckets while a fourth row is conditionally rendered — aggregation must be derived from the same row set that is rendered.",
+    "UnifiedCreditPage.jsx L21 hard-codes FED_RATE = 0.40 in the frontend; the top federal estate rate should come from the /api/law constants the report already consumes (lawData) to avoid drift.",
+    "Estate.jsx gift-impact effect swallows all errors (`catch { setGiftImpact(null) }`) — a failed counterfactual silently hides the callout with no error state.",
+    "Backend _drain_for_gift silently partially funds oversized gifts; return the funded amount / capped flag so the UI can warn instead of showing two different gift totals."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter28_taxable_gifts_http.py"],
+  "success_rate": {"backend": "100%", "frontend": "80%"},
+  "seed_data_creation": "None persisted. UI tests entered a transient $5,000,000 gift in the in-memory scenario (never saved as defaults).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Master PIN i4m07MnVDhpTYkc1giC6wWDv (login screen -> Master tab). /auth/pin/verify is rate-limited 5/min — reuse one token.",
+  "context_for_next_testing_agent": "Projection endpoint is POST /api/projection (NOT /api/planning/projection) with body {\"config\": <scenario>}; /api/estate/analyze takes the flat estate payload. Reusable HTTP suite: /app/backend/tests/test_iter28_taxable_gifts_http.py (8/8 pass). Frontend login = [data-testid=login-mode-master] -> [data-testid=pin-input].last -> [data-testid=pin-unlock-btn], wait ~8s. The taxable-gifts editor is on the default Plan Inputs tab (scroll_into_view on [data-testid=taxable-gifts-editor]); a new row defaults to year start_year+1, amount 1,000,000, donor 'Joint'. Client Report pages render TWICE (preview + print root) so always use .first. Basis Step-Up page needs [data-testid=cr-basis-toggle] ON before [data-testid=cr-basis-gift-row] exists; Unified Credit page needs [data-testid=cr-unified-credit-toggle]. Page numbering verified contiguous (22->23) with the toggle ON. The saved workspace plan's estate is well under the combined exclusion so the Estate callout legitimately shows $0/$0/+$0 — to see non-zero estate tax raise taxable balances so Y2062 estate exceeds ~$80M.",
+  "rca_of_the_issue": "1) BasisStepUpPage totals bug: total_nominal/total_after/tax_drag (L79-82) sum only roth+taxable+trad while the conditionally rendered gift row (L149-157) adds giftPot/giftAfter to the visible table, so the footer understates the estate by the whole gift pot ($27.2M) and omits the $5.99M §1015 LTCG drag. 2) Unified Credit vs Estate contradiction: UnifiedCreditPage computes estateTaxSaved = 0.40 * appreciationEscaped unconditionally (L75) ignoring whether the estate exceeds the combined exclusion, whereas Estate.jsx runs a true no-gift counterfactual through /api/estate/analyze and correctly gets $0. Repro: enter one $5,000,000 gift in Plan Inputs -> Estate tab shows +$0 while the Client Report Unified Credit page shows $9,849,593. 3) Net-to-heirs narrative: Estate.jsx compares np.net_to_heirs_at_y2 vs wp.net_to_heirs_at_y2 without adding giving.ending_pot to the gifted side, so gifted dollars that left the estate into the family pot are counted as lost value. Backend engine math itself verified correct via HTTP + offline tests."
+}

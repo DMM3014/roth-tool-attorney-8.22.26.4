@@ -1119,6 +1119,72 @@ export const PlanInputs = ({ scenario, setScenario, onRequestRunSweep = null }) 
             </p>
           </div>
         </div>
+        {/* Taxable gifts above the annual exclusion — §2001(b) unified credit */}
+        <div className="mt-6 pt-5 border-t border-[#EBE8E0]" data-testid="taxable-gifts-editor">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Landmark className="h-4 w-4 text-[#8A5A20]" />
+              <h4 className="font-display text-sm font-bold tracking-tight">Taxable Gifts (above the annual exclusion)</h4>
+              <Badge variant="outline" className="text-[9px] px-1 py-0 border-[#8A5A20]/40 text-[#8A5A20]">§2001(b) unified credit</Badge>
+            </div>
+            <Button type="button" variant="outline" size="sm" className="h-7 text-xs" data-testid="add-taxable-gift"
+              onClick={() => setScenario((p) => ({ ...p, giving: { ...(p.giving || {}), taxable_gifts: [ ...((p.giving || {}).taxable_gifts || []), { year: (p.projection?.start_year || new Date().getFullYear()) + 1, amount: 1000000, donor: "Joint" } ] } }))}>
+              <Plus className="h-3 w-3 mr-1" /> Add gift
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-3 max-w-3xl">
+            Large one-time gifts that exceed the annual exclusion. Each drains the donor&apos;s taxable brokerage (then cash), consumes unified credit, and enters the §2001(b) tentative-tax base at death — while its future appreciation escapes the estate. Gifted assets carry the donor&apos;s cost basis (§1015 carryover; no step-up).
+          </p>
+          {((scenario.giving?.taxable_gifts) || []).length === 0 ? (
+            <p className="text-xs text-muted-foreground italic" data-testid="taxable-gifts-empty">No taxable gifts modeled. Click &quot;Add gift&quot; to model a large lifetime transfer.</p>
+          ) : (
+            <div className="space-y-2">
+              {(scenario.giving?.taxable_gifts || []).map((g, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2 items-end" data-testid={`taxable-gift-row-${i}`}>
+                  <div className="col-span-3">
+                    <Label className="text-[10px] text-muted-foreground">Year</Label>
+                    <Input type="number" step={1} value={g.year || ""} data-testid={`taxable-gift-year-${i}`}
+                      onChange={(e) => { const val = parseInt(e.target.value, 10) || 0; setScenario((p) => { const arr = [...((p.giving || {}).taxable_gifts || [])]; arr[i] = { ...arr[i], year: val }; return { ...p, giving: { ...(p.giving || {}), taxable_gifts: arr } }; }); }}
+                      className="mt-1 bg-[#F9F8F6] h-8 text-sm" />
+                  </div>
+                  <div className="col-span-4">
+                    <Label className="text-[10px] text-muted-foreground">Amount ($)</Label>
+                    <Input type="number" step={10000} value={g.amount || 0} data-testid={`taxable-gift-amount-${i}`}
+                      onChange={(e) => { const val = parseFloat(e.target.value) || 0; setScenario((p) => { const arr = [...((p.giving || {}).taxable_gifts || [])]; arr[i] = { ...arr[i], amount: val }; return { ...p, giving: { ...(p.giving || {}), taxable_gifts: arr } }; }); }}
+                      className="mt-1 bg-[#F9F8F6] h-8 text-sm" />
+                  </div>
+                  <div className="col-span-4">
+                    <Label className="text-[10px] text-muted-foreground">Donor</Label>
+                    <Select value={g.donor || "Joint"} onValueChange={(v) => setScenario((p) => { const arr = [...((p.giving || {}).taxable_gifts || [])]; arr[i] = { ...arr[i], donor: v }; return { ...p, giving: { ...(p.giving || {}), taxable_gifts: arr } }; })}>
+                      <SelectTrigger className="mt-1 bg-[#F9F8F6] h-8 text-sm" data-testid={`taxable-gift-donor-${i}`}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Client">Client</SelectItem>
+                        <SelectItem value="Spouse">Spouse</SelectItem>
+                        <SelectItem value="Joint">Joint (50/50)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-1">
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-[#B84A4A]" data-testid={`remove-taxable-gift-${i}`}
+                      onClick={() => setScenario((p) => { const arr = [...((p.giving || {}).taxable_gifts || [])]; arr.splice(i, 1); return { ...p, giving: { ...(p.giving || {}), taxable_gifts: arr } }; })}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              <div className="rounded-lg border border-[#8A5A20]/25 bg-[#8A5A20]/5 p-2 mt-1" data-testid="taxable-gifts-total">
+                <p className="text-[11px] text-[#5D4037]">
+                  Total taxable gifts (requested): <span className="font-bold">{fmtUSD((scenario.giving?.taxable_gifts || []).reduce((s, g) => s + (g.amount || 0), 0))}</span>
+                  {" · "}Consumes unified credit; appreciation after the gift date escapes the estate.
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Each gift is capped at the donor&apos;s available taxable + cash balance in the gift year — the actual funded amount (which may be lower) is shown on the Estate tab and the &quot;Lifetime Giving &amp; the Unified Credit&quot; report page.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
       </Card>
 
       {/* Asset Allocation — household-level weights for Monte Carlo */}

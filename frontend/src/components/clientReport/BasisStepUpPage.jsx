@@ -27,7 +27,7 @@ import { Page, H2, H3, P, Sub } from "./helpers.jsx";
 import { fmtUSD, fmtPct } from "@/lib/api";
 import { TRUSTEE_DISTRIBUTION_NOTE } from "@/lib/rothTrustCaveat";
 
-export const BasisStepUpPage = ({ scenario, rows, ...footProps }) => {
+export const BasisStepUpPage = ({ scenario, rows, withRoth, ...footProps }) => {
   if (!rows || rows.length === 0) {
     return (
       <Page testid="cr-page-basis-stepup" {...footProps}>
@@ -68,15 +68,23 @@ export const BasisStepUpPage = ({ scenario, rows, ...footProps }) => {
   const taxable_after = taxable_y2;  // full step-up (survivor's estate) → 100% to heirs
   const trad_after = trad_y2 * (1 - heirRate);  // no step-up, heirs pay ordinary rate
 
-  const total_nominal = roth_y2 + taxable_y2 + trad_y2;
-  const total_after = roth_after + taxable_after + trad_after;
+  // §1015 carryover-basis view of the lifetime gift pot (if a gifting program is
+  // modeled). Gifted appreciated assets carry the donor's basis — heirs forgo the
+  // §1014 step-up and owe LTCG on the embedded gain at eventual sale.
+  const cob = withRoth?.giving?.carryover_basis || null;
+  const giftPot = withRoth?.giving?.ending_pot || 0;
+  const giftAfter = cob ? cob.pot_after_tax : giftPot;
+  const showGiftRow = giftPot > 0;
+
+  const total_nominal = roth_y2 + taxable_y2 + trad_y2 + (showGiftRow ? giftPot : 0);
+  const total_after = roth_after + taxable_after + trad_after + (showGiftRow ? giftAfter : 0);
   const tax_drag = total_nominal - total_after;
   const drag_pct = total_nominal > 0 ? tax_drag / total_nominal : 0;
 
   // What if the entire Traditional balance had been converted to Roth during life?
   // (Nominal comparison — doesn't model the conversion tax cost, but shows the
   // "how much basis step-up power is being wasted by holding Traditional?" gap.)
-  const if_all_roth_after = roth_y2 + taxable_y2 + trad_y2;  // no heir tax
+  const if_all_roth_after = roth_y2 + taxable_y2 + trad_y2 + (showGiftRow ? giftAfter : 0);  // no heir income tax on the IRA
   const roth_conversion_upside = if_all_roth_after - total_after;
 
   return (
@@ -138,6 +146,16 @@ export const BasisStepUpPage = ({ scenario, rows, ...footProps }) => {
             <td style={{ padding: 6, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "#8A5A20" }}>{fmtUSD(trad_after)}</td>
             <td style={{ padding: 6, textAlign: "right", color: "#B84A4A", fontWeight: 700 }}>−{fmtUSD(trad_y2 - trad_after)}</td>
           </tr>
+          {showGiftRow && (
+            <tr style={{ borderBottom: "1px solid #F3F1EC", background: "#FEFAF1" }} data-testid="cr-basis-gift-row">
+              <td style={{ padding: 6, fontWeight: 700, color: "#8A5A20" }}>Gifted during life (carryover basis)</td>
+              <td style={{ padding: 6, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtUSD(giftPot)}</td>
+              <td style={{ padding: 6, textAlign: "center", color: "#B84A4A" }}>NO — §1015 carryover</td>
+              <td style={{ padding: 6, textAlign: "right", color: "#B84A4A", fontWeight: 700 }}>{cob ? fmtPct(cob.heir_ltcg_rate) : "LTCG"}</td>
+              <td style={{ padding: 6, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700, color: "#8A5A20" }}>{fmtUSD(giftAfter)}</td>
+              <td style={{ padding: 6, textAlign: "right", color: "#B84A4A", fontWeight: 700 }}>−{fmtUSD(giftPot - giftAfter)}</td>
+            </tr>
+          )}
           <tr style={{ borderTop: "2px solid #4A6741", background: "#F9F8F6" }}>
             <td style={{ padding: 6, fontWeight: 800 }}>Total investable accounts</td>
             <td style={{ padding: 6, textAlign: "right", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{fmtUSD(total_nominal)}</td>

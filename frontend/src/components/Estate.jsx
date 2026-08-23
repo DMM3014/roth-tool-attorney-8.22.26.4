@@ -20,7 +20,7 @@ import EstateMcEnvelopeChart from "@/components/estate/EstateMcEnvelopeChart";
 import { mcScenarioSig } from "@/lib/mcSignature";
 import { useEffect, useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
-import { Landmark, Info, AlertTriangle, ScrollText, Users, Percent, TrendingUp, FileText } from "lucide-react";
+import { Landmark, Info, AlertTriangle, ScrollText, Users, Percent, TrendingUp, FileText, Gift } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -141,6 +141,15 @@ export const Estate = ({ scenario, mcResult = null }) => {
     };
   }, [projectionRows, scenario]);
 
+  // Taxable lifetime gifts (§2001(b)) surfaced by the projection — adjusted gifts
+  // per decedent + total, used to feed the estate call and the impact callout.
+  const giftAdj = useMemo(() => {
+    const tg = projectionRows?.giving?.taxable_gifts;
+    if (!tg || !(tg.total > 0)) return { total: 0, first: 0, second: 0 };
+    return { total: tg.total, first: tg.adjusted_gifts_first_death || 0, second: tg.adjusted_gifts_second_death || 0 };
+  }, [projectionRows]);
+
+
   // MC rebasis math — see docstring on `mcRebasis`. `rebasisFor(mode)` returns
   // the Y2 balances + diagnostics for ANY picker mode so the active picker and
   // the envelope chart below share the exact same math.
@@ -234,10 +243,69 @@ export const Estate = ({ scenario, mcResult = null }) => {
       y2_roth: mcRebasisApplied.y2_roth,
       y2_taxable: mcRebasisApplied.y2_taxable,
       y2_traditional: mcRebasisApplied.y2_traditional,
+      // §2001(b): lifetime taxable gifts add back into the tentative-tax base
+      // (0 when no gifts modeled -> unchanged behavior).
+      adjusted_gifts_first_death: giftAdj.first,
+      adjusted_gifts_second_death: giftAdj.second,
     })
       .then(setResult)
       .catch((e) => { setError(e?.message || "Estate analysis failed."); toast.error("Estate analysis failed."); });
-  }, [baseRequest, mcRebasisApplied]);
+  }, [baseRequest, mcRebasisApplied, giftAdj]);
+
+  // Gifting impact — "with vs without the lifetime taxable-gifts program". Runs a
+  // counterfactual projection with taxable gifts removed and compares the estate
+  // tax + net-to-heirs (portability baseline). Only fires when gifts are modeled.
+  const [giftImpact, setGiftImpact] = useState(null);
+  useEffect(() => {
+    if (!baseRequest || !result || !(giftAdj.total > 0)) { setGiftImpact(null); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const noGiftScenario = { ...scenario, giving: { ...(scenario.giving || {}), taxable_gifts: [] } };
+        const proj = await runProjection(noGiftScenario);
+        const { first, second } = deriveDeathYears(scenario);
+        const prows = proj.rows || [];
+        const y1r = prows.find((r) => r.year >= first) || prows[prows.length - 1] || {};
+        const y2r = prows.find((r) => r.year >= second) || prows[prows.length - 1] || {};
+        // Rebuild BOTH Y1 and Y2 balances from the counterfactual (no-gift) projection
+        // so the two runs share a consistent first-death base (50/50 spousal split).
+        const y1Roth = y1r.roth || 0;
+        const y1Taxable = (y1r.taxable || 0) + (y1r.real_estate || 0) + (y1r.cash || 0);
+        const noGift = await analyzeEstate({
+          ...baseRequest,
+          deceased_roth_at_y1: y1Roth / 2,
+          deceased_taxable_at_y1: y1Taxable / 2,
+          survivor_roth_at_y1: y1Roth / 2,
+          survivor_taxable_at_y1: y1Taxable / 2,
+          traditional_at_y1: y1r.traditional || 0,
+          y2_roth: y2r.roth || 0,
+          y2_taxable: (y2r.taxable || 0) + (y2r.real_estate || 0) + (y2r.cash || 0),
+          y2_traditional: y2r.traditional || 0,
+          adjusted_gifts_first_death: 0, adjusted_gifts_second_death: 0,
+        });
+        if (!alive) return;
+        const wp = result.outcomes.portability;
+        const np = noGift.outcomes.portability;
+        // The family gift pot (after §1015 carryover-basis LTCG) stays in the family
+        // and must be added to the WITH-gifting side for an apples-to-apples net-to-heirs.
+        const cb = projectionRows?.giving?.carryover_basis;
+        const potAfterTax = (cb ? cb.pot_after_tax : projectionRows?.giving?.ending_pot) || 0;
+        setGiftImpact({
+          withTax: wp.fed_tax + wp.state_tax,
+          noTax: np.fed_tax + np.state_tax,
+          taxSaved: (np.fed_tax + np.state_tax) - (wp.fed_tax + wp.state_tax),
+          withNet: wp.net_to_heirs_at_y2,
+          withNetTotal: wp.net_to_heirs_at_y2 + potAfterTax,
+          noNet: np.net_to_heirs_at_y2,
+          potAfterTax,
+          total: giftAdj.total,
+          secondYear: result.second_death_year,
+        });
+      } catch { if (alive) setGiftImpact(null); }
+    })();
+    return () => { alive = false; };
+  }, [baseRequest, result, giftAdj, scenario, projectionRows]);
+
 
   // Net-to-heirs envelope — re-run the estate at ALL four rebasis modes so the
   // advisor sees the full range of outcomes without clicking through the picker.
@@ -332,6 +400,45 @@ export const Estate = ({ scenario, mcResult = null }) => {
         </div>
       </Card>
 
+      {/* Gifting impact — estate tax saved by the lifetime taxable-gifts program */}
+      {giftImpact && (
+        <Card className="p-5 border shadow-none bg-[#FEFAF1] border-[#8A5A20]/30" data-testid="estate-gift-impact">
+          <div className="flex items-start gap-3">
+            <Gift className="h-5 w-5 text-[#8A5A20] mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-baseline justify-between flex-wrap gap-2">
+                <p className="text-sm font-semibold text-[#8A5A20]">Lifetime taxable-gifts program — estate-tax impact</p>
+                <p className="text-xs text-muted-foreground tabular-nums" data-testid="estate-gift-impact-total">
+                  {fmtUSD(giftImpact.total)} gifted during life
+                </p>
+              </div>
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Estate + state tax WITHOUT gifting</p>
+                  <p className="font-display text-xl font-bold text-[#1A1A1A] tabular-nums" data-testid="estate-gift-impact-notax">{fmtUSD(giftImpact.noTax)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Estate + state tax WITH gifting</p>
+                  <p className="font-display text-xl font-bold text-[#1A1A1A] tabular-nums" data-testid="estate-gift-impact-withtax">{fmtUSD(giftImpact.withTax)}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">Estate tax saved by gifting</p>
+                  <p className={`font-display text-xl font-bold tabular-nums ${giftImpact.taxSaved >= 0 ? "text-[#4A6741]" : "text-[#B84A4A]"}`} data-testid="estate-gift-impact-saved">
+                    {giftImpact.taxSaved >= 0 ? "+" : "−"}{fmtUSD(Math.abs(giftImpact.taxSaved))}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed" data-testid="estate-gift-impact-narrative">
+                Under standard unified §2001(b) mechanics, the gifted principal is added back to the tentative-tax base and the full exclusion + DSUE still shelters it — so gifts <em>within the exclusion add no estate tax</em>. The saving of{" "}
+                <strong className={giftImpact.taxSaved >= 0 ? "text-[#4A6741]" : "text-[#B84A4A]"}>{fmtUSD(Math.abs(giftImpact.taxSaved))}</strong>{" "}
+                comes from the <strong>future appreciation</strong> on the gifted assets escaping the estate between the gift date and second death (Y{giftImpact.secondYear}). Net-to-heirs at Y{giftImpact.secondYear}: {fmtUSD(giftImpact.noNet)} without → <strong>{fmtUSD(giftImpact.withNetTotal)}</strong> with (the estate delivers {fmtUSD(giftImpact.withNet)} plus the {fmtUSD(giftImpact.potAfterTax)} family gift pot, already net of §1015 carryover-basis capital-gains tax). Gifted assets carry the donor&apos;s cost basis, so heirs forgo the step-up on the embedded gain — the Legacy pages quantify that income-tax trade-off.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+
       {/* Combined-exemption gauge — visualize how close the household is to the (fed_excl_y1 + fed_excl_y2) ceiling. */}
       {(() => {
         const g = computeCombinedExemptionMetrics(result);
@@ -390,7 +497,7 @@ export const Estate = ({ scenario, mcResult = null }) => {
                     <p className="font-display text-base font-bold tabular-nums"
                       style={{ color: g.pct >= 1 ? "#B84A4A" : "#4A6741" }}
                       data-testid="estate-exemption-headroom">
-                      {g.pct >= 1 ? "+" : "−"}{fmtUSD(Math.abs(g.consumed - g.combinedAvailable))}
+                      {g.pct >= 1 ? "+" : ""}{fmtUSD(Math.abs(g.consumed - g.combinedAvailable))}
                     </p>
                   </div>
                 </div>

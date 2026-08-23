@@ -40,6 +40,7 @@ import { useObjectivesPage } from "@/hooks/useObjectivesPage";
 import { RothConversionsPage } from "./clientReport/RothConversionsPage";
 import { FundingOrderPage } from "./clientReport/FundingOrderPage";
 import { StatutoryFiguresPage } from "./clientReport/StatutoryFiguresPage";
+import { UnifiedCreditPage } from "./clientReport/UnifiedCreditPage";
 import { SavingsPage } from "./clientReport/SavingsPage";
 import { InputsAppendixPage } from "./clientReport/InputsAppendixPage";
 import { IncomeExpensesPage } from "./clientReport/IncomeExpensesPage";
@@ -226,6 +227,14 @@ export const ClientReport = ({ scenario, setScenario }) => {
           return raw == null ? false : raw === "1"; } catch { return false; }
   });
   useEffect(() => { try { window.localStorage.setItem("client_report_statutory_v1", statutoryOn ? "1" : "0"); } catch {} }, [statutoryOn]);
+  // Lifetime Giving & the Unified Credit page — OFF by default; meaningful only
+  // when the plan models taxable gifts (the page self-guards otherwise).
+  const [unifiedCreditOn, setUnifiedCreditOn] = useState(() => {
+    try { const raw = window.localStorage.getItem("client_report_unified_credit_v1");
+          return raw == null ? false : raw === "1"; } catch { return false; }
+  });
+  useEffect(() => { try { window.localStorage.setItem("client_report_unified_credit_v1", unifiedCreditOn ? "1" : "0"); } catch {} }, [unifiedCreditOn]);
+
   const [lawData, setLawData] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -994,6 +1003,23 @@ export const ClientReport = ({ scenario, setScenario }) => {
               </div>
             </label>
           </div>
+
+          <div className="mt-3 rounded-md border border-[#EBE8E0] bg-[#FAFAF8] px-3 py-2">
+            <label className="flex items-start gap-2 cursor-pointer max-w-[720px]">
+              <Switch checked={unifiedCreditOn} onCheckedChange={(v) => setUnifiedCreditOn(!!v)}
+                data-testid="cr-unified-credit-toggle" className="mt-0.5" />
+              <div className="flex-1">
+                <p className="text-[12px] font-semibold text-[#1A1A1A]">
+                  Add the &ldquo;Lifetime Giving &amp; the Unified Credit&rdquo; page
+                </p>
+                <p className="text-[10.5px] text-muted-foreground leading-snug mt-1">
+                  Off by default. Meaningful only when the plan models taxable gifts. Shows cumulative exclusion vs.
+                  taxable gifts, per-spouse unified exclusion consumed vs. remaining, the DSUE effect, the §1015
+                  carryover-basis trade-off, and the estate tax saved by the gifting program.
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
         {/* Monte Carlo behavioral realism — halt + guardrail toggles that flow into the
@@ -1126,6 +1152,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   objectivesOn={objectivesOn}
                   fundingOrderData={fundingOrderData}
                   statutoryOn={statutoryOn}
+                  unifiedCreditOn={unifiedCreditOn}
                   lawData={lawData}
                 />
               </div>
@@ -1159,6 +1186,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
           objectivesOn={objectivesOn}
           fundingOrderData={fundingOrderData}
           statutoryOn={statutoryOn}
+          unifiedCreditOn={unifiedCreditOn}
           lawData={lawData}
         />
       </div>
@@ -1173,7 +1201,7 @@ const ClientReportBody = ({
   regimeOn, regimeData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
-  customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, lawData,
+  customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, unifiedCreditOn, lawData,
 }) => {
   if (!withRoth || !noRoth) {
     return <div style={{ padding: 40, textAlign: "center", color: "#999" }}>Loading projection…</div>;
@@ -1230,7 +1258,8 @@ const ClientReportBody = ({
     + (basisOn ? 1 : 0)
     + flowPages
     + (inputsOn ? 2 : 0)
-    + (statutoryOn ? 1 : 0);
+    + (statutoryOn ? 1 : 0)
+    + (unifiedCreditOn ? 1 : 0);
   const lawAsOf = lawData?.LAW_AS_OF;
   const pageFooter = (n) => ({ pageNo: n, pageTotal: totalPages, footer: dateFoot, confidential: foot, logo, lawAsOf });
   const F = fundingOrderActive ? 1 : 0;             // Funding-order page shifts everything after Roth Conversions
@@ -1312,7 +1341,7 @@ const ClientReportBody = ({
         ].filter(Boolean)} {...pageFooter(dividerPage)} />
       )}
       {basisOn && (
-        <BasisStepUpPage scenario={scenario} rows={rows} {...pageFooter(basisPage)} />
+        <BasisStepUpPage scenario={scenario} rows={rows} withRoth={withRoth} {...pageFooter(basisPage)} />
       )}
       {flowSel.map((n, i) => (
         <EpFlowchartPage key={`flow-${n}`} plan={flowResult.plans.find((p) => p.plan_no === n)}
@@ -1338,6 +1367,10 @@ const ClientReportBody = ({
       })()}
       {inputsOn && (
         <InputsAppendixPage scenario={scenario} {...pageFooter(inputsPage)} />
+      )}
+      {unifiedCreditOn && (
+        <UnifiedCreditPage scenario={scenario} withRoth={withRoth}
+          {...pageFooter(totalPages - (statutoryOn ? 1 : 0))} />
       )}
       {statutoryOn && (
         <StatutoryFiguresPage law={lawData} {...pageFooter(totalPages)} />

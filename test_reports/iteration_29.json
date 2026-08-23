@@ -1,0 +1,44 @@
+{
+  "summary": "Frontend-only RETEST of the 6 consistency defects from iteration_28 (Taxable Lifetime Gifts). Logged in via Master PIN on the public URL, modeled a taxable gift on Plan Inputs (year 2030), and inspected the Estate tab callout + exemption gauge, and the Client Report Unified Credit page (cr-unified-credit-toggle) and Basis Step-Up page (cr-basis-toggle, which is what actually renders cr-page-basis-stepup). Ran the default (under-exclusion) scenario AND a bumped large-estate scenario ($60M x2 taxable accounts, $20M gift) to check both the $0 and positive-savings regimes. RESULT: all 6 fixes (FIX1-FIX6) verified PASS. FIX1: basis table now foots exactly — Roth $8,882,619 + Taxable $0 + Trad $0 + Gift $23,325,997 = total nominal $32,208,616; after-tax $8,882,619 + $18,144,469 = $27,027,089; drag $5,181,527 (16.1%) = nominal - after. FIX2: Unified Credit 'tax saved' = $0 in the under-exclusion scenario, matching the Estate tab's +$0 (no longer the old $9.8M contradiction), and turns positive ($61.7M) when the estate is over the ceiling. FIX3: narrative now reads 'the estate delivers $12,453,645 plus the $18,144,469 family gift pot' and the with-total ($30,598,114) >= estate-only with figure. FIX4: estate-gift-impact notax/withtax/saved internally consistent in both scenarios (noTax>=withTax, saved == noTax-withTax, saved>=0; large estate $506,263,042 / $450,108,178 / +$56,154,863). FIX5: Plan Inputs block reads 'Total taxable gifts (requested)' plus the capped-at-available note. FIX6: headroom shows $67,429,467 with no spurious minus under the ceiling, and '+$1,105,270,446' under the 'Estate exposed above ceiling' label when over. No backend testing performed (explicitly out of scope). Two NEW minor cross-page numeric inconsistencies found in the large-estate case (see below) — neither is a regression of the 6 fixes.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Estate.jsx exemption gauge vs clientReport/UnifiedCreditPage.jsx",
+        "issue": "MINOR/NEW: the two views disagree on the combined shelter for the same plan. Estate tab gauge shows 'Fed excl Y1 + Y2 combined = $79,883,112' (full exclusions, ignoring that the lifetime taxable gifts already consumed part of the first decedent's exclusion), while the Unified Credit page correctly computes shelter = Y2 exclusion + DSUE net of gifts = $69,883,112. Consider deducting adjusted_gifts_first_death/_second_death from the gauge's combinedAvailable (or footnoting it) so the two documents agree.",
+        "selector": "[data-testid='estate-exemption-available'] vs [data-testid='cr-unified-credit-savings']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "clientReport/UnifiedCreditPage.jsx",
+        "issue": "MINOR/NEW: in the large-estate run the page's simplified flat-40% model gives tax WITHOUT $515,830,345 / WITH $454,108,178 / saved $61,722,166, while the Estate tab engine (incl. state tax) reports $506,263,042 / $450,108,178 / +$56,154,863 for the same plan — same sign and same order of magnitude, but a ~$5.6M (9%) headline gap between two pages of the same deliverable. Also the fine print hardcodes 'Within-exclusion estates show $0 of cash tax saved' even when the estate is far above the exclusion, which reads oddly there.",
+        "selector": "[data-testid='cr-unified-credit-tax-saved']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Client Report — Basis Step-Up page discoverability",
+        "issues": ["cr-page-basis-stepup only renders when the separate 'cr-basis-toggle' switch is on (default off); worth noting for future test scripts and possibly auto-enabling when a gift is modeled since the gift carryover row lives there."]
+      }
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_29.json"],
+  "action_items": [
+    "OPTIONAL: reconcile the Estate tab exemption-gauge combined available ($79.9M) with the Unified Credit page shelter ($69.9M) by netting lifetime taxable gifts out of the gauge.",
+    "OPTIONAL: make the Unified Credit page's savings caveat conditional (only show the 'within-exclusion → $0' sentence when the estate is actually under the shelter), and/or reference that the Estate tab engine figure (incl. state tax) is authoritative."
+  ],
+  "critical_code_review_comments": [
+    "BasisStepUpPage.jsx L87: if_all_roth_after adds giftAfter while total_nominal adds giftPot — intentional (both sides of roth_conversion_upside include the same gift term so the delta is unaffected), but a comment would prevent future confusion.",
+    "Estate.jsx giftImpact effect re-runs a full projection + estate analyze on every scenario/projectionRows change; consider debouncing to avoid duplicate API load on rapid input edits."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (out of scope)", "frontend": "100% (6/6 targeted fixes verified)" },
+  "seed_data_creation": "None persisted. Test scenario values (taxable gift 2030, and the $60M account bump) are in-session only — verified they do not persist across reloads.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Master PIN i4m07MnVDhpTYkc1giC6wWDv (from /app/memory/test_credentials.md) — works via login-mode-master + pin-input + pin-unlock-btn.",
+  "context_for_next_testing_agent": "Flow: login (Master) -> tab-inputs -> taxable-gifts-editor (add-taxable-gift, taxable-gift-year-0/amount-0/donor-0). Account balances use a masked Money input that is readOnly until clicked — click first, then fill. Estate tab callout takes ~5s (runs a counterfactual projection + estate analyze). Client Report: cr-unified-credit-toggle renders cr-page-unified-credit; cr-basis-toggle renders cr-page-basis-stepup. The basis 'Total investable accounts' row uses colSpan so td indices differ from the data rows when parsing. All 6 iteration_28 fixes confirmed; only the 2 minor cross-page shelter/model discrepancies above remain open.",
+  "rca_of_the_issue": "Remaining gauge-vs-report shelter gap: Estate.jsx builds combinedAvailable from the raw Y1+Y2 federal exclusions, while UnifiedCreditPage.jsx derives DSUE as exclY1 - adjusted_gifts_first_death, so lifetime taxable gifts reduce the report's shelter but not the Estate gauge's. Cosmetic/consistency only; underlying tax figures come from the backend engine on the Estate tab."
+}

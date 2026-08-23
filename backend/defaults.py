@@ -139,6 +139,7 @@ DEFAULT_SCENARIO = {
         "section_2503e_amount": 0.0,
         "start_year": 0,
         "end_year": 0,
+        "taxable_gifts": [],
     },
     "roth": {
         "enabled": True,

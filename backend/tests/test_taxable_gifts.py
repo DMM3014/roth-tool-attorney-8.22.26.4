@@ -145,3 +145,28 @@ def test_projection_gift_capped_at_available_balance():
     # be partially funded — the cumulative adjusted gift is bounded well below the
     # request and stays positive.
     assert 0.0 < tg["total"] < (avail + 50_000_000)
+
+
+def test_projection_carryover_basis_after_tax_pot():
+    """§1015: gifted appreciated assets carry the donor's basis. The family pot's
+    embedded gain (value - carryover basis) is taxed to heirs at the LTCG rate, so
+    the after-tax pot is strictly below the nominal pot when there is a gain."""
+    cfg = copy.deepcopy(DEFAULT_SCENARIO)
+    sy = cfg["projection"]["start_year"]
+    cfg.setdefault("giving", {})["taxable_gifts"] = [
+        {"year": sy + 1, "amount": 3_000_000, "donor": "Client"},
+    ]
+    res = run_projection(cfg)
+    cob = res["giving"]["carryover_basis"]
+    pot = res["giving"]["ending_pot"]
+    assert cob["pot_basis"] >= 0
+    assert cob["embedded_gain"] == round(max(0.0, pot - cob["pot_basis"]), 2)
+    assert cob["ltcg_owed_at_sale"] == round(cob["embedded_gain"] * cob["heir_ltcg_rate"], 2)
+    assert cob["pot_after_tax"] < pot  # a real embedded gain => a haircut
+    assert cob["pot_after_tax"] == round(pot - cob["ltcg_owed_at_sale"], 2)
+
+
+def test_projection_no_carryover_key_without_gifts():
+    """No gifts -> no carryover_basis key (golden-safe)."""
+    res = run_projection(copy.deepcopy(DEFAULT_SCENARIO))
+    assert "carryover_basis" not in res["giving"]

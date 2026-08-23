@@ -884,7 +884,8 @@ def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
                        ledger: list | None = None, auto_accounts: list | None = None,
                        accounts: list | None = None,
                        gift_pot_by_year: dict | None = None,
-                       taxable_gifts_summary: dict | None = None) -> dict:
+                       taxable_gifts_summary: dict | None = None,
+                       gift_pot_basis: float = 0.0) -> dict:
     """Roll year rows up into summary totals + the legacy block + Roth compliance."""
     final = rows[-1] if rows else {}
     total_early_penalty = round(sum(w.get("penalty_10pct", 0.0) for w in (warnings or [])), 2)
@@ -896,6 +897,23 @@ def _aggregate_results(cfg: dict, rows: list, warnings: list | None = None,
         "total_gifted": total_gifted,
         "ending_pot": ending_pot,
     }
+    # §1015 carryover-basis after-tax view of the family gift pot. Gifted assets
+    # take the donor's basis (NO §1014 step-up), so heirs owe LTCG on the embedded
+    # gain when they eventually sell. Additive fields — present ONLY when a pot
+    # exists, so no-gift configs stay byte-identical to the golden baseline.
+    if ending_pot > 0:
+        lc = cfg.get("legacy", {}) or {}
+        heir_ltcg_rate = lc.get("heir_ltcg_rate", 0.188 + lc.get("heir_state_rate", 0.0))
+        pot_basis = round(min(gift_pot_basis, ending_pot), 2)
+        embedded_gain = round(max(0.0, ending_pot - pot_basis), 2)
+        pot_after_tax = round(ending_pot - embedded_gain * heir_ltcg_rate, 2)
+        giving["carryover_basis"] = {
+            "pot_basis": pot_basis,
+            "embedded_gain": embedded_gain,
+            "heir_ltcg_rate": round(heir_ltcg_rate, 4),
+            "ltcg_owed_at_sale": round(embedded_gain * heir_ltcg_rate, 2),
+            "pot_after_tax": pot_after_tax,
+        }
     # Additive only — the key is present ONLY when taxable gifts exist, so configs
     # without them stay byte-identical to the golden baseline.
     if taxable_gifts_summary:
@@ -1125,13 +1143,16 @@ def _cfg_adjusted_gifts(cfg: dict) -> tuple[float, float]:
     return round(by_donor[first], 2), round(by_donor[second], 2)
 
 
-def _drain_for_gift(plan: "Plan", bal: dict, basis: dict, amount: float, donor: str) -> float:
+def _drain_for_gift(plan: "Plan", bal: dict, basis: dict, amount: float, donor: str) -> tuple[float, float]:
     """Drain `amount` for a taxable gift from Taxable brokerage (donor-owned first,
     then Joint, then the other spouse's), then Cash. Consumes basis pro-rata on the
-    taxable side (a gift is a 'sale then transfer' from the estate's view; the donee
-    takes carryover basis — modeled on the income-tax side in a later stage).
-    Returns the UNFUNDED remainder (0.0 when fully funded)."""
+    taxable side. Under §1015 the donee takes the donor's CARRYOVER basis (no §1014
+    step-up), so we report the basis that travels with the gift: the pro-rata basis
+    consumed on Taxable lots + the full face value drawn from Cash (cash carries
+    basis = face, i.e. no embedded gain).
+    Returns (unfunded_remainder, carryover_basis_transferred)."""
     remaining = float(amount)
+    carryover_basis = 0.0
     orig_owner = {a["id"]: a.get("owner", "Client") for a in plan.accounts}
 
     def _order(ids):
@@ -1151,6 +1172,7 @@ def _drain_for_gift(plan: "Plan", bal: dict, basis: dict, amount: float, donor: 
             continue
         if cur_bal > 0:
             b_frac = min(1.0, basis.get(aid, 0.0) / cur_bal)
+            carryover_basis += take * b_frac
             basis[aid] = max(0.0, basis.get(aid, 0.0) - take * b_frac)
         bal[aid] = max(0.0, cur_bal - take)
         remaining -= take
@@ -1160,9 +1182,10 @@ def _drain_for_gift(plan: "Plan", bal: dict, basis: dict, amount: float, donor: 
         take = min(remaining, bal.get(aid, 0.0))
         if take <= 0:
             continue
+        carryover_basis += take  # cash carries full basis (no embedded gain)
         bal[aid] = max(0.0, bal.get(aid, 0.0) - take)
         remaining -= take
-    return max(0.0, remaining)
+    return max(0.0, remaining), carryover_basis
 
 
 
@@ -1736,6 +1759,7 @@ def run_projection(cfg: dict) -> dict:
     if _giving_growth is None:
         _giving_growth = next((a["return"] for a in plan.accounts if a["tax_type"] == "Taxable"), 0.06)
     gift_pot = 0.0
+    gift_pot_basis = 0.0  # §1015 carryover basis that traveled with gifted assets
     gift_pot_by_year = {}  # year -> {contributed, cumulative_pot} for the frontend
     # Taxable lifetime gifts (§2001(b)): cumulative adjusted taxable gifts per donor
     # + a per-year ledger for the reporting stage.
@@ -1955,9 +1979,11 @@ def run_projection(cfg: dict) -> dict:
                     take = min(actual_gift, bal.get(aid, 0.0))
                     if take <= 0:
                         continue
-                    # Reduce basis pro-rata just like a taxable sale.
+                    # Reduce basis pro-rata just like a taxable sale; the consumed
+                    # basis travels with the gift under §1015 (carryover basis).
                     if bal.get(aid, 0.0) > 0:
                         b_frac = min(1.0, basis.get(aid, 0.0) / bal[aid])
+                        gift_pot_basis += take * b_frac
                         basis[aid] = max(0.0, basis.get(aid, 0.0) - take * b_frac)
                     bal[aid] = max(0.0, bal.get(aid, 0.0) - take)
                     actual_gift -= take
@@ -1980,10 +2006,11 @@ def run_projection(cfg: dict) -> dict:
             )
             if not donor_can_gift:
                 continue
-            unfunded = _drain_for_gift(plan, bal, basis, g["amount"], donor)
+            unfunded, carryover_basis = _drain_for_gift(plan, bal, basis, g["amount"], donor)
             contributed = g["amount"] - unfunded
             if contributed <= 0:
                 continue
+            gift_pot_basis += carryover_basis
             if donor == "Joint":
                 adj_gifts_by_donor["Client"] += contributed / 2.0
                 adj_gifts_by_donor["Spouse"] += contributed / 2.0
@@ -2044,7 +2071,8 @@ def run_projection(cfg: dict) -> dict:
     result = _aggregate_results(cfg, rows, warnings=roth_warnings, ledger=conversions_ledger,
                                 auto_accounts=plan.auto_accounts, accounts=plan.accounts,
                                 gift_pot_by_year=gift_pot_by_year,
-                                taxable_gifts_summary=_tg_summary)
+                                taxable_gifts_summary=_tg_summary,
+                                gift_pot_basis=gift_pot_basis)
     # Surface the ending taxable cost basis (already tracked internally, incl. any
     # first-death §1014 step-up) so callers can derive the embedded unrealized gain
     # in the taxable account at end of plan. Additive only — no calc change.
