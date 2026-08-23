@@ -105,7 +105,9 @@ export const IncomeExpensesPage = ({ incomeData, rows, customMilestones, stateEx
       "Social Security (gross)": cf.gross_ss || 0,
       Dividends: cf.dividends || 0,
       Interest: cf.interest || 0,
-      "RMDs": cf.rmd || 0,
+      // De minimis RMDs (end-of-plan rounding artifacts under $100) are shown as
+      // zero so a stray "$1" never appears in the milestone column.
+      "RMDs": (cf.rmd || 0) < 100 ? 0 : cf.rmd,
       Withdrawals: withdrawals,
     };
     const totalIncome = Object.values(income).reduce((s, v) => s + v, 0);

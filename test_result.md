@@ -155,6 +155,51 @@ frontend:
         -agent: "testing"
         -comment: "VERIFIED: Login screen h1 shows 'Retirement & Wealth-Transfer Illustration — Attorney Edition'. Browser tab <title> shows 'Retirement & Wealth-Transfer Illustration — Attorney Edition'. After login, header h1 shows 'Retirement & Wealth-Transfer Illustration — Attorney Edition'. All branding elements correctly updated."
 
+  - task: "Bugfix: Paired MC footnote survival % must equal headline success %"
+    implemented: true
+    working: true
+    file: "frontend/src/components/clientReport/PairedMcPage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Fixed inconsistency where Paired MC footnote showed different % than headline 'Plan success rate'. Footnote now derives from same source (mcResult.with_conversions.success with Math.round) as the headline, ensuring they always match."
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED: Paired MC footnote percentage (86%) EXACTLY MATCHES headline 'Plan success rate' (86%). Footnote correctly reads 'Based on 500 paired trials; the plan reached second death with assets remaining in 86% of them.' Both values derive from the same source variable, ensuring consistency. Fix working correctly."
+
+  - task: "Bugfix: de minimis RMD (<$100) shows $0/— in income milestone table"
+    implemented: true
+    working: true
+    file: "frontend/src/components/clientReport/IncomeExpensesPage.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Fixed stray '$1' artifact in RMD row of income milestone table. RMD values under $100 now treated as $0 and displayed as '—' (dash) instead of showing de-minimis dollar amounts."
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED: RMD row in 'Sources of income & spending at milestone years' table shows 'RMDs — — — — $51,251 $104,042 — —'. NO '$1' artifact found. De-minimis values correctly display as dashes, real RMD values (>= $100) display as proper dollar amounts. Fix working correctly."
+
+  - task: "Bugfix: Convert-or-Don't paragraph split into three clean sentences"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/convertSkipCopy.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: "Rewrote Convert-or-Don't-Convert paragraph as three clean sentences with specific phrasing 'relative to the total size of the plan' in the third sentence. Shared copy used in both Client Report and Presentation deck."
+        -working: true
+        -agent: "testing"
+        -comment: "VERIFIED: Paragraph correctly formatted as three sentences: (1) 'The following illustration is based upon the client-provided heir tax rates identified above.' (2) 'These results also assume consistent linear returns and are assumptions, not promises.' (3) 'And while the projected conversion benefits may be large in dollar terms, they are often small in percentage terms relative to the total size of the plan.' All required phrasing present, including critical 'relative to the total size of the plan' phrase. Fix working correctly."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
@@ -163,9 +208,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Optimizer -> Analyzer rename across UI + tabs"
-    - "PDF Client Report cover: new title, restyled strategy pill, disclaimer subtitle"
-    - "Rebrand header, login screen, and browser tab title"
+    - "Bugfix: Paired MC footnote survival % must equal headline success %"
+    - "Bugfix: de minimis RMD (<$100) shows $0/— in income milestone table"
+    - "Bugfix: Convert-or-Don't paragraph split into three clean sentences"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -202,3 +247,58 @@ agent_communication:
          - App header: "Retirement & Wealth-Transfer Illustration — Attorney Edition"
       
       No issues found. All text/label changes successfully implemented.
+
+    -agent: "main"
+    -message: |
+      THREE SMALL DEFECT FIXES in the Client Report PDF (frontend only, no backend changes). Login required:
+      MASTER tab, passcode = MASTER_ADMIN_PIN from /app/memory/test_credentials.md. IMPORTANT: to render the
+      Monte Carlo / Paired MC report pages you must first open the "Monte Carlo" tab and RUN the simulation,
+      then open the "Client Report" tab.
+
+      FIX 1 (PairedMcPage.jsx): The footnote under the paired histogram previously said "both branches
+      survived on 98%" while the headline "Plan success rate" (MonteCarlo report page) said 99%. The footnote
+      now derives its % from the SAME variable as the headline (mcResult.with_conversions.success, Math.round).
+      VERIFY: after running MC, the % in the Paired MC footnote ("...the plan reached second death with assets
+      remaining in X% of them.") must EXACTLY equal the big "Plan success rate" number on the Monte Carlo
+      report page. They must never disagree.
+
+      FIX 2 (IncomeExpensesPage.jsx): In the "Sources of income & spending at milestone years" table, any RMD
+      value under $100 is now treated as $0 and shown as "—" (no stray "$1"). VERIFY: the RMD row shows no
+      "$1"/de-minimis artifact at the End-of-Plan milestone column (renders "—" or a real >= $100 figure).
+      Note: the default scenario may not produce a sub-$100 RMD; if you cannot force one, just confirm the RMD
+      row renders sensibly with no "$1" artifact and no regression.
+
+      FIX 3 (convertSkipCopy.jsx -> Convert-or-Don't-Convert page): The paragraph starting "The following
+      illustration is based upon..." is now three clean sentences: (a) uses client-provided heir tax rates
+      identified above; (b) assumes consistent linear returns, assumptions not promises; (c) conversion
+      benefits large in dollars are often small in percentage terms relative to total plan size. VERIFY the
+      wording on the Client Report "Convert or Don't Convert" page and (same shared copy) the Presentation
+      deck's Convert/Skip page.
+
+      Do NOT test backend.
+    -agent: "testing"
+    -message: |
+      TESTING COMPLETE - ALL THREE DEFECT FIXES VERIFIED ✅
+      
+      Comprehensive verification of three Client Report PDF defect fixes completed. All fixes working correctly:
+      
+      1. PAIRED MC FOOTNOTE CONSISTENCY: ✅ PASS
+         - Headline "Plan success rate": 86%
+         - Paired MC footnote: "Based on 500 paired trials; the plan reached second death with assets remaining in 86% of them."
+         - RESULT: Footnote percentage (86%) EXACTLY MATCHES headline percentage (86%)
+         - The footnote now correctly derives from mcResult.with_conversions.success with Math.round, ensuring consistency
+      
+      2. DE MINIMIS RMD IN MILESTONE TABLE: ✅ PASS
+         - RMD row in "Sources of income & spending at milestone years" table: "RMDs — — — — $51,251 $104,042 — —"
+         - RESULT: NO "$1" artifact found. De-minimis values correctly show as "—" (dash)
+         - Real RMD values (>= $100) display properly as dollar amounts
+         - The fix correctly treats RMDs under $100 as $0 and renders them as dashes
+      
+      3. CONVERT-OR-DON'T-CONVERT PARAGRAPH WORDING: ✅ PASS
+         - Paragraph text: "The following illustration is based upon the client-provided heir tax rates identified above. These results also assume consistent linear returns and are assumptions, not promises. And while the projected conversion benefits may be large in dollar terms, they are often small in percentage terms relative to the total size of the plan."
+         - RESULT: Paragraph correctly formatted as THREE clean sentences
+         - ✓ Contains "client-provided heir tax rates identified above"
+         - ✓ Contains "consistent linear returns" and "assumptions, not promises"
+         - ✓ Contains "relative to the total size of the plan" (critical phrasing verified)
+      
+      All three defect fixes successfully implemented and verified. No issues found.

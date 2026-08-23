@@ -58,6 +58,13 @@ export const PairedMcPage = ({ mcResult, ...footProps }) => {
   const endHist = buildHistData(end?.histogram);
   const taxConstant = isConstant(tax);
 
+  // Survival % is pulled from the SAME source as the headline "Plan success rate"
+  // (MonteCarloPage uses mcResult.with_conversions.success with Math.round), so the
+  // footnote below and the headline can never disagree.
+  const successPct = mcResult?.with_conversions?.success != null
+    ? Math.round(mcResult.with_conversions.success * 100)
+    : null;
+
   return (
     <Page testid="cr-page-paired-mc" {...footProps}>
       <H2>Paired Monte Carlo — Roth strategy vs no conversions on the same market seeds</H2>
@@ -139,7 +146,7 @@ export const PairedMcPage = ({ mcResult, ...footProps }) => {
           <Sub>
             Green = Roth strategy ended with more liquid wealth on that seed; amber = less. Histogram is
             capped at ±p95 of |Δ|; trials outside that range roll into the outermost bins.
-            {" "}Based on {pd.n_trials} paired trials; both branches survived on {fmtPct(pd.both_survive_pct)} of them.
+            {" "}Based on {pd.n_trials} paired trials; the plan reached second death with assets remaining in {successPct != null ? `${successPct}%` : "—"} of them.
           </Sub>
 
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10, marginTop: 10 }}

@@ -21,10 +21,10 @@ export const ConvertSkipNarrative = ({ P, pvRate, includeNarrative = true }) => 
       </P>
     )}
     <P>
-      The following illustration is based upon the assumed heir tax rates which you have provided and which are
-      identified above. These results are also based upon consistent linear returns and are assumptions, not
-      promises. Please note that while projected conversion benefits may seem large in amount, they are often
-      relatively small gains in percentage terms based upon projection results.
+      The following illustration is based upon the client-provided heir tax rates identified above.
+      These results also assume consistent linear returns and are assumptions, not promises. And while
+      the projected conversion benefits may be large in dollar terms, they are often small in percentage
+      terms relative to the total size of the plan.
     </P>
   </>
 );
