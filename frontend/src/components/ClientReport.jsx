@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
-  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runRegimeDeterministicCompare, runEpFlowchart, runHeirRateSensitivity,
+  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runRegimeDeterministicCompare, runTwoWaySensitivity, runEpFlowchart, runHeirRateSensitivity,
   runSequenceStress, listScenarios, fmtPct, fmtUSD, allocationToAssets, compareFundingOrders, getLawConstants,
 } from "@/lib/api";
 import { downloadElementAsPdf } from "@/lib/pdf";
@@ -52,6 +52,7 @@ import { PairedMcPage } from "./clientReport/PairedMcPage";
 import { RegimeCompareReportPage } from "./clientReport/RegimeComparePage";
 import { LegacyPage } from "./clientReport/LegacyPage";
 import { HeirRateSensitivityPage } from "./clientReport/HeirRateSensitivityPage";
+import { TwoWaySensitivityPage } from "./clientReport/TwoWaySensitivityPage";
 import { BasisStepUpPage } from "./clientReport/BasisStepUpPage";
 import { EpFlowchartPage, EpFlowchartComparePage, EpFlowchartCombinedComparePage } from "./clientReport/EpFlowchartPage";
 import { SensitivityPage } from "./clientReport/SensitivityPage";
@@ -372,6 +373,19 @@ export const ClientReport = ({ scenario, setScenario }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig]);
 
+  // Two-way sensitivity surface (heir rate × market regime) for the printed report.
+  const [twoWayData, setTwoWayData] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setTwoWayData(null);
+    const t = setTimeout(() => {
+      runTwoWaySensitivity(scenario)
+        .then((r) => { if (alive) setTwoWayData(r); })
+        .catch(() => { if (alive) setTwoWayData(null); });
+    }, 900);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
   // Regime comparison fetch — auto-run when the advisor toggles it on, or when the
   // plan / behavioral rules change. Pairs with/without behavior when either the halt
   // or guardrail is active so clients see the "behavior lift" per regime.
@@ -1149,6 +1163,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   inputsOn={inputsOn}
                   bracketOn={bracketOn}
                   heirSens={heirSens}
+                  twoWayData={twoWayData}
                   flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
                   flowCompareResult={flowCompareResult} flowCompareLabel={flowCompareLabel}
                   customMilestones={customMilestones}
@@ -1182,6 +1197,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
           inputsOn={inputsOn}
           bracketOn={bracketOn}
           heirSens={heirSens}
+          twoWayData={twoWayData}
           flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
           flowCompareResult={flowCompareResult} flowCompareLabel={flowCompareLabel}
           sensitivity={sensitivityData}
@@ -1203,7 +1219,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
 const ClientReportBody = ({
   branding, household, clientName, spouseName, prettyDate, scenario, withRoth, noRoth,
   incomeData, composeData, taxCompData, nwSeries, mcResult, marketPreset, heirRate, aiText, logo,
-  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens,
+  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
   customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, unifiedCreditOn, lawData,
@@ -1259,6 +1275,7 @@ const ClientReportBody = ({
     + (regimeOn ? 1 : 0)
     + (seqOn && seqData ? 1 : 0)
     + (heirSens ? 1 : 0)
+    + (twoWayData ? 1 : 0)
     + (dividerOn ? 1 : 0)
     + (basisOn ? 1 : 0)
     + flowPages
@@ -1277,6 +1294,7 @@ const ClientReportBody = ({
   const legacyPage = cursor + 1;
   cursor += 3;                                       // Legacy spans 3 pages
   const heirSensPage = heirSens ? ++cursor : null;    // beneficiary rate band
+  const twoWayPage = twoWayData ? ++cursor : null;    // heir rate × regime surface
   const dividerPage = dividerOn ? ++cursor : null;
   const basisPage = basisOn ? ++cursor : null;
   const flowPageStart = flowPages > 0 ? cursor + 1 : null;
@@ -1337,6 +1355,9 @@ const ClientReportBody = ({
         <HeirRateSensitivityPage heirSens={heirSens} heirRate={heirRate}
           pv={pv} deliverYear={heirDeliverYear}
           {...pageFooter(heirSensPage)} />
+      )}
+      {twoWayData && (
+        <TwoWaySensitivityPage twoWayData={twoWayData} {...pageFooter(twoWayPage)} />
       )}
       {dividerOn && (
         <AppendixDividerPage items={[

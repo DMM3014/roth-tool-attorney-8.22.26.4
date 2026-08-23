@@ -11,6 +11,7 @@ import { MonteCarloResults } from "@/components/MonteCarloResults";
 import { MarketScenarioSelector } from "@/components/MarketScenarioSelector";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { RegimeComparePanel } from "@/components/RegimeComparePanel";
+import { TwoWaySensitivityPanel } from "@/components/TwoWaySensitivityPanel";
 import AIAnalysisCard from "@/components/AIAnalysisCard";
 import { GuardrailCard, HaltCard, RebalanceCadenceCard } from "@/components/monteCarlo/BehaviorRuleCards";
 import { PairedRothVsNoRothCard } from "@/components/monteCarlo/PairedRothVsNoRothCard";
@@ -56,7 +57,7 @@ const STAGFLATION = {
   },
 };
 
-export const MonteCarlo = ({ scenario, setScenario, onResult, onRegimeResult }) => {
+export const MonteCarlo = ({ scenario, setScenario, onResult, onRegimeResult, onTwoWayResult }) => {
   // Seed the MC weights from scenario.allocation (edited on Plan Inputs) so switching
   // the household allocation on Plan Inputs flows into the MC without an extra click.
   // Advisors can still fine-tune on this tab; edits stay local to the MC view.
@@ -661,6 +662,12 @@ export const MonteCarlo = ({ scenario, setScenario, onResult, onRegimeResult }) 
             n_trials: nTrials,
           }}
         />
+      )}
+
+      {/* Two-way sensitivity — heir marginal rate × market regime surface. Also
+          gated on a completed MC run so allocation/regime machinery is warm. */}
+      {res && (
+        <TwoWaySensitivityPanel scenario={scenario} onResult={onTwoWayResult} />
       )}
     </div>
   );

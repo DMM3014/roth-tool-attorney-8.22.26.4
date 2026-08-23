@@ -285,6 +285,21 @@ async def regime_deterministic_compare_route(request: Request, req: ProjectionRe
         raise HTTPException(status_code=400, detail="Regime deterministic comparison could not be processed")
 
 
+@router.post("/two-way-sensitivity")
+@limiter.limit("10/minute")
+async def two_way_sensitivity_route(request: Request, req: ProjectionRequest,
+                                    _gate: None = Depends(require_advisor_or_share)):
+    """Heir marginal rate x market regime surface: conversion delta in after-tax
+    wealth to heirs + per-regime interpolated break-even rate. Cached per config hash."""
+    validate_config(req.config)
+    try:
+        from projection import two_way_sensitivity
+        return await asyncio.to_thread(two_way_sensitivity, req.config)
+    except Exception:
+        logging.exception("two-way sensitivity failed")
+        raise HTTPException(status_code=400, detail="Two-way sensitivity could not be processed")
+
+
 class SequenceStressRequest(ProjectionRequest):
     """POST /api/planning/sequence-stress — the same plan under early-bear,
     late-bear and volatile return SEQUENCES instead of one flat rate."""

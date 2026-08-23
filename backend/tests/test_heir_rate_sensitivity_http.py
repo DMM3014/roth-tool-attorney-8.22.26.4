@@ -5,8 +5,13 @@ Verifies auth gate + shape + monotonicity + clamp/dedupe behavior end-to-end.
 import os
 import pytest
 import requests
+from dotenv import dotenv_values
 
-BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+_frontend_env = dotenv_values("/app/frontend/.env")
+_base = os.environ.get("REACT_APP_BACKEND_URL") or _frontend_env.get("REACT_APP_BACKEND_URL")
+if not _base:
+    raise RuntimeError("REACT_APP_BACKEND_URL missing from env and /app/frontend/.env")
+BASE_URL = _base.rstrip("/")
 MASTER_PIN = "i4m07MnVDhpTYkc1giC6wWDv"
 
 

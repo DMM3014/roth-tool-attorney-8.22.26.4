@@ -20,8 +20,8 @@ MASTER_PIN = "i4m07MnVDhpTYkc1giC6wWDv"
 
 EXPECTED_PRESETS = {
     "historical_avg", "last_50_years", "70s_stagflation", "lost_decade",
-    "high_inflation", "low_return", "custom",
-}
+    "high_inflation", "low_return",
+}  # 'custom' is a no-op passthrough == baseline and is excluded (matches the MC table)
 
 
 @pytest.fixture(scope="session")
@@ -61,7 +61,7 @@ def test_response_shape(det_result):
     d = det_result
     for k in ("baseline_id", "start_year", "second_death_year", "heir_deliver_year", "rows"):
         assert k in d, f"missing {k}"
-    assert len(d["rows"]) == 7, f"expected 7 rows, got {len(d['rows'])}"
+    assert len(d["rows"]) == 6, f"expected 6 rows (custom excluded), got {len(d['rows'])}"
     assert {r["preset_id"] for r in d["rows"]} == EXPECTED_PRESETS
     assert d["heir_deliver_year"] > d["start_year"]
     assert "_id" not in d

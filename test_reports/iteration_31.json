@@ -1,0 +1,50 @@
+{
+  "summary": "Tested Phase-65 'Two-Way Sensitivity — Heir Rate x Market Regime' end-to-end. Backend: new pytest HTTP suite (12 tests) against the public ingress with a master token — contract (rates/rate_labels/6 regimes/6x6 matrix/per-regime break_even/verbatim caption), caching idempotency, auth gate (401) and junk-config rejection (400) all pass except one break-even edge case. Frontend: found and reproduced a CRITICAL React crash ('onTwoWayResult is not defined') that blanked the whole Monte Carlo tab after every MC run; applied the minimal in-scope prop fix and then verified the in-app heat-grid panel and the printed report page fully (labels, 6 regime columns with custom excluded, 36 colored cells, break-even row with extrapolated flags, verbatim caption, re-run/cache, page ordering + numbering + no page overflow). Regression: MC regime comparison (6 rows) + deterministic regime table (6 rows) and the Heir Rate Sensitivity report page still render.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/two-way-sensitivity", "issue": "lost_decade column is identically $0 at every heir rate (with- and no-conversion heir outcomes are the same $4,052,162 and rate-invariant), and _break_even_from_points returns rate=0.0 with extrapolated=false for that flat column. A hard '0.0%' break-even is misleading for a surface where conversion changes nothing — expected null (n/a) or extrapolated=true. Repro: POST /api/two-way-sensitivity with the default scenario; test_iter31_two_way_http.py::test_flat_column_break_even fails."},
+      {"endpoint": "/api/regime-deterministic-compare", "issue": "Stale regression test: tests/test_iter30_regime_det_http.py::test_response_shape asserts 7 rows but the endpoint now excludes the 'custom' preset and returns 6. Either update that assertion or restore the custom row (behaviour decision — left untouched)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "MonteCarlo.jsx", "issue": "CRITICAL (fixed in-test-scope): 'ReferenceError: onTwoWayResult is not defined' — line 670 passes onResult={onTwoWayResult} but the component signature (line 60) never destructured that prop and Planner.jsx (line 440) never passes it. Result: an uncaught runtime error blanked the ENTIRE Monte Carlo tab immediately after any MC run (existing MC results, regime panel and the new panel all gone). I added onTwoWayResult to the destructured props to unblock testing; main agent must decide whether to thread the result into Planner state (like onRegimeResult) or drop the prop.", "selector": "[data-testid=\"two-way-panel\"]", "priority": "CRITICAL"},
+      {"component": "TwoWaySensitivityPanel / TwoWaySensitivityPage", "issue": "Exact-tie cells (delta = 0, whole lost_decade column '+$0') are painted with the AMBER hue (delta > 0 is false), implying 'not converting wins' for a tie, and are prefixed '+'. Consider a neutral/uncolored treatment for 0.", "selector": "[data-testid=\"two-way-cell-0-3\"]", "priority": "LOW"},
+      {"component": "TwoWaySensitivityPanel / TwoWaySensitivityPage break-even row", "issue": "lost_decade shows '0.0%' with no 'extrapolated' flag for an all-zero column (see backend minor issue) — reads as a firm break-even.", "selector": "[data-testid=\"two-way-breakeven-lost_decade\"]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Client Report printed pages (pre-existing, NOT the new page)", "issues": ["cr-page-assumptions content height 1130px and cr-page-montecarlo 1053px exceed the ~1050px page frame (risk of clipping/spill in the printed PDF). The new cr-page-two-way is 900px with the grid 504px wide inside a 720px frame — no overflow."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_two_way_http.py",
+    "/app/test_reports/pytest/iteration_31.xml"
+  ],
+  "action_items": [
+    "Decide the final wiring for onTwoWayResult in MonteCarlo.jsx/Planner.jsx (I only added the missing prop to stop the crash; nothing consumes the result today).",
+    "Make the break-even for a fully flat / all-zero delta column return n/a (or flag extrapolated) instead of 0.0% un-flagged (lost_decade).",
+    "Investigate why lost_decade produces an identical heir outcome for with- vs no-conversions at every heir rate (heir_rate_sensitivity returns the same $4,052,162 in both branches) — verify that is economically intended and not a regime/branch mix-up.",
+    "Reconcile tests/test_iter30_regime_det_http.py::test_response_shape (7 vs 6 rows after 'custom' exclusion).",
+    "Optional: trim cr-page-assumptions / cr-page-montecarlo content to fit the ~1050px page frame."
+  ],
+  "critical_code_review_comments": [
+    "MonteCarlo.jsx used a prop that was never declared or passed — a lint/dead-reference class bug that took down a whole tab; add an eslint no-undef gate for JSX props in CI.",
+    "_break_even_from_points treats a zero-span segment as a real crossover and returns the lower rate with extrapolated=False; it should return (None, True) for a degenerate/flat column.",
+    "TwoWaySensitivityPanel.jsx and clientReport/TwoWaySensitivityPage.jsx duplicate the GREEN/AMBER constants and the cellBg() function verbatim — extract to a shared module (DRY).",
+    "projection.py is very large (2650+ lines); the two-way/regime-compare blocks are self-contained and should move to their own module."
+  ],
+  "updated_files": [
+    "/app/frontend/src/components/MonteCarlo.jsx (added missing onTwoWayResult prop to component signature)",
+    "/app/backend/tests/test_iter31_two_way_http.py (new)",
+    "/app/backend/tests/test_heir_rate_sensitivity_http.py (BASE_URL now falls back to /app/frontend/.env; suite was erroring with MissingSchema)"
+  ],
+  "success_rate": {"backend": "95% (39/41 across two-way + heir-sens + regime suites; 1 new-feature edge case, 1 stale legacy assertion)", "frontend": "100% after the onTwoWayResult fix (0% before — MC tab crashed)"},
+  "seed_data_creation": "None — used the default scenario from GET /api/defaults.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Master passphrase i4m07MnVDhpTYkc1giC6wWDv (login screen -> Master tab; POST /api/auth/pin/verify, rate-limited 5/min)",
+  "context_for_next_testing_agent": "Backend suite: /app/backend/tests/test_iter31_two_way_http.py (run with -n 0). Verified values for the default scenario: row0 deltas [-6,315,391 | +10,909,597 | -7,788,438 | +0 | -5,655,568 | -858,327]; break-even historical_avg 36.4%, last_50_years -16.8% (extrapolated), 70s_stagflation 92.5% (extrapolated), lost_decade 0.0%, high_inflation 41.1% (extrapolated), low_return n/a; caption length 323 chars. In-app panel only renders after the main MC run (data-testid two-way-panel, then two-way-run-btn). Report page: cr-page-two-way is page 20 of 23, immediately after cr-page-heir-rate-sensitivity, numbering contiguous 1-23, no gaps/dupes. NOTE the report is rendered twice (client-report-preview-inner + client-report-print-root) so scope locators or use .first. The regime-compare REPORT page (cr-page-regime-compare) is off by default (localStorage toggle client_report_regime_v1) — its absence is expected, not a bug.",
+  "rca_of_the_issue": "MonteCarlo.jsx line 670 renders <TwoWaySensitivityPanel onResult={onTwoWayResult}> but onTwoWayResult was never added to the component's destructured props (line 60) nor passed by Planner.jsx, so evaluating the JSX threw a ReferenceError during render of the {res && ...} branch — i.e. on every completed Monte Carlo run — collapsing the whole tab to the CRA runtime-error overlay. Adding the prop name to the signature makes it undefined-safe (the panel calls onResult?.(res)). Separately, the lost_decade all-zero column exposes a logic gap in _break_even_from_points: a zero-span segment satisfies the (d0 <= 0 <= d1) crossover test, so it returns the lower rate (0.0) flagged as non-extrapolated instead of n/a."
+}

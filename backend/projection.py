@@ -2547,3 +2547,112 @@ def regime_deterministic_compare(cfg: dict) -> dict:
     if len(_REGIME_DET_CACHE_ORDER) > 32:
         _REGIME_DET_CACHE.pop(_REGIME_DET_CACHE_ORDER.pop(0), None)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Two-way sensitivity: heir marginal rate x market regime
+# Reuses heir_rate_sensitivity (which projects each with/no-conversions branch
+# ONCE and re-prices the SECURE-10 heir horizon per candidate rate) evaluated
+# under every named market regime. Output is a matrix of the conversion delta in
+# after-tax wealth to heirs plus a per-regime interpolated break-even rate.
+# Cached per plan-config hash: 6 regimes x 2 branches = 12 full projections.
+# ---------------------------------------------------------------------------
+TWO_WAY_HEIR_RATES = (0.0, 0.10, 0.14, 0.26, 0.36, 0.41)
+
+TWO_WAY_CAPTION = (
+    "The case for conversion should be judged across this whole surface, not at a "
+    "single assumed cell. The break-even rate is an output of this household's facts "
+    "and this model's assumptions — it moves with the dividend yield, the funding "
+    "order, and the heirs' realization behavior, and should never be quoted from a "
+    "case study."
+)
+
+_TWO_WAY_CACHE = {}
+_TWO_WAY_CACHE_ORDER = []
+
+
+def _break_even_from_points(pts):
+    """Given sorted [(rate, delta)] points, return (break_even_rate, extrapolated).
+    Interpolate the first sign crossover (same approach as _fo_break_even_rate). If
+    none inside the band, extrapolate the last segment linearly to delta=0 and flag
+    it 'extrapolated'. If conversion changes nothing (the whole column is ~$0) there
+    is no meaningful break-even -> (None, False)."""
+    if not pts or all(abs(d) < 1.0 for _, d in pts):
+        return None, False
+    for i in range(1, len(pts)):
+        r0, d0 = pts[i - 1]
+        r1, d1 = pts[i]
+        if (d0 <= 0 <= d1) or (d0 >= 0 >= d1):
+            span = d1 - d0
+            if abs(span) < 1e-9:
+                return round(r0, 4), False
+            return round(r0 + (r1 - r0) * (-d0 / span), 4), False
+    if len(pts) >= 2:
+        r0, d0 = pts[-2]
+        r1, d1 = pts[-1]
+        span = d1 - d0
+        if abs(span) < 1e-9:
+            return None, True
+        return round(r1 - d1 * (r1 - r0) / span, 4), True
+    return None, False
+
+
+def two_way_sensitivity(cfg: dict) -> dict:
+    """Conversion delta (after-tax wealth to heirs, nominal) across the heir marginal
+    rate x market regime surface, plus a per-regime break-even rate. Cached per config
+    hash. The 0% rate doubles as the charitable-beneficiary (no income tax) case."""
+    import hashlib
+    import json as _json
+    from market_scenarios import PRESETS
+
+    key = hashlib.sha256(_json.dumps(cfg, sort_keys=True, default=str).encode()).hexdigest()
+    if key in _TWO_WAY_CACHE:
+        return _TWO_WAY_CACHE[key]
+
+    rates = list(TWO_WAY_HEIR_RATES)
+    rate_labels = [
+        "0% (charity / no income tax)" if abs(r) < 1e-9 else f"{round(r * 100)}%"
+        for r in rates
+    ]
+
+    regimes = []
+    per_regime = {}
+    modeled = None
+    for pid, preset in PRESETS.items():
+        if pid == "custom":  # no-op passthrough == baseline; excluded (matches MC/deterministic tables)
+            continue
+        rc = copy.deepcopy(cfg)
+        rc["market_scenario"] = {"id": pid}
+        be = heir_rate_sensitivity(rc, rates=rates)  # applies the regime internally
+        modeled = be.get("modeled_rate")
+        w = {e["rate"]: e["after_tax_estate_to_heirs"] for e in be["branches"]["with_conversions"]}
+        n = {e["rate"]: e["after_tax_estate_to_heirs"] for e in be["branches"]["no_conversions"]}
+        deltas = {r: round(w[r] - n[r], 2) for r in be["rates"] if r in w and r in n}
+        pts = sorted((r, deltas[r]) for r in deltas if r <= 0.41 + 1e-9)
+        be_rate, extrap = _break_even_from_points(pts)
+        infl = (apply_market_scenario(copy.deepcopy(rc)).get("projection", {}) or {}).get("general_inflation", 0.03)
+        regimes.append({"preset_id": pid, "label": preset["label"], "general_inflation": round(infl, 4)})
+        per_regime[pid] = {"deltas": deltas, "break_even": be_rate, "break_even_extrapolated": extrap}
+
+    matrix = [[per_regime[rg["preset_id"]]["deltas"].get(r) for rg in regimes] for r in rates]
+    break_even = [
+        {"preset_id": rg["preset_id"],
+         "rate": per_regime[rg["preset_id"]]["break_even"],
+         "extrapolated": per_regime[rg["preset_id"]]["break_even_extrapolated"]}
+        for rg in regimes
+    ]
+
+    out = {
+        "rates": rates,
+        "rate_labels": rate_labels,
+        "regimes": regimes,
+        "matrix": matrix,           # rate-major: matrix[rate_index][regime_index] = nominal conversion delta
+        "break_even": break_even,   # per regime
+        "modeled_rate": modeled,
+        "caption": TWO_WAY_CAPTION,
+    }
+    _TWO_WAY_CACHE[key] = out
+    _TWO_WAY_CACHE_ORDER.append(key)
+    if len(_TWO_WAY_CACHE_ORDER) > 32:
+        _TWO_WAY_CACHE.pop(_TWO_WAY_CACHE_ORDER.pop(0), None)
+    return out

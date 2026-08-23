@@ -139,6 +139,9 @@ export const runRegimeCompare = (opts) => http.post(`/montecarlo/regime-compare`
 // Deterministic (single-path) projection under every named regime, both branches.
 export const runRegimeDeterministicCompare = (config) =>
   http.post(`/regime-deterministic-compare`, { config }).then((r) => r.data);
+// Two-way sensitivity heat surface: heir marginal rate x market regime.
+export const runTwoWaySensitivity = (config) =>
+  http.post(`/two-way-sensitivity`, { config }).then((r) => r.data);
 
 // Two configs for the "deplete IRA now vs. leave it for the children" comparison:
 // fund the conversion tax / spending IRA-first (deplete) vs Taxable-first (leave IRA).
