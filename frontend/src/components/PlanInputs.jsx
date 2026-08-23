@@ -201,7 +201,7 @@ export const PlanInputs = ({ scenario, setScenario, onRequestRunSweep = null }) 
   const updProj = (k, v) => setScenario((p) => ({ ...p, projection: { ...p.projection, [k]: v } }));
 
   // Keep the legacy integer age fields in sync with the new date fields. Many
-  // downstream consumers (SS Optimizer, Client Report, backend projection) still
+  // downstream consumers (SS Analyzer, Client Report, backend projection) still
   // read `_ss_claim_age` and `_retirement_age` — mirror them so nothing breaks.
   useEffect(() => {
     const h0 = scenario?.household || {};
@@ -407,9 +407,9 @@ export const PlanInputs = ({ scenario, setScenario, onRequestRunSweep = null }) 
           <div>
             <h3 className="font-display text-lg font-bold tracking-tight">Planning Goal</h3>
             <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
-              Pick what this plan should optimize for. The Strategy Optimizer's sweep,
+              Pick what this plan should optimize for. The Strategy Analyzer's sweep,
               ranked table, and AI analysis all follow this lens — change it anytime
-              here or on the Strategy Optimizer tab.
+              here or on the Strategy Analyzer tab.
             </p>
           </div>
         </div>
@@ -850,7 +850,7 @@ export const PlanInputs = ({ scenario, setScenario, onRequestRunSweep = null }) 
             className="mt-1 bg-[#F9F8F6]" />
           <p className="text-[10px] text-muted-foreground mt-1" data-testid="dividend-derivation">
             Default 1% (0.01). ≈ <span className="font-medium text-[#4A6741]">{fmtUSD(divDollars)}/yr</span> on {fmtUSD(taxableTotal)} taxable balances — this is the
-            <span className="font-medium"> Qualified Dividends + Recurring LTCG</span> used by the Single-Year Optimizer. Paid to cash as qualified dividends (taxed at LTCG rates).
+            <span className="font-medium"> Qualified Dividends + Recurring LTCG</span> used by the Single-Year Analyzer. Paid to cash as qualified dividends (taxed at LTCG rates).
           </p>
         </div>
         <div className="overflow-x-auto">

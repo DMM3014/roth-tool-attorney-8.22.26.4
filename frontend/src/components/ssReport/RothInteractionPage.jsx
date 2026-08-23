@@ -118,7 +118,7 @@ export const RothInteractionPage = ({ withRoth, scenario, ...footProps }) => {
 
       <Sub>
         The bars above are drawn from your actual projection at the current strategy. If the Roth-conversion schedule
-        or SS claim ages change on the Plan Inputs / SS Optimizer tabs, this chart updates automatically.
+        or SS claim ages change on the Plan Inputs / SS Analyzer tabs, this chart updates automatically.
       </Sub>
     </Page>
   );

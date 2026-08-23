@@ -488,12 +488,12 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
                 Include robustness page (market-crash stress test)
                 {!stressResult && (
                   <span className="block text-[10px] text-[#C87941]">
-                    Run the Monte Carlo stress test on the Strategy Optimizer tab first.
+                    Run the Monte Carlo stress test on the Strategy Analyzer tab first.
                   </span>
                 )}
                 {stressResult && stressStale && (
                   <span className="block text-[10px] text-[#C87941]" data-testid="pres-robustness-stale">
-                    Plan changed since the stress test ran — re-run it on the Strategy Optimizer tab for current numbers.
+                    Plan changed since the stress test ran — re-run it on the Strategy Analyzer tab for current numbers.
                   </span>
                 )}
               </span>
@@ -673,7 +673,7 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
 
 // ================================================================================
 // Robustness page — deterministic winner vs the P10 robust winner, side by side.
-// Data comes from the Strategy Optimizer's Monte Carlo stress test (lifted via Planner).
+// Data comes from the Strategy Analyzer's Monte Carlo stress test (lifted via Planner).
 // ================================================================================
 const StressWinnerCard = ({ tag, tagColor, s, seqPct }) => (
   <div style={{ flex: 1, border: `1px solid ${tagColor}`, background: `${tagColor}0D`, borderRadius: 8, padding: "12px 14px" }}>

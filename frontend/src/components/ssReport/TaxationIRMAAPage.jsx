@@ -101,7 +101,7 @@ export const TaxationIRMAAPage = ({ withRoth, scenario, ...footProps }) => {
           </div>
           <p style={{ fontSize: 10, color: "#5A4020", lineHeight: 1.55, margin: 0 }}>
             Total IRMAA premiums across the plan horizon: <strong>{fmtUSD(totalIrmaa)}</strong>.
-            The Roth-conversion strategy on the &ldquo;Strategy Optimizer&rdquo; tab can route conversions <em>around</em>
+            The Roth-conversion strategy on the &ldquo;Strategy Analyzer&rdquo; tab can route conversions <em>around</em>
             the IRMAA cliffs when possible — see the &ldquo;IRMAA-aware&rdquo; toggle there.
           </p>
         </div>

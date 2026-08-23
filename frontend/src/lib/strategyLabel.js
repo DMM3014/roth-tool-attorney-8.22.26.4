@@ -1,7 +1,7 @@
 // Shared derivation of the currently-modeled Roth conversion strategy from a
 // scenario config. Used by every page that displays results driven by
 // `scenario.roth` so the label stays in sync across Projection, Detail/Cashflow,
-// Analytics, Presentation, and the Strategy Optimizer.
+// Analytics, Presentation, and the Strategy Analyzer.
 //
 // Shape returned:
 //   { active, kind, label, pctLabel, yearsLabel, fundingOrder }
@@ -62,7 +62,7 @@ export const getStrategyLabel = (scenario) => {
     };
   }
 
-  // Phased schedule (per-year target brackets set by the Strategy Optimizer)
+  // Phased schedule (per-year target brackets set by the Strategy Analyzer)
   const yt = roth.year_targets;
   if (yt && Object.keys(yt).length > 0) {
     const years = Object.keys(yt).map((y) => parseInt(y, 10)).sort((a, b) => a - b);

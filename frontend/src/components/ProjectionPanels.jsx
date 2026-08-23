@@ -181,14 +181,14 @@ export const SweepPanel = ({ sweep, sweeping, findOptimal, withRoth }) => (
           <TooltipProvider delayDuration={150}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button type="button" aria-label="Why this may differ from the Strategy Optimizer" data-testid="sweep-winner-why"
+                <button type="button" aria-label="Why this may differ from the Strategy Analyzer" data-testid="sweep-winner-why"
                   className="inline-flex items-center gap-1 rounded-full border border-[#4A6741]/30 bg-white px-2 py-0.5 text-[10px] font-medium text-[#4A6741] hover:bg-[#4A6741]/10">
                   <HelpCircle className="h-3 w-3" /> Why?
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs bg-[#1A1A1A] text-white text-[11px] leading-snug px-3 py-2">
                 This picks the best <span className="font-semibold">single flat bracket</span> held constant every year of your
-                current start-to-end window. The <span className="font-semibold">Strategy Optimizer</span> tab searches a wider space —
+                current start-to-end window. The <span className="font-semibold">Strategy Analyzer</span> tab searches a wider space —
                 time-varying phased schedules (e.g. 32% pre-SS then 22% after) and narrower conversion windows — so its leader may differ.
                 Both rank by the same metric: highest after-tax to heirs, tiebreak lowest lifetime tax.
               </TooltipContent>

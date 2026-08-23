@@ -4,11 +4,11 @@ import {
   GOAL_PRESETS, getOptimizerPrefs, presetMatchState, applyPresetToScenario,
 } from "@/lib/optimizerPrefs";
 
-// One-click "goal presets" for the Strategy Optimizer.
+// One-click "goal presets" for the Strategy Analyzer.
 //
 // Renders a row of large tap-targets, one per PRESET. Clicking a preset writes
 // `scenario.optimizer.{goal, include_phased, sweep_funding_orders, preset_id}`
-// atomically — the Strategy Optimizer page reads those fields directly, so the
+// atomically — the Strategy Analyzer page reads those fields directly, so the
 // choice is instantly reflected there without a run. Rendered on both PlanInputs
 // (top-of-page) and StrategyOptimizer (above the goal picker).
 
@@ -28,7 +28,7 @@ export const GoalPresetButtons = ({
   const onClick = (preset) => {
     applyPresetToScenario(setScenario, preset);
     // When the host (e.g. Plan Inputs) provides an `onRunSweep` hook, offer a
-    // one-tap action that jumps to the Strategy Optimizer tab and kicks off the
+    // one-tap action that jumps to the Strategy Analyzer tab and kicks off the
     // sweep immediately — the preset already primed goal/phased/funding-sweep
     // fields, so the user can go from "pick a lens" to "see results" in one gesture.
     const opts = { description: preset.tagline };

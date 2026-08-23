@@ -157,7 +157,7 @@ export const SSOptimizer = ({ scenario, setScenario }) => {
       <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="ss-controls">
         <div className="flex items-center gap-2 mb-1">
           <CalendarClock className="h-4 w-4 text-[#4A6741]" />
-          <h3 className="font-display text-lg font-bold tracking-tight">Social Security Claiming-Age Optimizer</h3>
+          <h3 className="font-display text-lg font-bold tracking-tight">Social Security Claiming-Age Analyzer</h3>
         </div>
         <p className="text-xs text-muted-foreground mb-5 max-w-3xl">
           Sweeps <span className="font-medium">client &amp; spouse claim ages (62 / 65 / 67 / 70)</span> using
@@ -171,7 +171,7 @@ export const SSOptimizer = ({ scenario, setScenario }) => {
           className="bg-[#4A6741] hover:bg-[#3B5234] text-white"
           data-testid="ss-run">
           {running ? (<><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Sweeping…</>)
-            : (<><Play className="h-4 w-4 mr-1" /> Run SS optimizer</>)}
+            : (<><Play className="h-4 w-4 mr-1" /> Run SS analyzer</>)}
         </Button>
         {err && <p className="mt-3 text-xs text-[#B84A4A]" data-testid="ss-error">{err}</p>}
         {result?.fra_amounts && (
@@ -310,7 +310,7 @@ export const SSOptimizer = ({ scenario, setScenario }) => {
                 <strong>competes with Roth conversions</strong> for headroom in the 12% and 22% brackets. The pair that
                 maximizes lifetime SS collected can therefore leave the household paying <em>more</em> total tax and
                 delivering <em>less</em> after-tax legacy — because it forces conversions into higher brackets or
-                skips them entirely. The optimizer above uses <strong>after-tax legacy at 2nd death</strong> as the
+                skips them entirely. The analyzer above uses <strong>after-tax legacy at 2nd death</strong> as the
                 objective for exactly this reason. If the &quot;highest lifetime SS&quot; row and the &quot;highest after-tax legacy&quot;
                 row differ, the second is usually the better plan.
               </p>
@@ -326,7 +326,7 @@ export const SSOptimizer = ({ scenario, setScenario }) => {
           title="AI analysis of this Social Security comparison"
           focus="You are reviewing a Social Security claim-age optimization result across (Client claim age, Spouse claim age) pairs at 62/65/67/70. Explain the trade-offs of the optimal pair in plain English — early claim vs delayed benefit, survivor benefits, tax interaction with Roth conversions, and the impact on after-tax legacy. 4-5 crisp bullets max."
           summary={{
-            page: "SS Optimizer",
+            page: "SS Analyzer",
             fra_amounts: result.fra_amounts,
             optimal: result.best,
             baseline: result.baseline,

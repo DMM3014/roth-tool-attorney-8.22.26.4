@@ -699,7 +699,7 @@ export const WhitePaper = ({ print = false, scenario = null }) => {
         <P>
           These are nominal-dollar results for one household under fixed assumptions. §5.3, §5.4 and §5.6 bracket the three largest
           sensitivities — the heirs&apos; realization behavior, longevity, and market risk — but heir tax rates, tax-law drift, state regimes, and
-          spending shocks remain modeled only as fixed inputs. The strategy optimizer and Monte Carlo engine should be run per household rather
+          spending shocks remain modeled only as fixed inputs. The strategy analyzer and Monte Carlo engine should be run per household rather
           than assuming this case study generalizes.
         </P>
         <P>
@@ -836,7 +836,7 @@ export const WhitePaper = ({ print = false, scenario = null }) => {
           <li><span className="font-semibold">Run the standing plan at the comfortable bracket</span> — the lowest one that retires the IRA within the window you actually have.</li>
           <li><span className="font-semibold">Convert into higher bands conditionally, not automatically:</span> in down markets (a bear market puts every conversion on sale — the tax is fixed on the depressed balance and the recovery happens inside the Roth), in unusually low-income years, or as a survivor&apos;s single-filer compression approaches.</li>
           <li><span className="font-semibold">Phase, don&apos;t bullet.</span> A bracket-managed annual program dollar-cost-averages the tax basis across many market states; a heroic single-year conversion bets the whole tax bill on one valuation.</li>
-          <li><span className="font-semibold">Size each year&apos;s conversion against the bump zone.</span> A conversion dollar that pushes qualified dividends or harvested gains across the 0/15/20% thresholds — or across a NIIT or IRMAA cliff — carries an effective marginal cost well above its statutory bracket.<Fn n={12} /> The planner&apos;s single-year optimizer prices these cliffs before each year&apos;s conversion is committed.</li>
+          <li><span className="font-semibold">Size each year&apos;s conversion against the bump zone.</span> A conversion dollar that pushes qualified dividends or harvested gains across the 0/15/20% thresholds — or across a NIIT or IRMAA cliff — carries an effective marginal cost well above its statutory bracket.<Fn n={12} /> The planner&apos;s single-year analyzer prices these cliffs before each year&apos;s conversion is committed.</li>
           <li><span className="font-semibold">Respect the irreversibility asymmetry.</span> An under-converter can accelerate in any future year; an over-converter can never claw back. When two strategies score close — as 24% and 32% do here — the option value of waiting favors the lower default.</li>
         </ul>
 

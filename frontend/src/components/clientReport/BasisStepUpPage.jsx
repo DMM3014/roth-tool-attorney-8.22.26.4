@@ -178,7 +178,7 @@ export const BasisStepUpPage = ({ scenario, rows, ...footProps }) => {
           (before subtracting the lifetime conversion tax).
         </p>
         <p style={{ fontSize: 10, lineHeight: 1.55, color: "#5A5A5A", margin: 0, marginTop: 6 }}>
-          The Roth Optimizer tab quantifies this trade-off exactly — comparing lifetime conversion tax paid against
+          The Roth Analyzer tab quantifies this trade-off exactly — comparing lifetime conversion tax paid against
           the estate-tax + heir-drawdown-tax avoided.
         </p>
       </div>
@@ -197,7 +197,7 @@ export const BasisStepUpPage = ({ scenario, rows, ...footProps }) => {
           <strong>A note on paying for Roth conversions:</strong> in many situations, using <strong>taxable
           assets</strong> to fund Roth conversions — even if selling them realizes taxable capital gains — can
           produce <strong>larger Roth IRA balances passing to heirs</strong>, because dollars kept inside the IRA
-          convert to Roth instead of being consumed by the tax bill. The Roth Optimizer&apos;s funding-order
+          convert to Roth instead of being consumed by the tax bill. The Roth Analyzer&apos;s funding-order
           refinement quantifies this trade-off on this plan.
         </p>
         <p style={{ fontSize: 10, lineHeight: 1.55, color: "#5A5A5A", margin: 0, marginTop: 6 }}>
@@ -208,7 +208,7 @@ export const BasisStepUpPage = ({ scenario, rows, ...footProps }) => {
       </div>
       <Sub>
         Sensitivities: SS provisional-income cliffs, IRMAA tiers, and NIIT bumps can shift the year-by-year optimum —
-        the Roth Optimizer sweeps these edges. {TRUSTEE_DISTRIBUTION_NOTE}
+        the Roth Analyzer sweeps these edges. {TRUSTEE_DISTRIBUTION_NOTE}
       </Sub>
 
       {/* Legal caveat */}

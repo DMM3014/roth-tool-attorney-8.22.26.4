@@ -294,7 +294,7 @@ export const StrategyOptimizer = ({
       <Card className="p-6 border-[#EBE8E0] shadow-none" data-testid="strategy-controls">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <Trophy className="h-4 w-4 text-[#4A6741]" />
-          <h3 className="font-display text-lg font-bold tracking-tight">Multi-Year Conversion Strategy Optimizer</h3>
+          <h3 className="font-display text-lg font-bold tracking-tight">Multi-Year Conversion Strategy Analyzer</h3>
           <div className="ml-auto flex items-center gap-2 flex-wrap" data-testid="applied-strategy-badge">
             <span className="label-cap text-muted-foreground text-[10px]">Currently applied</span>
             {appliedSummary.active ? (
@@ -620,7 +620,7 @@ export const StrategyOptimizer = ({
         </Card>
       )}
 
-      {/* Why does the optimizer favor early high-tax conversions? — collapsible explainer */}
+      {/* Why does the analyzer favor early high-tax conversions? — collapsible explainer */}
       <AggressiveStrategyExplainer visible={!!winner} />
 
       {/* AI plain-English analysis of the current ranking */}
@@ -630,7 +630,7 @@ export const StrategyOptimizer = ({
           title="AI analysis of this strategy sweep"
           focus={`You are reviewing a multi-year Roth-conversion strategy sweep result. The user is currently ranking by "${activeOption.label}". Explain in plain English why the leader beats the baseline, the trade-offs of the leader's funding order and bracket target, and any caveats (aggressive early conversions, RMD wall, IRMAA cliffs, SS timing). 4-5 crisp bullets max.`}
           summary={{
-            page: "Strategy Optimizer",
+            page: "Strategy Analyzer",
             rank_metric: activeOption.label,
             rank_direction: activeOption.dir,
             strategies_evaluated: result.results.length,

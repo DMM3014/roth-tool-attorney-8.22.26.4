@@ -29,7 +29,7 @@ export const DECK_PAGES = [
   {
     key: "robustness", label: "Robustness — market-crash stress test",
     src: "branding", flag: "include_robustness",
-    missingHint: "Run the stress test on the Strategy Optimizer tab first",
+    missingHint: "Run the stress test on the Strategy Analyzer tab first",
   },
   {
     key: "regimes", label: "Six market futures — regime comparison",

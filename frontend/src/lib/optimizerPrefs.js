@@ -1,6 +1,6 @@
-// Shared rank options + goal presets for the Strategy Optimizer.
+// Shared rank options + goal presets for the Strategy Analyzer.
 //
-// The Strategy Optimizer used to keep `sortKey / includePhased / sweepFundingOrders`
+// The Strategy Analyzer used to keep `sortKey / includePhased / sweepFundingOrders`
 // in local React state. To let the Plan Inputs tab expose the same "goal presets"
 // (Legacy-first, Tax-minimizer, Roth-maximizer, …) the preferences live under
 // `scenario.optimizer.*` so both tabs read/write the same source of truth and

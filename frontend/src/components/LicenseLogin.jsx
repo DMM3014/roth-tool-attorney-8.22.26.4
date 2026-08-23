@@ -75,7 +75,7 @@ export const LicenseLogin = ({ onUnlock }) => {
             <Leaf className="h-6 w-6 text-white" />
           </div>
           <h1 className="font-display text-xl font-bold tracking-tight mt-4 text-[#1A1A1A]">
-            Roth Conversion &amp; Retirement Planner
+            Retirement & Wealth-Transfer Illustration — Attorney Edition
           </h1>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
             <Lock className="h-3.5 w-3.5" />

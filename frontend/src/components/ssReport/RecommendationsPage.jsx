@@ -1,7 +1,7 @@
 import { fmtUSD } from "@/lib/api";
 import { Page, H2, H3, P, Sub } from "./helpers";
 
-// Recommendations page - synthesizes the SS optimizer winner + Roth conversion doctrine
+// Recommendations page - synthesizes the SS analyzer winner + Roth conversion doctrine
 // into 3-4 client-facing action bullets.
 export const RecommendationsPage = ({ ssResult, scenario, fraAmounts, ...footProps }) => {
   const h = scenario?.household || {};
@@ -65,7 +65,7 @@ export const RecommendationsPage = ({ ssResult, scenario, fraAmounts, ...footPro
         </>
       ) : (
         <P>
-          Run the SS Optimizer sweep on the &ldquo;SS Optimizer&rdquo; tab to see specific numbers for the recommended
+          Run the SS Analyzer sweep on the &ldquo;SS Analyzer&rdquo; tab to see specific numbers for the recommended
           claim pair here.
         </P>
       )}
@@ -73,13 +73,13 @@ export const RecommendationsPage = ({ ssResult, scenario, fraAmounts, ...footPro
       <H3>Next steps</H3>
       <ul style={{ fontSize: 10.5, lineHeight: 1.6, color: "#2A2A2A", paddingLeft: 20, marginBottom: 6 }}>
         <li>
-          <strong>Apply the leader in your plan.</strong> On the SS Optimizer tab, click &ldquo;Apply optimal pair&rdquo;
-          to lock the recommended claim ages into your projection. Rerun the Strategy Optimizer afterward — the widened
+          <strong>Apply the leader in your plan.</strong> On the SS Analyzer tab, click &ldquo;Apply optimal pair&rdquo;
+          to lock the recommended claim ages into your projection. Rerun the Strategy Analyzer afterward — the widened
           Roth-conversion window may now support a larger conversion schedule than before.
         </li>
         <li>
           <strong>Model IRMAA impact.</strong> Larger pre-SS conversions can trigger IRMAA cliffs 2 years later. Enable
-          the IRMAA-aware routing on the Strategy Optimizer to avoid paying premium surcharges you don&apos;t need to.
+          the IRMAA-aware routing on the Strategy Analyzer to avoid paying premium surcharges you don&apos;t need to.
         </li>
         <li>
           <strong>Coordinate with the estate plan.</strong> Delaying SS also delays the survivor-benefit calculation
@@ -93,7 +93,7 @@ export const RecommendationsPage = ({ ssResult, scenario, fraAmounts, ...footPro
 
       <H3>Important caveats</H3>
       <ul style={{ fontSize: 10, lineHeight: 1.6, color: "#5A5A5A", paddingLeft: 20 }}>
-        <li>The optimizer maximizes <em>after-tax legacy at second death</em>. If maximum lifetime income (spending)
+        <li>The analyzer maximizes <em>after-tax legacy at second death</em>. If maximum lifetime income (spending)
           is the client&apos;s primary objective, the ranking may differ &mdash; discuss the trade-off explicitly.</li>
         <li>All results depend on the modeled life expectancy. A meaningful longevity revision (health event, family
           history update) should trigger a re-run.</li>

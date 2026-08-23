@@ -10,12 +10,12 @@
 //   • Market Regime     → mutates scenario.market_scenario.id
 //
 // Notes:
-//   - Custom / phased schedules (produced by the Strategy Optimizer's phased
+//   - Custom / phased schedules (produced by the Strategy Analyzer's phased
 //     picker or the year_targets sweep) are surfaced as a read-only "Custom /
 //     phased" entry; picking a bracket-fill replaces it with a single-bracket
 //     schedule. This is intentional — the strip is a quick reset, not a phased
 //     editor. Advisors who want to keep the phased schedule leave the strip
-//     alone and use the Strategy Optimizer as usual.
+//     alone and use the Strategy Analyzer as usual.
 import { useMemo, useState } from "react";
 import { Trophy, Layers, LineChart, AlertTriangle, Save, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -211,7 +211,7 @@ export const PlanControlStrip = ({ scenario, setScenario, testidPrefix = "plan-c
               </SelectGroup>
               {isPhased && (
                 <SelectGroup>
-                  <SelectLabel className="text-[10.5px]">From Strategy Optimizer</SelectLabel>
+                  <SelectLabel className="text-[10.5px]">From Strategy Analyzer</SelectLabel>
                   <SelectItem value="custom" disabled
                               data-testid={`${testidPrefix}-strategy-custom`}>
                     Custom / phased (locked)
@@ -223,7 +223,7 @@ export const PlanControlStrip = ({ scenario, setScenario, testidPrefix = "plan-c
           {isPhased && (
             <p className="mt-1 flex items-start gap-1 text-[10px] text-[#C87941]">
               <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
-              <span>Phased schedule active — pick a bracket to replace it, or edit in Strategy Optimizer.</span>
+              <span>Phased schedule active — pick a bracket to replace it, or edit in Strategy Analyzer.</span>
             </p>
           )}
         </div>

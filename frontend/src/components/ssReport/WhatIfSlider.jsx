@@ -186,7 +186,7 @@ export const WhatIfSlider = ({ scenario, setScenario, fraAmounts, fraAges, ssRes
             projecting || sweeping
               ? "Re-projecting…"
               : (deltaVsWinner != null
-                ? (deltaVsWinner >= 0 ? `+${fmtUSD(deltaVsWinner)} vs optimizer` : `${fmtUSD(deltaVsWinner)} vs optimizer`)
+                ? (deltaVsWinner >= 0 ? `+${fmtUSD(deltaVsWinner)} vs analyzer` : `${fmtUSD(deltaVsWinner)} vs analyzer`)
                 : "Move a slider to preview")
           }
           tone={deltaVsWinner != null ? (deltaVsWinner >= 0 ? "green" : "orange") : "muted"}

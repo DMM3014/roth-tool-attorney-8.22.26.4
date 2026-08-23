@@ -9,7 +9,7 @@ import { API, authHeaders } from "@/lib/api";
 // endpoint — same backend and API key semantics as the full AIInsights chat,
 // but without the follow-up thread. Designed to be dropped onto pages that
 // benefit from a single "here's what these numbers mean" analysis (Strategy
-// Optimizer, SS Optimizer, Monte Carlo, Compare, Presentation).
+// Optimizer, SS Analyzer, Monte Carlo, Compare, Presentation).
 //
 // Props:
 //   title    — H3 label, e.g. "AI analysis of this strategy"

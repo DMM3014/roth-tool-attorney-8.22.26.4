@@ -60,7 +60,7 @@ import { useSharedGuardrail } from "@/hooks/useSharedGuardrail";
 import { useSharedHalt } from "@/hooks/useSharedHalt";
 
 // ============================================================================
-// Client Retirement Status / Action Report — top-level orchestrator
+// Retirement & Wealth-Transfer Illustration — Attorney Edition — top-level orchestrator
 // Handles data fetching (2 projections + Monte Carlo + AI review streaming) and
 // composes the individual page components under ./clientReport/ into a single
 // print/PDF-optimized document.
@@ -599,7 +599,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
         "\n### Advisor Talking Points (3-4 bullets)\n" +
         "Crisp bullets for the advisor to raise during the client meeting: the 3 most compelling numbers, " +
         "one caveat to proactively address, and one specific next-step recommendation.",
-      report: "Client Retirement Status / Action Report",
+      report: "Retirement & Wealth-Transfer Illustration — Attorney Edition",
       household: anonymizedHousehold,
       strategy: getStrategyLabel(scenario)?.label,
       market_regime: marketPreset?.label,
@@ -800,7 +800,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                 <FileText className="h-5 w-5 text-white" />
               </div>
               <div>
-                <p className="font-display text-base font-bold tracking-tight text-[#1A1A1A]">Client Retirement Status / Action Report</p>
+                <p className="font-display text-base font-bold tracking-tight text-[#1A1A1A]">Retirement & Wealth-Transfer Illustration — Attorney Edition</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5 max-w-2xl leading-relaxed">
                   Long-form, print-optimized narrative report for the client. Covers the plan overview, savings, income &amp; expenses, cash flow, taxes, Monte Carlo, the SECURE Act legacy analysis, and an AI-generated review the advisor can edit before delivering.
                 </p>
@@ -870,7 +870,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
               <Label className="text-[11px] label-cap">Cover subtitle</Label>
               <Input data-testid="cr-input-subtitle" value={branding.cover_subtitle}
                 onChange={(e) => upd("cover_subtitle", e.target.value)}
-                placeholder="Retirement Status & Action Report" className="h-9 text-sm mt-1" />
+                placeholder="Retirement & Wealth-Transfer Illustration — Attorney Edition" className="h-9 text-sm mt-1" />
             </div>
             <div className="md:col-span-2 lg:col-span-3">
               <Label className="text-[11px] label-cap">Cover intro paragraph (optional)</Label>

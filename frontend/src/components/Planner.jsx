@@ -50,7 +50,7 @@ export const Planner = ({ session = {} }) => {
   // by the deck when the advisor switches that page on.
   const [seqResult, setSeqResult] = useState(null);
   // Cross-tab preset auto-run bridge — Plan Inputs presets can offer a
-  // "Run sweep now" toast action that jumps to the Strategy Optimizer tab
+  // "Run sweep now" toast action that jumps to the Strategy Analyzer tab
   // and kicks off the sweep on landing. `autoRunPending` is the one-shot flag
   // StrategyOptimizer consumes on mount; `activeTab` makes Tabs controlled so
   // we can programmatically switch to `strategy` when the action fires.
@@ -86,7 +86,7 @@ export const Planner = ({ session = {} }) => {
   const scenarioSig = scenario && JSON.stringify(scenario);
   useEffect(() => { setMcResult(null); }, [scenarioSig]);
 
-  // Stress-test result (Strategy Optimizer) — consumed by Presentation.
+  // Stress-test result (Strategy Analyzer) — consumed by Presentation.
   const handleStressResult = (r) => setStressResult(r);
 
   // Persistent MC copy for the Estate rebasis — unlike mcResult (cleared on any
@@ -113,7 +113,7 @@ export const Planner = ({ session = {} }) => {
       .catch(() => toast.error("Could not load defaults. Please try again."));
   };
 
-  // Plan Inputs → Strategy Optimizer bridge. Fired by the "Run sweep now"
+  // Plan Inputs → Strategy Analyzer bridge. Fired by the "Run sweep now"
   // toast action on a goal-preset click. Bumps the auto-run flag first so it
   // is set BEFORE StrategyOptimizer mounts on the tab switch, then flips the
   // active tab. StrategyOptimizer consumes the flag on mount and resets it via
@@ -152,7 +152,7 @@ export const Planner = ({ session = {} }) => {
               <Leaf className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="font-display text-lg font-bold tracking-tight leading-none">Roth Conversion & Retirement Planner</h1>
+              <h1 className="font-display text-lg font-bold tracking-tight leading-none">Retirement & Wealth-Transfer Illustration — Attorney Edition</h1>
               <p className="text-xs text-muted-foreground mt-0.5">Spreadsheet-grade tax engine · ordinary vs. LTCG/dividend separation</p>
             </div>
           </div>
@@ -285,14 +285,14 @@ export const Planner = ({ session = {} }) => {
                 <FolderOpen className="h-4 w-4" /> Scenarios
               </TabsTrigger>
             )}
-            {/* Single-Year Optimizer trigger hidden per advisor request (2026-08-21).
+            {/* Single-Year Analyzer trigger hidden per advisor request (2026-08-21).
                 The tab CONTENT is still mounted below so any saved deep link keeps
                 working — only the navigation button is withdrawn. */}
             <TabsTrigger value="strategy" data-testid="tab-strategy" className="gap-2 data-[state=active]:bg-white">
-              <Trophy className="h-4 w-4" /> Strategy Optimizer
+              <Trophy className="h-4 w-4" /> Strategy Analyzer
             </TabsTrigger>
             <TabsTrigger value="ssopt" data-testid="tab-ssopt" className="gap-2 data-[state=active]:bg-white">
-              <CalendarClock className="h-4 w-4" /> SS Optimizer
+              <CalendarClock className="h-4 w-4" /> SS Analyzer
             </TabsTrigger>
             {!sharedInfo && isMaster && (
               <TabsTrigger value="admin" data-testid="tab-admin" className="gap-2 data-[state=active]:bg-white">

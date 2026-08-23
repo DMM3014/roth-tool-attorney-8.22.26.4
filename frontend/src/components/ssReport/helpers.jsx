@@ -4,7 +4,7 @@ import { LogoWatermark } from "@/lib/advisorLogo";
 export const SS_BRANDING_KEY = "ss_report_branding_v1";
 export const SS_AI_TEXT_KEY = "ss_report_ai_text_v1";
 
-// Canonical claim-age set for the "by age" analyses (matches SS Optimizer sweep).
+// Canonical claim-age set for the "by age" analyses (matches SS Analyzer sweep).
 export const CLAIM_AGES = [62, 65, 67, 70];
 
 // SSA Full Retirement Age table (birth year → FRA age). Same as backend `full_retirement_age()`.

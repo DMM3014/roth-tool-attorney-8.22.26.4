@@ -1,7 +1,7 @@
 import { fmtUSD } from "@/lib/api";
 import { Page, H2, H3, P, Sub } from "./helpers";
 
-// Coordinated claiming — shows the SS Optimizer sweep result: winner card + ranked table.
+// Coordinated claiming — shows the SS Analyzer sweep result: winner card + ranked table.
 // `ssResult` is the API response from /api/ss-optimizer (or null if not run yet).
 export const CoordinatedClaimingPage = ({ ssResult, ...footProps }) => {
   const best = ssResult?.best;
@@ -14,7 +14,7 @@ export const CoordinatedClaimingPage = ({ ssResult, ...footProps }) => {
       <Page testid="ssr-page-coordinated" {...footProps}>
         <H2>Household Coordinated Claiming</H2>
         <P>
-          Run the Social Security sweep on the &ldquo;SS Optimizer&rdquo; tab to populate this page with a full
+          Run the Social Security sweep on the &ldquo;SS Analyzer&rdquo; tab to populate this page with a full
           16-pair analysis of every combination of Client × Spouse claim ages at 62 / 65 / 67 / 70. The report will
           then show the leading pair — the one that maximizes <strong>after-tax legacy at the second death</strong>,
           not just the highest lifetime SS check.

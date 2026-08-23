@@ -26,7 +26,7 @@ const ORDER_MECHANIC = {
     "Splitting withdrawals keeps both buckets active — smoother IRMAA path, less concentration risk, and no single-bucket exhaustion late in retirement.",
 };
 
-// Short metric names for inline copy — keyed by the optimizer goal (sortKey).
+// Short metric names for inline copy — keyed by the analyzer goal (sortKey).
 const METRIC_SHORT = {
   after_tax_estate: "after-tax legacy (+10 yrs)",
   after_tax_estate_pv: "after-tax legacy PV",
@@ -127,7 +127,7 @@ const BestFundingChipStrip = ({ result, applyStrategy, sortKey = "after_tax_esta
 // ---------------------------------------------------------------------------
 const ChipTalkingPoint = ({ pct, winner, orderShort, second, sortKey, rankDir, metricShort }) => {
   const winnerValue = winner[sortKey] || 0;
-  const mechanic = ORDER_MECHANIC[orderShort] || `The optimizer selected ${orderShort} as the best funding order at this bracket ceiling.`;
+  const mechanic = ORDER_MECHANIC[orderShort] || `The analyzer selected ${orderShort} as the best funding order at this bracket ceiling.`;
   const deltaWord = rankDir === "asc" ? "less" : "more";
   return (
     <div className="space-y-2" data-testid="chip-talking-point">

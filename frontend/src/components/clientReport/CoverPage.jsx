@@ -21,7 +21,10 @@ export const CoverPage = ({ branding, household, prettyDate, strat, marketPreset
           {branding.advisor_firm || "Retirement Analysis"}
         </div>
         <div data-docx="h1" style={{ fontFamily: "Outfit, sans-serif", fontWeight: 700, fontSize: 30, lineHeight: 1.1 }}>
-          {branding.cover_subtitle || "Retirement Status & Action Report"}
+          {branding.cover_subtitle || "Retirement & Wealth-Transfer Illustration — Attorney Edition"}
+        </div>
+        <div data-testid="cr-cover-disclaimer" style={{ fontSize: 12.5, opacity: 0.92, marginTop: 8, fontStyle: "italic", fontWeight: 500 }}>
+          Educational illustration — not investment, legal, or tax advice.
         </div>
         <div style={{ fontSize: 13, opacity: 0.9, marginTop: 10 }}>
           Prepared for <strong>{household}</strong>
@@ -29,8 +32,9 @@ export const CoverPage = ({ branding, household, prettyDate, strat, marketPreset
         <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>{prettyDate}</div>
         <div data-testid="cr-cover-strategy" style={{
           marginTop: 14, display: "inline-flex", alignItems: "center", gap: 8,
-          background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.35)",
-          padding: "6px 12px", borderRadius: 999, fontSize: 11,
+          background: "rgba(0,0,0,0.18)", border: "1px solid rgba(255,255,255,0.30)",
+          borderLeft: "3px solid #C9A227",
+          padding: "6px 12px", borderRadius: 4, fontSize: 11,
         }}>
           <span style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", opacity: 0.85, fontWeight: 700 }}>Strategy</span>
           <strong>{strat.label}</strong>

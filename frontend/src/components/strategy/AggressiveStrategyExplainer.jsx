@@ -14,7 +14,7 @@ const AggressiveStrategyExplainer = ({ visible }) => {
         <div className="flex items-center gap-3">
           <TrendingUp className="h-4 w-4 text-[#4A6741]" />
           <div>
-            <span className="font-display text-sm font-bold text-[#1A1A1A]">Why does the optimizer favor early high-tax conversions?</span>
+            <span className="font-display text-sm font-bold text-[#1A1A1A]">Why does the analyzer favor early high-tax conversions?</span>
             <p className="text-[11px] text-muted-foreground mt-0.5">Five structural forces push the ranking toward front-loaded conversions at 32–37% — plus the sequence-of-returns risk the deterministic math ignores.</p>
           </div>
         </div>
@@ -60,7 +60,7 @@ const AggressiveStrategyExplainer = ({ visible }) => {
           <p className="text-muted-foreground">
             When the first spouse dies, filing status flips <span className="font-medium text-[#1A1A1A]">MFJ → Single</span>.
             Single brackets are roughly half as wide, so the same IRA withdrawal costs dramatically more tax. Every dollar
-            the optimizer moves to Roth <em>while both spouses are alive</em> locks in the wider MFJ brackets forever —
+            the analyzer moves to Roth <em>while both spouses are alive</em> locks in the wider MFJ brackets forever —
             and the &ldquo;Single-year survivor with a big IRA&rdquo; scenario is the single most expensive setup this
             model can produce.
           </p>

@@ -1,4 +1,4 @@
-// Shared tax-callout math consumed by both the Optimizer's Bump-Zone Alert and
+// Shared tax-callout math consumed by both the Analyzer's Bump-Zone Alert and
 // the new Tax Detail tab. Everything is a pure, side-effect-free function of the
 // per-year `row` object emitted by /api/projection — no engine calls needed.
 //
@@ -15,7 +15,7 @@
 // ---- LTCG bump zone ----
 // A cliff is "crossed" between year Y-1 and year Y when preferential income
 // occupied a lower band in Y-1 and a higher band in Y (band = 0%/15%/20%).
-// This is DIFFERENT from the Optimizer's variant (which diffs a hypothetical
+// This is DIFFERENT from the Analyzer's variant (which diffs a hypothetical
 // with-conversion vs. without-conversion state within a single year) — here we
 // diff the previous calendar year against this one.
 export const detectLtcgBump = (row, prevRow) => {

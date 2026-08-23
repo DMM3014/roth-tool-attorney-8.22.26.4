@@ -94,7 +94,7 @@ export const defaultBranding = {
   client_name_override: "",
   spouse_name_override: "",
   presentation_date: new Date().toISOString().slice(0, 10),
-  cover_subtitle: "Retirement Status & Action Report",
+  cover_subtitle: "Retirement & Wealth-Transfer Illustration — Attorney Edition",
   cover_intro: "",
   confidentiality: "Confidential — Prepared for client review only. Not for redistribution.",
   // Advisor Commentary (formerly "AI Review"). Now advisor-only — never printed into

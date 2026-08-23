@@ -55,7 +55,7 @@ export const Optimizer = ({ scenario }) => {
 
   // Sum any Dividend/LTCG income streams (e.g. "Special Dividends & LTCG") that
   // are active in the given year — mirrors backend/projection.py::_stream_amount
-  // so the Optimizer preview and the multi-year engine agree byte-for-byte on
+  // so the Analyzer preview and the multi-year engine agree byte-for-byte on
   // preferential income sourced from streams. Follows the same use/skip logic,
   // start_date/stop_date proration, Monthly-vs-Annual frequency, and COLA
   // compounding rules the projection engine uses.
@@ -200,7 +200,7 @@ export const Optimizer = ({ scenario }) => {
         num_65plus: count65,
         medicare_count: count65,
       }));
-      toast.success(`Loaded ${inp.year} income from your plan — before any Roth conversion. The optimizer now recommends a conversion on top.`);
+      toast.success(`Loaded ${inp.year} income from your plan — before any Roth conversion. The analyzer now recommends a conversion on top.`);
     } catch (e) {
       toast.error("Couldn't load values from your plan. Please try again.");
     } finally {

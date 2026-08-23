@@ -1,4 +1,4 @@
-// Shared date/age utilities across Plan Inputs, SS Optimizer, and reports.
+// Shared date/age utilities across Plan Inputs, SS Analyzer, and reports.
 // Kept dead-simple to avoid any date-lib bloat.
 
 // Age at year-end given a DOB year (approximation used everywhere the engine
