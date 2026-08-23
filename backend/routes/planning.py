@@ -45,6 +45,7 @@ from projection import (
     funding_order_longevity, heir_rate_sensitivity, run_projection, sweep_brackets,
     VALID_FUNDING_ORDERS,
 )
+from law_constants import LAW
 from ss_optimizer import sweep_ss_claims
 from strategy_optimizer import strategy_sweep
 from strategy_stress import stress_test_strategies
@@ -218,6 +219,14 @@ async def tax_optimize(request: Request, req: OptimizeRequest, _gate: None = Dep
     return optimize_conversion(req.inputs, req.target_rate, req.max_conversion,
                                irmaa_aware=req.irmaa_aware,
                                irmaa_cliff_buffer=req.irmaa_cliff_buffer)
+
+
+@router.get("/law-constants")
+async def law_constants_route():
+    """Single source of truth for statutory figures (rates, thresholds, exclusions)
+    with value, indexing rule, and legal citation. Powers the report's
+    'Statutory Figures & Authorities' appendix and the 'Tax law as of' footer."""
+    return LAW
 
 
 @router.post("/projection")

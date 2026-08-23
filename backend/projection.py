@@ -8,6 +8,9 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass, field
+
+from law_constants import LAW
+_QCD_CAP_DEFAULT = LAW["figures"]["qcd_cap"]["value"]
 from datetime import date
 from typing import Any
 
@@ -973,7 +976,7 @@ class Plan:
     qcd_start_year: int = 0            # 0 = disabled
     qcd_end_year: int = 0              # 0 = run through end_year
     qcd_client_share: float = 1.0      # 1.0 = 100% from Client, 0.5 = 50/50, 0.0 = 100% Spouse
-    qcd_annual_cap: float = 111000.0   # per-taxpayer IRS annual cap (2026)
+    qcd_annual_cap: float = _QCD_CAP_DEFAULT   # per-taxpayer IRS annual cap (2026)
     # ----- Basis Merge Toggle (workbook parity) -----
     # When True, all Taxable accounts pool into ONE blended-basis account at
     # first death (matches the spreadsheet's Legacy-page behavior). When False,
@@ -1104,7 +1107,7 @@ def _parse_plan(cfg: dict) -> Plan:
         qcd_start_year=int(h.get("qcd_start_year") or 0),
         qcd_end_year=int(h.get("qcd_end_year") or 0),
         qcd_client_share=max(0.0, min(1.0, float(h.get("qcd_client_share", 1.0)))),
-        qcd_annual_cap=float(h.get("qcd_annual_cap") or 111000.0),
+        qcd_annual_cap=float(h.get("qcd_annual_cap") or _QCD_CAP_DEFAULT),
         merge_basis_at_first_death=bool(cfg["tax"].get("merge_basis_at_first_death", True)),
         annual_gift_amount=float(cfg.get("giving", {}).get("annual_gift_amount") or 0.0),
         section_2503e_amount=float(cfg.get("giving", {}).get("section_2503e_amount") or 0.0),

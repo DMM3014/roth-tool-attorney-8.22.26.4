@@ -157,7 +157,7 @@ export const Sub = ({ children }) => (
   <p data-docx="sub" style={{ fontSize: 10, color: "#777", fontStyle: "italic", marginBottom: 8 }}>{children}</p>
 );
 
-export const Page = ({ children, testid, first, pageNo, pageTotal, footer, confidential, logo }) => (
+export const Page = ({ children, testid, first, pageNo, pageTotal, footer, confidential, logo, lawAsOf }) => (
   <section
     data-testid={testid}
     className="pdf-page"
@@ -185,7 +185,7 @@ export const Page = ({ children, testid, first, pageNo, pageTotal, footer, confi
         <span style={{ display: "inline-flex", alignItems: "center" }}>
           <LogoWatermark logo={logo} />{confidential || "Confidential"}
         </span>
-        <span>{footer}</span>
+        <span>{footer}{lawAsOf ? ` · Tax law as of: ${lawAsOf}` : ""}</span>
         {pageNo != null && <span>Page {pageNo}{pageTotal ? ` of ${pageTotal}` : ""}</span>}
       </div>
     )}

@@ -169,6 +169,8 @@ export const runFundingOrderLongevity = (config, extra_years) =>
 // unchanged) under 1-3 withdrawal funding orders and compare estate/heir outcomes.
 export const compareFundingOrders = (config, orders) =>
   http.post(`/funding-order-compare`, { config, orders }).then((r) => r.data);
+// Statutory single-source-of-truth figures (value, indexing, citation) for the report appendix + footer.
+export const getLawConstants = () => http.get(`/law-constants`).then((r) => r.data);
 export const runSweep = (config) => http.post(`/sweep`, { config }).then((r) => r.data);
 // Sequence-of-returns stress test — 8 return paths x (with / without conversions).
 export const runSequenceStress = (config, params = {}) =>

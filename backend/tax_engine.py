@@ -32,10 +32,11 @@ SST1_SGL, SST2_SGL = 25000, 34000
 NIIT_RATE = 0.038
 NIIT_THRESH_MFJ, NIIT_THRESH_SGL = 250000, 200000
 
-IRMAA_SINGLE = [109000, 137000, 171000, 205000, 500000]
-IRMAA_MFJ = [218000, 274000, 342000, 410000, 750000]
-IRMAA_PARTB_MULT = [1.4, 2.0, 2.6, 3.2, 3.4]
-IRMAA_PARTD_SURCHARGE = [174, 449, 724, 998, 1093]
+from law_constants import LAW
+IRMAA_SINGLE = LAW["figures"]["irmaa_thresholds_single"]["value"]
+IRMAA_MFJ = LAW["figures"]["irmaa_thresholds_mfj"]["value"]
+IRMAA_PARTB_MULT = LAW["figures"]["irmaa_part_b_multipliers"]["value"]
+IRMAA_PARTD_SURCHARGE = LAW["figures"]["irmaa_part_d_surcharge"]["value"]
 
 UNIFORM_LIFETIME = {
     72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22.0,

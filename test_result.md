@@ -468,3 +468,31 @@ agent_communication:
       3. ✅ MC FOOTNOTE: Success rate (84%) matches Paired MC footnote (84%) exactly
       
       Attorney Edition is production-ready. Please summarize and finish.
+
+  - task: "Statutory single-source-of-truth (law_constants.py) + citations/footer/appendix"
+    implemented: true
+    working: "NA"
+    file: "backend/law_constants.py, backend/tax_engine.py, backend/estate.py, backend/projection.py, backend/routes/planning.py, frontend/src/components/clientReport/helpers.jsx, frontend/src/components/clientReport/StatutoryFiguresPage.jsx, frontend/src/components/ClientReport.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: "NA"
+        -agent: "main"
+        -comment: |
+          Created backend/law_constants.py (LAW dict: LAW_AS_OF + 14 figures each with value/indexing/citation).
+          Refactored consumers to read from it: tax_engine IRMAA arrays, estate FED_ESTATE_TAX_RATE + FED_EXCLUSION_BASE,
+          projection QCD cap default. NUMERIC IDENTITY VERIFIED: golden diff shows 0 changed values, 0 removed keys
+          (only 7 additive `ending_taxable_basis` keys from the prior funding-order feature); refreshed golden baseline
+          (additive-only). 53 compute tests pass (golden + estate + IRMAA + phase52 regression). New public GET
+          /api/law-constants returns the LAW dict (200). Frontend: every clientReport page footer now shows
+          "· Tax law as of: {LAW_AS_OF}" (threaded via pageFooter lawAsOf). New OPTIONAL appendix page
+          "Statutory Figures & Authorities" (data-testid cr-page-statutory-figures) rendered as the FINAL page, gated by
+          a toggle (cr-statutory-toggle) that DEFAULTS OFF. VERIFY: (a) footer line on every printed page; (b) toggle
+          off by default; (c) turning it on adds the appendix table (figure/value/indexing/citation) as the last page.
+    -agent: "main"
+    -message: |
+      GET /api/law-constants is public (no auth) and returns LAW. Frontend footer + optional appendix added.
+      Backend numeric identity already verified via golden (0 value changes). Please, when approved, UI-verify the
+      footer "Tax law as of: 2026 OBBBA framework" appears on Client Report pages and the appendix toggle (default OFF)
+      adds a final "Statutory Figures & Authorities" page. Login: MASTER PIN from /app/memory/test_credentials.md.

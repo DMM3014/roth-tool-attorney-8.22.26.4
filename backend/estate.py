@@ -61,11 +61,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from law_constants import LAW
+
 # OBBBA statutory: $15,000,000 base for taxable years beginning after 2025,
 # adjusted for inflation for years beginning after 2026 from the $15M base.
 # Pre-OBBBA (year < 2026) uses the pre-existing $13.99M-at-2025 base for
 # historical continuity.
-FED_EXCLUSION_BASE = 15_000_000
+FED_EXCLUSION_BASE = LAW["figures"]["fed_estate_exclusion"]["value"]
 FED_EXCLUSION_BASE_YEAR = 2026
 PRE_OBBBA_BASE = 13_990_000
 PRE_OBBBA_BASE_YEAR = 2025
@@ -74,7 +76,7 @@ PRE_OBBBA_BASE_YEAR = 2025
 # exemption indexing should follow the model's assumed CPI (config.projection.
 # general_inflation), matching the spreadsheet's single BracketInfl variable.
 DEFAULT_INDEXING_RATE = 0.03
-FED_ESTATE_TAX_RATE = 0.40
+FED_ESTATE_TAX_RATE = LAW["figures"]["fed_estate_tax_rate"]["value"]
 LTCG_RATE = 0.15  # federal LTCG; state cap-gains handled separately
 DEFAULT_TAXABLE_BASIS_PCT = 0.50  # 50% of taxable value assumed to be basis
 
