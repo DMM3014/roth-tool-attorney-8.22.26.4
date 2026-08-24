@@ -558,6 +558,14 @@ export const Presentation = ({ scenario, setScenario, stressResult, regimeResult
                 Include two-way sensitivity page (heir rate × market regime heat-grid)
               </span>
             </label>
+            <label className={`flex items-center gap-2 ${branding.include_two_way && twoWay ? "cursor-pointer" : "opacity-60"}`}>
+              <Switch checked={!!branding.two_way_today} disabled={!(branding.include_two_way && twoWay)}
+                onCheckedChange={(v) => upd("two_way_today", v)}
+                data-testid="pres-toggle-two-way-today" />
+              <span className="text-xs text-muted-foreground">
+                Show two-way surface in today&apos;s dollars (discounted per regime CPI)
+              </span>
+            </label>
             </>)}
           </div>
 
@@ -1811,7 +1819,8 @@ const PresentationReport = ({
 
       {/* ---------- Two-way sensitivity heat-grid (optional) ---------- */}
       {branding.include_two_way && twoWay && (
-        <TwoWaySensitivityDeckPage twoWay={twoWay} includeNarrative={branding.include_narrative} />
+        <TwoWaySensitivityDeckPage twoWay={twoWay} includeNarrative={branding.include_narrative}
+          showToday={!!branding.two_way_today} />
       )}
 
       {/* ---------- Curated deck only: one-page estate scenario comparison ---------- */}

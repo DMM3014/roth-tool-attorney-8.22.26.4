@@ -104,7 +104,7 @@ export const FundingOrderLever = ({ scenario }) => {
               </thead>
               <tbody>
                 {METRIC_ROWS.map((row) => (
-                  <tr key={row.key} className="border-b border-gray-100">
+                  <tr key={row.key} data-testid={`funding-order-row-${row.key}`} className="border-b border-gray-100">
                     <td className={`py-1.5 pr-4 ${row.indent ? "pl-6 text-muted-foreground text-xs" : ""} ${row.strong ? "font-semibold" : ""}`}>
                       {row.indent ? "— " : ""}{row.label}
                     </td>

@@ -40,7 +40,7 @@ export const FundingOrderPage = ({ data, ...footProps }) => {
         </thead>
         <tbody>
           {METRIC_ROWS.map((row) => (
-            <tr key={row.key} style={{ borderBottom: "0.5px solid #EDEBE4" }}>
+            <tr key={row.key} data-testid={`cr-funding-order-row-${row.key}`} style={{ borderBottom: "0.5px solid #EDEBE4" }}>
               <td style={{
                 padding: row.indent ? "3px 8px 3px 20px" : "4px 8px",
                 textAlign: "left",

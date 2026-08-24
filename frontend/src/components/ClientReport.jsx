@@ -249,6 +249,12 @@ export const ClientReport = ({ scenario, setScenario }) => {
           return raw == null ? false : raw === "1"; } catch { return false; }
   });
   useEffect(() => { try { window.localStorage.setItem("client_report_mortality_timing_v1", mortalityOn ? "1" : "0"); } catch {} }, [mortalityOn]);
+  // Two-Way Sensitivity — optional "today's dollars" view of the heir-rate × regime surface.
+  const [twoWayToday, setTwoWayToday] = useState(() => {
+    try { const raw = window.localStorage.getItem("client_report_two_way_today_v1");
+          return raw == null ? false : raw === "1"; } catch { return false; }
+  });
+  useEffect(() => { try { window.localStorage.setItem("client_report_two_way_today_v1", twoWayToday ? "1" : "0"); } catch {} }, [twoWayToday]);
 
   const [lawData, setLawData] = useState(null);
   useEffect(() => {
@@ -1086,6 +1092,22 @@ export const ClientReport = ({ scenario, setScenario }) => {
               </div>
             </label>
           </div>
+
+          <div className="mt-3 rounded-md border border-[#EBE8E0] bg-[#FAFAF8] px-3 py-2">
+            <label className="flex items-start gap-2 cursor-pointer max-w-[720px]">
+              <Switch checked={twoWayToday} onCheckedChange={(v) => setTwoWayToday(!!v)}
+                data-testid="cr-two-way-today-toggle" className="mt-0.5" />
+              <div className="flex-1">
+                <p className="text-[12px] font-semibold text-[#1A1A1A]">
+                  Show the Two-Way Sensitivity surface in today&rsquo;s dollars
+                </p>
+                <p className="text-[10.5px] text-muted-foreground leading-snug mt-1">
+                  Off by default (nominal). When on, every cell of the Heir Rate × Market Regime grid is discounted to
+                  plan-start dollars — each regime by its own assumed CPI — so the surface reads in today&rsquo;s money.
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
         {/* Monte Carlo behavioral realism — halt + guardrail toggles that flow into the
             report's MC page. The methodology block auto-updates from the result payload. */}
@@ -1210,6 +1232,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   bracketOn={bracketOn}
                   heirSens={heirSens}
                   twoWayData={twoWayData}
+                  twoWayToday={twoWayToday}
                   mortalityOn={mortalityOn} mortalityData={mortalityData}
                   auditResult={auditResult}
                   advisorInfo={advisorInfo}
@@ -1247,6 +1270,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
           bracketOn={bracketOn}
           heirSens={heirSens}
           twoWayData={twoWayData}
+          twoWayToday={twoWayToday}
           mortalityOn={mortalityOn} mortalityData={mortalityData}
           auditResult={auditResult}
           advisorInfo={advisorInfo}
@@ -1271,7 +1295,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
 const ClientReportBody = ({
   branding, household, clientName, spouseName, prettyDate, scenario, withRoth, noRoth,
   incomeData, composeData, taxCompData, nwSeries, mcResult, marketPreset, heirRate, aiText, logo,
-  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData, mortalityOn, mortalityData, auditResult, advisorInfo,
+  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData, twoWayToday, mortalityOn, mortalityData, auditResult, advisorInfo,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
   customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, unifiedCreditOn, lawData,
@@ -1413,7 +1437,7 @@ const ClientReportBody = ({
           {...pageFooter(heirSensPage)} />
       )}
       {twoWayData && (
-        <TwoWaySensitivityPage twoWayData={twoWayData} {...pageFooter(twoWayPage)} />
+        <TwoWaySensitivityPage twoWayData={twoWayData} showToday={twoWayToday} {...pageFooter(twoWayPage)} />
       )}
       {mortalityOn && mortalityData && (
         <MortalityTimingPage mortalityData={mortalityData} {...pageFooter(mortalityPage)} />

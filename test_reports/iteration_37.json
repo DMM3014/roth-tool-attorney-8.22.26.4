@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only verification of the three PV deliverables on the public preview URL. Master PIN login OK. (1) Funding Order row testids: interactive tab (fo-run-btn -> fo-results, 15 rows) exposes funding-order-row-<key> for all metrics incl. net_worth_at_second_death_today / after_tax_to_heirs_secure10_today / lifetime_tax_npv; Client Report cr-page-funding-order exposes cr-funding-order-row-<key> for the same keys ($33,193,392 -> $11,452,797; $65,148,168 -> $16,725,914; lifetime tax NPV $3,037,967) and the *_today rows are styled smaller/muted (8.5px #8A8A8A vs 9.5px #1A1A1A). (2)(3) Two-Way PV toggle verified on all three surfaces: IN-APP PANEL (MC 200 trials -> two-way-panel -> two-way-run-btn -> two-way-today-toggle): 30/36 grid cells changed (the 6 unchanged are $0 Lost-Decade cells), every changed cell strictly smaller in magnitude, no sign flips, break-even row and 'wins in 1 of 6' headline unchanged, toggling OFF restores nominal exactly. CLIENT REPORT (cr-two-way-today-toggle, default OFF, localStorage client_report_two_way_today_v1 set to '1' on toggle): cr-page-two-way present, 36 cr-two-way-cell-<ri>-<ci> cells, footnote OFF = 'nominal after-tax dollars to heirs at the end of the SECURE-10 window', ON = 'discounted to 2026 dollars — each regime by its own assumed CPI...'; 30 cells changed, all smaller, none sign-flipped; swept all .pdf-page shells in client-report-preview-inner -> zero horizontal/vertical overflow. CLIENT DECK (Presentation tab): pres-toggle-two-way-today correctly disabled until pres-toggle-two-way is ON; after enabling, toggling it switches presentation-page-two-way grid (42 tbody cells incl. break-even row; 30 value cells changed, all smaller) and updates the Sub footnote to 'discounted to 2026 dollars (each regime by its own assumed CPI)'; slide box 546px tall / no overflow. Zero console errors and zero page errors across all four runs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [{"screen": "Client Deck two-way slide", "issues": ["Deck grid cells have no data-testid (only deck-two-way-grid/headline/caption); values had to be read via tbody td traversal. Optional: add deck-two-way-cell-<ri>-<ci> for parity with the panel and report."]}]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "No functional defects found in the three deliverables. Optional consistency nit: TwoWaySensitivityDeckPage.jsx cells lack data-testid while the panel and client-report versions have them."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100%"},
+  "seed_data_creation": "None — used default seeded plan (John/Jane Smith).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Master PIN i4m07MnVDhpTYkc1giC6wWDv (login-mode-master -> pin-input -> pin-unlock-btn)",
+  "context_for_next_testing_agent": "Flow to reach the two-way surface: login -> tab-montecarlo -> mc-trials=200 -> mc-run (~30-60s) -> two-way-panel appears -> two-way-run-btn. The two-way result then flows to Client Report (tab-client-report, cr-page-two-way auto-included) and Presentation (tab-presentation; must first enable pres-toggle-two-way, which gates pres-toggle-two-way-today). ClientReport still renders two DOM trees, so scope cr- testids to client-report-preview-inner. Deck two-way cells have no testids — read tbody tds of deck-two-way-grid.",
+  "rca_of_the_issue": "N/A — all verifications passed."
+}

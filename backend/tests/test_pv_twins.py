@@ -14,7 +14,7 @@ from defaults import DEFAULT_SCENARIO
 from projection import (
     audit_compare, discount_factor, funding_order_compare, heir_rate_sensitivity,
     lifetime_tax_present_value, mortality_timing_compare, plan_discount_rate,
-    plan_start_year, present_value, regime_deterministic_compare,
+    plan_start_year, present_value, regime_deterministic_compare, two_way_sensitivity,
 )
 
 
@@ -113,3 +113,26 @@ def test_heir_rate_sensitivity_pv_twins():
             assert "after_tax_estate_to_heirs_today" in e
             if (e["after_tax_estate_to_heirs"] or 0) > 1:
                 assert e["after_tax_estate_to_heirs_today"] < e["after_tax_estate_to_heirs"]
+
+
+# --- two-way sensitivity surface (optional today's-$ view) -----------------
+def test_two_way_sensitivity_today_matrix():
+    res = two_way_sensitivity(_cfg())
+    assert "matrix" in res and "matrix_today" in res
+    m, mt = res["matrix"], res["matrix_today"]
+    assert len(m) == len(mt) and all(len(r1) == len(r2) for r1, r2 in zip(m, mt))
+    saw = False
+    for ri in range(len(m)):
+        for ci in range(len(m[ri])):
+            nom, tdy = m[ri][ci], mt[ri][ci]
+            if nom is None:
+                assert tdy is None
+                continue
+            assert abs(tdy) <= abs(nom) + 0.01
+            if abs(nom) > 1:
+                assert abs(tdy) < abs(nom)
+                saw = True
+    assert saw
+    for rg in res["regimes"]:
+        assert "delta_at_modeled_today" in rg
+

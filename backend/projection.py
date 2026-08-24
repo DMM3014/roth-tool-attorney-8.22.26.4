@@ -2711,6 +2711,24 @@ def two_way_sensitivity(cfg: dict) -> dict:
 
     matrix = [[per_regime[rg["preset_id"]]["deltas"].get(r) for rg in regimes] for r in rates]
     wins_at_modeled = sum(1 for rg in regimes if (rg.get("delta_at_modeled") or 0) > 1.0)
+
+    # Today's-dollars twin of the whole surface: discount each regime's column by
+    # that regime's own assumed CPI from the SECURE-window delivery year back to
+    # the plan start. Sign never changes, so wins_at_modeled/break-evens are shared.
+    start = plan_start_year(cfg)
+    _, second = _fo_death_years(cfg)
+    horizon = int((cfg.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
+    deliver_year = (second + horizon) if second else None
+    factors = [discount_factor(deliver_year, start, rg["general_inflation"]) for rg in regimes]
+    for ci, rg in enumerate(regimes):
+        dm = rg.get("delta_at_modeled")
+        rg["delta_at_modeled_today"] = round(dm * factors[ci], 2) if dm is not None else None
+    matrix_today = [
+        [(round(matrix[ri][ci] * factors[ci], 2) if matrix[ri][ci] is not None else None)
+         for ci in range(len(regimes))]
+        for ri in range(len(rates))
+    ]
+
     break_even = [
         {"preset_id": rg["preset_id"],
          "rate": per_regime[rg["preset_id"]]["break_even"],
@@ -2723,10 +2741,15 @@ def two_way_sensitivity(cfg: dict) -> dict:
         "rate_labels": rate_labels,
         "regimes": regimes,
         "matrix": matrix,           # rate-major: matrix[rate_index][regime_index] = nominal conversion delta
+        "matrix_today": matrix_today,  # same shape, discounted to plan-start dollars per regime CPI
         "break_even": break_even,   # per regime
         "modeled_rate": modeled,
         "wins_at_modeled": wins_at_modeled,
         "n_regimes": len(regimes),
+        "start_year": start,
+        "heir_deliver_year": deliver_year,
+        "today_note": ("Today's dollars discount each regime's column by that regime's own assumed CPI "
+                       "from the SECURE-window delivery year back to the plan start year."),
         "caption": TWO_WAY_CAPTION,
     }
     _TWO_WAY_CACHE[key] = out

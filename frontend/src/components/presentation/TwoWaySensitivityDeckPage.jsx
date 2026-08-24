@@ -24,10 +24,12 @@ const railColor = (delta) => {
   return delta > 0 ? `rgba(${GREEN},0.95)` : `rgba(${AMBER},0.95)`;
 };
 
-export const TwoWaySensitivityDeckPage = ({ twoWay, includeNarrative = true }) => {
+export const TwoWaySensitivityDeckPage = ({ twoWay, includeNarrative = true, showToday = false }) => {
   const d = twoWay;
   if (!d || !d.matrix || d.matrix.length === 0) return null;
-  const maxAbs = Math.max(1, ...d.matrix.flat().filter((v) => v != null).map((v) => Math.abs(v)));
+  const useToday = !!(showToday && d.matrix_today);
+  const matrix = useToday ? d.matrix_today : d.matrix;
+  const maxAbs = Math.max(1, ...matrix.flat().filter((v) => v != null).map((v) => Math.abs(v)));
 
   return (
     <Page testid="presentation-page-two-way">
@@ -65,7 +67,7 @@ export const TwoWaySensitivityDeckPage = ({ twoWay, includeNarrative = true }) =
             <tr key={rate}>
               <td style={{ padding: "4px 6px", fontSize: 9.5, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px solid #F3F1EC" }}>{d.rate_labels[ri]}</td>
               {d.regimes.map((rg, ci) => {
-                const delta = d.matrix[ri][ci];
+                const delta = matrix[ri][ci];
                 return (
                   <td key={rg.preset_id}
                     style={{ padding: "4px 3px", fontSize: 8.5, fontWeight: 700, textAlign: "center",
@@ -105,7 +107,9 @@ export const TwoWaySensitivityDeckPage = ({ twoWay, includeNarrative = true }) =
       </div>
 
       <Sub>
-        Deltas are nominal after-tax dollars to heirs at the end of the SECURE-10 window. The 0% row doubles as the
+        Deltas are {useToday
+          ? `after-tax dollars to heirs discounted to ${d.start_year || "plan-start"} dollars (each regime by its own assumed CPI)`
+          : "nominal after-tax dollars to heirs at the end of the SECURE-10 window"}. The 0% row doubles as the
         charitable-beneficiary case (no income tax on the inherited IRA). Break-even rates flagged
         &ldquo;extrapolated&rdquo; fall outside the 0–41% grid.
       </Sub>

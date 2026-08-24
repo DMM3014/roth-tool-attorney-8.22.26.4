@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Loader2, Grid3x3, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { runTwoWaySensitivity, fmtUSD, fmtPct } from "@/lib/api";
@@ -37,6 +38,7 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  const [showToday, setShowToday] = useState(false);
 
   const run = async () => {
     setLoading(true);
@@ -53,8 +55,9 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
     }
   };
 
-  const maxAbs = data
-    ? Math.max(1, ...data.matrix.flat().filter((v) => v != null).map((v) => Math.abs(v)))
+  const activeMatrix = data ? ((showToday && data.matrix_today) || data.matrix) : null;
+  const maxAbs = activeMatrix
+    ? Math.max(1, ...activeMatrix.flat().filter((v) => v != null).map((v) => Math.abs(v)))
     : 1;
 
   return (
@@ -82,6 +85,15 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
 
       {data && (
         <div className="mt-5">
+          {data.matrix_today && (
+            <div className="flex items-center gap-2 mb-3" data-testid="two-way-today-toggle-wrap">
+              <Switch checked={showToday} onCheckedChange={(v) => setShowToday(!!v)}
+                data-testid="two-way-today-toggle" />
+              <span className="text-[11px] text-muted-foreground">
+                Show in <strong>today&apos;s dollars</strong> (discount each regime by its own CPI back to {data.start_year || "plan start"})
+              </span>
+            </div>
+          )}
           <div className="rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 px-4 py-2.5 mb-4" data-testid="two-way-headline">
             <p className="text-sm text-[#1A1A1A]">
               Conversions win in <strong className="text-[#4A6741]">{data.wins_at_modeled} of {data.n_regimes}</strong> market regimes at your modeled heir rate{data.modeled_rate != null ? ` of ${fmtPct(data.modeled_rate)}` : ""}.
@@ -107,7 +119,7 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
                       {data.rate_labels[ri]}
                     </td>
                     {data.regimes.map((rg, ci) => {
-                      const delta = data.matrix[ri][ci];
+                      const delta = activeMatrix[ri][ci];
                       return (
                         <td key={rg.preset_id} className="px-1 py-1 text-center tabular-nums text-[10.5px] font-semibold border border-white"
                           style={{ background: cellBg(delta, maxAbs), color: "#1A1A1A", borderLeft: `4px solid ${railColor(delta)}` }}

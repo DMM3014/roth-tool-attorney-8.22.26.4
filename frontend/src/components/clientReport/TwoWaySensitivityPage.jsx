@@ -28,7 +28,7 @@ const railColor = (delta) => {
   return delta > 0 ? `rgba(${GREEN},0.95)` : `rgba(${AMBER},0.95)`;
 };
 
-export const TwoWaySensitivityPage = ({ twoWayData, ...footProps }) => {
+export const TwoWaySensitivityPage = ({ twoWayData, showToday = false, ...footProps }) => {
   if (!twoWayData || !twoWayData.matrix || twoWayData.matrix.length === 0) {
     return (
       <Page testid="cr-page-two-way" {...footProps}>
@@ -39,7 +39,9 @@ export const TwoWaySensitivityPage = ({ twoWayData, ...footProps }) => {
   }
 
   const d = twoWayData;
-  const maxAbs = Math.max(1, ...d.matrix.flat().filter((v) => v != null).map((v) => Math.abs(v)));
+  const useToday = !!(showToday && d.matrix_today);
+  const matrix = useToday ? d.matrix_today : d.matrix;
+  const maxAbs = Math.max(1, ...matrix.flat().filter((v) => v != null).map((v) => Math.abs(v)));
   const th = { padding: "4px 5px", fontSize: 8.5, fontWeight: 700, textAlign: "center", borderBottom: "1.5px solid #4A6741" };
   const rateCell = { padding: "4px 6px", fontSize: 9, fontWeight: 600, whiteSpace: "nowrap", borderBottom: "1px solid #F3F1EC" };
 
@@ -74,7 +76,7 @@ export const TwoWaySensitivityPage = ({ twoWayData, ...footProps }) => {
             <tr key={rate} data-testid={`cr-two-way-row-${ri}`}>
               <td style={rateCell}>{d.rate_labels[ri]}</td>
               {d.regimes.map((rg, ci) => {
-                const delta = d.matrix[ri][ci];
+                const delta = matrix[ri][ci];
                 return (
                   <td key={rg.preset_id}
                     style={{ padding: "4px 3px", fontSize: 8.5, fontWeight: 700, textAlign: "center",
@@ -126,7 +128,9 @@ export const TwoWaySensitivityPage = ({ twoWayData, ...footProps }) => {
         </p>
       </div>
       <Sub>
-        Deltas are nominal after-tax dollars to heirs at the end of the SECURE-10 window. The 0% row doubles as the
+        Deltas are {useToday
+          ? `after-tax dollars to heirs discounted to ${d.start_year || "plan-start"} dollars — each regime by its own assumed CPI from the SECURE-window delivery year`
+          : "nominal after-tax dollars to heirs at the end of the SECURE-10 window"}. The 0% row doubles as the
         charitable-beneficiary case (no income tax on the inherited IRA). Break-even rates flagged &ldquo;extrapolated&rdquo;
         fall outside the 0–41% grid and continue the last segment linearly.
       </Sub>
