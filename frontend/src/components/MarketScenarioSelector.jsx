@@ -100,7 +100,7 @@ export const MarketScenarioSelector = ({ scenario, setScenario }) => {
               data-testid="market-scenario-description"
               className="text-[11px] text-muted-foreground mt-2 leading-snug"
             >
-              {active.description}
+              {active.description?.split(/(?<=\.)\s+/)[0]}
             </p>
           )}
           {!isDefault && (
