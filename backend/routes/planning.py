@@ -277,10 +277,26 @@ async def law_constants_route():
 async def projection(request: Request, req: ProjectionRequest, _gate: None = Depends(require_advisor_or_share)):
     validate_config(req.config)
     try:
-        return await asyncio.to_thread(run_projection, req.config)
+        from projection import config_fingerprint
+        result = await asyncio.to_thread(run_projection, req.config)
+        # Attach the shared config fingerprint so the report footer can print a
+        # "Run on:" line that matches / distinguishes the Analyzer's sweep artifact.
+        result["config_fingerprint"] = config_fingerprint(req.config)
+        return result
     except Exception:
         logging.exception("projection failed")
         raise HTTPException(status_code=400, detail="Projection request could not be processed")
+
+
+@router.post("/config-fingerprint")
+@limiter.limit("60/minute")
+async def config_fingerprint_endpoint(request: Request, req: ProjectionRequest,
+                                      _gate: None = Depends(require_advisor_or_share)):
+    """Stable hash + human summary of the current plan inputs — used by the
+    Strategy Analyzer staleness guard to detect input drift against a sweep."""
+    validate_config(req.config)
+    from projection import config_fingerprint
+    return config_fingerprint(req.config)
 
 
 class FundingOrderCompareRequest(ProjectionRequest):

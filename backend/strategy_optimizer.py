@@ -259,6 +259,7 @@ def strategy_sweep(cfg: dict, *, start_years: list[int] | None = None,
       funding order. Adds ~20 extra projections. Skipped when sweep_funding_orders
       is ON (the full sweep already covers it).
     """
+    from projection import config_fingerprint
     # Sweep-horizon extension: when the caller asks for a horizon past the plan
     # boundary, extend the projection end-year so late-stop candidates (and the
     # legacy metric) aren't artificially truncated. Baselines included — every row
@@ -359,6 +360,7 @@ def strategy_sweep(cfg: dict, *, start_years: list[int] | None = None,
         "baseline": baseline,
         "baselines": baselines,
         "metric": "after_tax_estate_to_heirs",
+        "config_fingerprint": config_fingerprint(cfg),
         "grid": {"start_years": start_years, "stop_years": stop_years, "brackets": brackets,
                  "funding_orders": order_set if sweep_funding_orders else None},
         "sweep_funding_orders": sweep_funding_orders,

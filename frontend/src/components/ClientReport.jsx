@@ -1460,7 +1460,8 @@ const ClientReportBody = ({
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", fontFamily: "Outfit, 'Helvetica Neue', sans-serif", color: "#1A1A1A" }}>
       <CoverPage branding={branding} household={household} prettyDate={prettyDate}
-        strat={strat} marketPreset={marketPreset} scenario={scenario} logo={logo} {...pageFooter(1)} />
+        strat={strat} marketPreset={marketPreset} scenario={scenario} logo={logo}
+        fingerprint={withRoth?.config_fingerprint} {...pageFooter(1)} />
       {letterOn && (
         <CoverLetterPage branding={branding} household={household} prettyDate={prettyDate}
           logo={logo} {...pageFooter(2)} />

@@ -1,0 +1,35 @@
+{
+  "summary": "Tested the four Analyzer/Report consistency guards end-to-end. Backend: parity test 2/2 green, golden snapshot green, and a new HTTP suite (7 tests) covering POST /api/config-fingerprint, fingerprint on /api/projection and /api/strategy-sweep, determinism, and structural-vs-full hash semantics — all pass. Frontend (real UI, master PIN login): Guard 1 verified on both surfaces (strategy-run-on and cr-cover-run-on) with the SAME 16-hex hash (#aab79e66459668cd) for an unchanged plan; Guard 4 label harmonization verified (new labels + subtitle + hover defs present, no 'Legacy @ 2nd death' / 'Value @ 2nd death' anywhere); Guard 2 'apply does NOT trip staleness' verified; Guard 2 staleness banner/disabled-Apply/re-run-clears verified via a same-tab structural change (header Reset to defaults). One real defect: the sweep result state is destroyed on ANY tab switch, so the intended flow in the spec (run sweep -> edit Plan Inputs -> return to Analyzer -> stale banner) NEVER shows the banner; the Analyzer shows the empty 'Run the sweep...' state instead.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Planner.jsx / StrategyOptimizer.jsx", "issue": "Radix TabsContent for value='strategy' is not force-mounted, so StrategyOptimizer unmounts on every tab switch and its local state (result, sweepFp, runStamp, currentFp) is lost. Verified: run sweep -> switch to 'Conversion and Plan Controls' -> back to Strategy => strategy-winner count 0, strategy-empty count 1. Consequence: the STALENESS GUARD is unreachable via the specified flow (edit an account balance in Plan Inputs then return to the Analyzer) — no strategy-config-stale banner can ever render after leaving the tab. Fix: lift sweep result + fingerprints to Planner state (or forceMount the strategy TabsContent) so results survive tab navigation.", "selector": "[data-testid=\"strategy-config-stale\"] / [data-testid=\"strategy-empty\"]", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Strategy Analyzer (stale state)", "issues": ["When a structural input changes, BOTH strategy-sweep-stale (amber) and strategy-config-stale (red) banners render simultaneously with overlapping messages — consider suppressing the amber banner when the red config-stale banner is shown.", "Pre-existing React console warning (only in the preview instrumentation build): '<span> cannot be a child of <option>' from the strategy-sweep-horizon select (StrategyOptimizer.jsx ~line 492). Low priority, no functional impact."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter40_config_fingerprint_http.py",
+    "/app/backend/tests/test_analyzer_report_parity.py",
+    "/app/test_reports/pytest/iter40_results.xml"
+  ],
+  "action_items": [
+    "Persist the strategy sweep result + config fingerprints across tab switches (lift to Planner or forceMount the strategy tab) so the staleness guard actually fires after editing Plan Inputs and returning to the Analyzer.",
+    "Optional: suppress the amber 'ranking is from an earlier sweep' banner when the red config-stale banner is displayed (duplicate messaging)."
+  ],
+  "critical_code_review_comments": [
+    "StrategyOptimizer holds all guard state locally while the parent Tabs unmounts inactive content — any guard that depends on comparing a past run to the live plan must live above the tab boundary.",
+    "applyStrategy's resultsStale toast path is unreachable from the UI (both Apply buttons are disabled while stale) — harmless defense-in-depth, keep it.",
+    "config_fingerprint's structural_hash correctly excludes roth/withdrawal (verified over HTTP: applying roth+funding_order leaves structural_hash identical while the full hash changes)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter40_config_fingerprint_http.py"],
+  "success_rate": {"backend": "100% (9/9: 7 new HTTP fingerprint tests + 2 parity tests, plus golden snapshot green)", "frontend": "~85% (Guards 1, 1b, 4 and apply-does-not-trip pass; Guard 2 logic passes only when the Analyzer stays mounted)"},
+  "seed_data_creation": "None — used the app's default scenario; the temporary account-balance edit was reverted via 'Reset to defaults'.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Master PIN i4m07MnVDhpTYkc1giC6wWDv via login-mode-master -> pin-input -> pin-unlock-btn (works)",
+  "context_for_next_testing_agent": "Money inputs in Plan Inputs are readOnly until focused — click the input first, then fill (e.g. [data-testid='acc-bal-0']). cr-cover-run-on resolves to 2 nodes (preview + print root) — use .first. A full sweep takes ~15-25s. To exercise the config-stale banner without unmounting the Analyzer, run the sweep on a perturbed plan and then click header [data-testid='reset-defaults-btn'] -> reset-defaults-confirm while staying on the Strategy tab.",
+  "rca_of_the_issue": "Guard 2 unreachable via the spec'd flow: <TabsContent value='strategy'> in Planner.jsx (line ~377) has no forceMount, so Radix unmounts StrategyOptimizer when the user navigates to Plan Inputs. On return the component remounts with result=null/sweepFp=null, and configStale (which requires !!result && sweepFp.structural_hash) is false by construction — the user sees strategy-empty instead of the staleness banner. The guard logic itself is correct: forcing a same-tab structural change (Reset to defaults after running a sweep on an edited plan) rendered the exact banner text, disabled both Apply leader and row-0 Apply, and re-running the sweep cleared the banner and re-enabled Apply."
+}

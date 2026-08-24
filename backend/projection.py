@@ -6,12 +6,14 @@ the spreadsheet's CashFlow/Accounts/RMD/Income/Tax circular relationship
 """
 from __future__ import annotations
 import copy
+import hashlib
+import json
 import logging
 from dataclasses import dataclass, field
 
 from law_constants import LAW
 _QCD_CAP_DEFAULT = LAW["figures"]["qcd_cap"]["value"]
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from tax_engine import (compute_year_tax, optimize_conversion, rmd_divisor,
@@ -2198,6 +2200,69 @@ def lifetime_tax_present_value(rows: list, start, rate: float) -> float:
     return total
 
 
+def config_fingerprint(cfg: dict) -> dict:
+    """Stable hash + human summary of the plan inputs that drive a projection.
+
+    Shared by the Strategy Analyzer sweep and the projection/report path so any
+    two artifacts can be matched or distinguished at a glance.
+
+    Returns:
+      - hash: full-identity digest (includes the swept dimensions roth/funding).
+      - structural_hash: digest of the NON-swept inputs only (accounts, income,
+        expenses, tax, projection years, household, legacy, beneficiary). The
+        analyzer compares this to detect true input drift without flagging stale
+        the instant an advisor applies a leader (which only rewrites roth/funding).
+      - summary: advisor-readable one-liner fields.
+      - computed_at: ISO-8601 UTC timestamp.
+    """
+    accounts = [{
+        "id": a.get("id"), "tax_type": a.get("tax_type"), "owner": a.get("owner"),
+        "beginning_balance": a.get("beginning_balance"),
+        "cost_basis": a.get("cost_basis"), "return": a.get("return"),
+    } for a in (cfg.get("accounts") or [])]
+    proj = {k: (cfg.get("projection") or {}).get(k)
+            for k in ("start_year", "end_year", "general_inflation",
+                      "bracket_indexing", "irmaa_indexing")}
+    structural = {
+        "accounts": accounts,
+        "income": cfg.get("income"),
+        "expenses": cfg.get("expenses"),
+        "tax": cfg.get("tax"),
+        "projection": proj,
+        "household": cfg.get("household"),
+        "legacy": cfg.get("legacy"),
+        "beneficiary": cfg.get("beneficiary"),
+    }
+    full = {**structural, "roth": cfg.get("roth"), "withdrawal": cfg.get("withdrawal")}
+
+    def _digest(obj):
+        blob = json.dumps(obj, sort_keys=True, default=str, separators=(",", ":"))
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+    def _sum(tax_type):
+        return round(sum((a.get("beginning_balance", 0) or 0)
+                         for a in (cfg.get("accounts") or []) if a.get("tax_type") == tax_type), 2)
+    taxable, ira = _sum("Taxable"), _sum("Tax-Deferred")
+    roth_bal, cash = _sum("Tax-Free"), _sum("Cash")
+    roth = cfg.get("roth") or {}
+    summary = {
+        "total_starting_investable": round(taxable + ira + roth_bal + cash, 2),
+        "taxable_balance": taxable,
+        "ira_balance": ira,
+        "roth_balance": roth_bal,
+        "funding_order": (cfg.get("withdrawal") or {}).get("funding_order"),
+        "conversion_window": (f"{roth.get('start_year')}\u2013{roth.get('end_year')}"
+                              if roth.get("enabled") else "none"),
+        "projection_years": f"{proj.get('start_year')}\u2013{proj.get('end_year')}",
+    }
+    return {
+        "hash": _digest(full),
+        "structural_hash": _digest(structural),
+        "summary": summary,
+        "computed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def heir_rate_sensitivity(cfg: dict, rates=None) -> dict:
     """After-tax inheritance under alternative beneficiary marginal rates.
 
@@ -2572,7 +2637,6 @@ def regime_deterministic_compare(cfg: dict) -> dict:
     conversions) under that regime's return/inflation profile and return per-regime
     net worth at second death, after-tax wealth to heirs at the SECURE-window end,
     and the conversion delta in nominal AND today's dollars. Cached per config hash."""
-    import hashlib
     import json as _json
     from market_scenarios import PRESETS, DEFAULT_ID
 
@@ -2685,7 +2749,6 @@ def two_way_sensitivity(cfg: dict) -> dict:
     """Conversion delta (after-tax wealth to heirs, nominal) across the heir marginal
     rate x market regime surface, plus a per-regime break-even rate. Cached per config
     hash. The 0% rate doubles as the charitable-beneficiary (no income tax) case."""
-    import hashlib
     import json as _json
     from market_scenarios import PRESETS
 

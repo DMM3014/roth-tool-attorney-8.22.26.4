@@ -126,11 +126,13 @@ def _montecarlo_cases():
 def _strategy_cases():
     """Small fixed grid so runs stay fast (~15s) but real coverage exists."""
     cfg = copy.deepcopy(DEFAULT_SCENARIO)
-    return {
-        "small_grid": strategy_sweep(
-            cfg, start_years=[2026, 2030], stop_years=[2035, 2050],
-            brackets=[0.22, 0.24, 0.32], include_phased=True),
-    }
+    sweep = strategy_sweep(
+        cfg, start_years=[2026, 2030], stop_years=[2035, 2050],
+        brackets=[0.22, 0.24, 0.32], include_phased=True)
+    # config_fingerprint is run-identity metadata (carries a timestamp) — not part
+    # of the mathematical baseline, so exclude it from the golden snapshot.
+    sweep.pop("config_fingerprint", None)
+    return {"small_grid": sweep}
 
 
 def _ss_cases():

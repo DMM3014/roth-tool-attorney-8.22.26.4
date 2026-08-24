@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 import { toast } from "sonner";
-import { runStrategySweep, fmtUSD } from "@/lib/api";
+import { runStrategySweep, fmtUSD, getConfigFingerprint } from "@/lib/api";
 import { StrategyStressTest } from "@/components/StrategyStressTest";
 import { getStrategyLabel, appliedMatchesSweepRow } from "@/lib/strategyLabel";
 import BestFundingChipStrip from "@/components/strategy/BestFundingChipStrip";
@@ -17,6 +17,7 @@ import { GoalPresetButtons } from "@/components/strategy/GoalPresetButtons";
 import {
   RANK_OPTIONS, getOptimizerPrefs, getActiveRankOption, setOptimizerField,
 } from "@/lib/optimizerPrefs";
+import { METRIC_LABELS, metricDef } from "@/lib/reportLabels";
 
 const IRMAA_TIERS = [
   { value: "", label: "No cap" },
@@ -55,6 +56,11 @@ export const StrategyOptimizer = ({
   const [refineFundingOrders, setRefineFundingOrders] = useState(false);
   // Snapshot of the inputs the on-screen sweep was actually run with.
   const [runStamp, setRunStamp] = useState(null);
+  // Backend config fingerprints: the one the visible sweep was run under, and the
+  // live plan's current one. Structural-hash mismatch ⇒ real input drift (accounts
+  // or settings changed) — distinct from applying a leader (roth/funding only).
+  const [sweepFp, setSweepFp] = useState(null);
+  const [currentFp, setCurrentFp] = useState(null);
 
   // Goal / sweep prefs are persisted on `scenario.optimizer.*` so Plan Inputs
   // presets and StrategyOptimizer stay in sync (see /lib/optimizerPrefs.js).
@@ -94,6 +100,7 @@ export const StrategyOptimizer = ({
       if (horizonEnd && planEndYear && horizonEnd > planEndYear) opts.horizon_end_year = horizonEnd;
       const out = await runStrategySweep(scenario, opts);
       setResult(out);
+      setSweepFp(out.config_fingerprint || null);
       setRunStamp(sweepInputStamp(scenario, {
         includePhased, sweepFundingOrders, sweepHorizon, sweepHorizonYear,
         irmaaCap, maxAnnual, refineFundingOrders,
@@ -145,6 +152,10 @@ export const StrategyOptimizer = ({
   // is preferred over the caller-supplied override.
   const applyStrategy = (b, { fundingOrder } = {}) => {
     if (!b) return;
+    if (resultsStale) {
+      toast.error("These results are from different plan inputs. Re-run the sweep before applying.");
+      return;
+    }
     const effectiveOrder = fundingOrder || b.funding_order || null;
     setScenario((p) => {
       const next = JSON.parse(JSON.stringify(p));
@@ -262,6 +273,25 @@ export const StrategyOptimizer = ({
   }), [scenario, includePhased, sweepFundingOrders, sweepHorizon, sweepHorizonYear,
        irmaaCap, maxAnnual, refineFundingOrders]);
   const sweepStale = !!result && !!runStamp && runStamp !== sweepStamp;
+
+  // Live plan fingerprint — refreshed (debounced) whenever the scenario changes,
+  // via the shared backend helper so JS/Python never disagree on the hash.
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => {
+      getConfigFingerprint(scenario)
+        .then((fp) => { if (alive) setCurrentFp(fp); })
+        .catch(() => {});
+    }, 500);
+    return () => { alive = false; clearTimeout(t); };
+  }, [scenario]);
+
+  // True input drift: the visible sweep was computed from different accounts /
+  // settings than the current plan (roth/funding changes are excluded via the
+  // structural hash, so applying a leader never trips this).
+  const configStale = !!result && !!sweepFp?.structural_hash && !!currentFp?.structural_hash
+    && sweepFp.structural_hash !== currentFp.structural_hash;
+  const resultsStale = sweepStale || configStale;
 
   // Economic-completion insight — earliest sibling stop-year (same bracket /
   // start / funding order) whose goal metric ties the winner within 0.05%.
@@ -498,6 +528,21 @@ export const StrategyOptimizer = ({
             </Button>
           </div>
         )}
+        {configStale && (
+          <div className="mt-3 flex items-center gap-3 rounded-md border border-[#B84A4A] bg-[#B84A4A]/10 px-3 py-2"
+               data-testid="strategy-config-stale">
+            <AlertTriangle className="h-4 w-4 text-[#B84A4A] shrink-0" />
+            <p className="text-[11px] leading-snug text-[#8A2F2F] flex-1">
+              <strong>These results were computed from different plan inputs than the current plan</strong>{" "}
+              (accounts or settings have changed). Re-run the sweep.
+            </p>
+            <Button size="sm" onClick={run} disabled={running}
+              data-testid="strategy-config-stale-rerun"
+              className="bg-[#B84A4A] hover:bg-[#9A3B3B] text-white h-7 text-[11px] px-3">
+              {running ? "Sweeping…" : "Re-run sweep"}
+            </Button>
+          </div>
+        )}
       </Card>
 
       {/* Winner card — reflects the currently-selected rank metric */}
@@ -568,25 +613,38 @@ export const StrategyOptimizer = ({
               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-[11px] mt-3"
                    data-testid="strategy-winner-secondary">
                 {sortKey !== "after_tax_estate" && (
-                  <MiniStat label="Legacy +10 yrs" value={fmtUSD(winner.after_tax_estate)} />
+                  <MiniStat label={METRIC_LABELS.after_tax_estate.label} def={metricDef("after_tax_estate")} value={fmtUSD(winner.after_tax_estate)} />
                 )}
                 {sortKey !== "after_tax_estate_pv" && (
-                  <MiniStat label="Legacy PV (today)" value={fmtUSD(winner.after_tax_estate_pv)} />
+                  <MiniStat label={METRIC_LABELS.after_tax_estate_pv.label} def={metricDef("after_tax_estate_pv")} value={fmtUSD(winner.after_tax_estate_pv)} />
                 )}
                 {sortKey !== "after_tax_estate_at_death" && (
-                  <MiniStat label="Legacy @ 2nd death" value={fmtUSD(winner.after_tax_estate_at_death)} />
+                  <MiniStat label={METRIC_LABELS.after_tax_estate_at_death.label} def={metricDef("after_tax_estate_at_death")} value={fmtUSD(winner.after_tax_estate_at_death)} />
                 )}
                 {sortKey !== "value_at_death" && (
-                  <MiniStat label="Value @ 2nd death" value={fmtUSD(winner.value_at_death)} />
+                  <MiniStat label={METRIC_LABELS.value_at_death.label} def={metricDef("value_at_death")} value={fmtUSD(winner.value_at_death)} />
                 )}
                 {sortKey !== "ending_roth" && (
-                  <MiniStat label="Ending Roth" value={fmtUSD(winner.ending_roth)} />
+                  <MiniStat label={METRIC_LABELS.ending_roth.label} def={metricDef("ending_roth")} value={fmtUSD(winner.ending_roth)} />
                 )}
                 {sortKey !== "lifetime_taxes" && (
-                  <MiniStat label="Lifetime tax" value={fmtUSD(winner.lifetime_taxes)} warn />
+                  <MiniStat label={METRIC_LABELS.lifetime_taxes.label} def={metricDef("lifetime_taxes")} value={fmtUSD(winner.lifetime_taxes)} warn />
                 )}
-                <MiniStat label="Total converted" value={fmtUSD(winner.total_converted)} />
+                <MiniStat label={METRIC_LABELS.total_converted.label} def={metricDef("total_converted")} value={fmtUSD(winner.total_converted)} />
               </div>
+
+              {sweepFp && (
+                <p className="mt-3 text-[10px] text-muted-foreground leading-snug" data-testid="strategy-run-on">
+                  <span className="font-semibold text-[#4A6741]">Run on:</span>{" "}
+                  {new Date(sweepFp.computed_at).toLocaleString()} ·{" "}
+                  investable {fmtUSD(sweepFp.summary?.total_starting_investable)} ·{" "}
+                  taxable {fmtUSD(sweepFp.summary?.taxable_balance)} ·{" "}
+                  IRA {fmtUSD(sweepFp.summary?.ira_balance)} ·{" "}
+                  funding {sweepFp.summary?.funding_order} ·{" "}
+                  conv {sweepFp.summary?.conversion_window} ·{" "}
+                  <span className="font-mono">#{sweepFp.hash}</span>
+                </p>
+              )}
 
               {econInsight?.atBoundary && (
                 <div className="mt-3 rounded-md border border-[#C87941]/40 bg-[#C87941]/10 px-3 py-2 text-[11px] text-[#8A5A20] flex items-start gap-2"
@@ -612,7 +670,8 @@ export const StrategyOptimizer = ({
                 </div>
               )}
             </div>
-            <Button onClick={applyWinner} className="bg-[#4A6741] hover:bg-[#3B5234] text-white"
+            <Button onClick={applyWinner} disabled={resultsStale}
+              className="bg-[#4A6741] hover:bg-[#3B5234] text-white disabled:opacity-50"
               data-testid="strategy-apply">
               Apply leader
             </Button>
@@ -719,17 +778,24 @@ export const StrategyOptimizer = ({
                   <th className="px-2">Strategy</th>
                   <th className="px-2">Type</th>
                   <th className="px-2">Funding order</th>
-                  <th className={`px-2 text-right ${sortKey === "after_tax_estate" ? "text-[#4A6741] font-semibold" : ""}`}>
-                    After-tax legacy (+10 yrs)
+                  <th className={`px-2 text-right ${sortKey === "after_tax_estate" ? "text-[#4A6741] font-semibold" : ""}`}
+                    title={metricDef("after_tax_estate")}>
+                    {METRIC_LABELS.after_tax_estate.label}
+                    <span className="block text-[9px] font-normal normal-case text-muted-foreground">
+                      {METRIC_LABELS.after_tax_estate.subtitle}
+                    </span>
                   </th>
-                  <th className={`px-2 text-right ${sortKey === "after_tax_estate_pv" ? "text-[#4A6741] font-semibold" : ""}`}>
+                  <th className={`px-2 text-right ${sortKey === "after_tax_estate_pv" ? "text-[#4A6741] font-semibold" : ""}`}
+                    title={metricDef("after_tax_estate_pv")}>
                     PV (today&apos;s $)
                   </th>
-                  <th className={`px-2 text-right ${sortKey === "after_tax_estate_at_death" ? "text-[#4A6741] font-semibold" : ""}`}>
-                    Legacy @ 2nd death
+                  <th className={`px-2 text-right ${sortKey === "after_tax_estate_at_death" ? "text-[#4A6741] font-semibold" : ""}`}
+                    title={metricDef("after_tax_estate_at_death")}>
+                    {METRIC_LABELS.after_tax_estate_at_death.label}
                   </th>
-                  <th className={`px-2 text-right ${sortKey === "value_at_death" ? "text-[#4A6741] font-semibold" : ""}`}>
-                    Value @ 2nd death
+                  <th className={`px-2 text-right ${sortKey === "value_at_death" ? "text-[#4A6741] font-semibold" : ""}`}
+                    title={metricDef("value_at_death")}>
+                    {METRIC_LABELS.value_at_death.label}
                   </th>
                   <th className="px-2 text-right">Total converted</th>
                   <th className={`px-2 text-right ${sortKey === "lifetime_taxes" ? "text-[#4A6741] font-semibold" : ""}`}>
@@ -762,8 +828,9 @@ export const StrategyOptimizer = ({
                     <td className="px-2 text-right">
                       <Button size="sm" variant="outline"
                         onClick={() => applyStrategy(r)}
+                        disabled={resultsStale}
                         data-testid={`strategy-apply-row-${i}`}
-                        className="h-7 px-2 text-[11px] border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/10">
+                        className="h-7 px-2 text-[11px] border-[#4A6741] text-[#4A6741] hover:bg-[#4A6741]/10 disabled:opacity-50">
                         Apply
                       </Button>
                     </td>
@@ -916,8 +983,8 @@ export const StrategyOptimizer = ({
 // Compact stat row inside the Winner card — one row per non-sorted metric so
 // the advisor always sees the full trade-off (legacy AND lifetime tax AND
 // portfolio value) even when a single metric drives the ranking.
-const MiniStat = ({ label, value, warn }) => (
-  <div className="flex flex-col leading-tight">
+const MiniStat = ({ label, value, warn, def }) => (
+  <div className="flex flex-col leading-tight" title={def || undefined}>
     <span className="label-cap text-muted-foreground text-[9px]">{label}</span>
     <span className={`font-medium tabular-nums ${warn ? "text-[#C87941]" : "text-[#1A1A1A]"}`}>{value}</span>
   </div>

@@ -2,7 +2,7 @@ import { fmtPct } from "@/lib/api";
 import { LogoHeader } from "@/lib/advisorLogo";
 import { Page, H3, Kpi } from "./helpers";
 
-export const CoverPage = ({ branding, household, prettyDate, strat, marketPreset, scenario, logo, ...footProps }) => {
+export const CoverPage = ({ branding, household, prettyDate, strat, marketPreset, scenario, logo, fingerprint, ...footProps }) => {
   const clientAge = scenario?.projection?.start_year && scenario?.household?.client_dob_year
     ? scenario.projection.start_year - scenario.household.client_dob_year : null;
   const spouseAge = scenario?.projection?.start_year && scenario?.household?.spouse_dob_year
@@ -108,6 +108,18 @@ export const CoverPage = ({ branding, household, prettyDate, strat, marketPreset
         {branding.advisor_firm && <div>{branding.advisor_firm}</div>}
         {branding.advisor_email && <div>{branding.advisor_email}</div>}
         {branding.advisor_phone && <div>{branding.advisor_phone}</div>}
+        {fingerprint && (
+          <div data-testid="cr-cover-run-on" style={{ marginTop: 8, fontSize: 8.5, color: "#999", lineHeight: 1.5 }}>
+            <strong style={{ color: "#4A6741" }}>Run on:</strong>{" "}
+            {(() => { try { return new Date(fingerprint.computed_at).toLocaleString(); } catch { return fingerprint.computed_at; } })()}
+            {" · "}investable ${Math.round(fingerprint.summary?.total_starting_investable || 0).toLocaleString()}
+            {" · "}taxable ${Math.round(fingerprint.summary?.taxable_balance || 0).toLocaleString()}
+            {" · "}IRA ${Math.round(fingerprint.summary?.ira_balance || 0).toLocaleString()}
+            {" · "}funding {fingerprint.summary?.funding_order}
+            {" · "}conv {fingerprint.summary?.conversion_window}
+            {" · "}<span style={{ fontFamily: "monospace" }}>#{fingerprint.hash}</span>
+          </div>
+        )}
       </div>
     </Page>
   );
