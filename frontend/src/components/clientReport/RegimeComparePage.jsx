@@ -1,5 +1,5 @@
 import { fmtUSD, fmtPct } from "@/lib/api";
-import { Page, H2, P, Sub } from "./helpers";
+import { Page, H2, P, Sub, PvFootnote } from "./helpers";
 
 /**
  * Regime Comparison print page for the Client Report.
@@ -183,6 +183,7 @@ export const RegimeCompareReportPage = ({ regimeData, regimeDetData, ...footProp
               around these numbers. The worst regime by after-tax wealth to heirs is highlighted so this report never
               shows only the baseline case.
             </Sub>
+            <PvFootnote testid="cr-regime-det-pv-footnote" />
           </div>
         );
       })()}

@@ -1377,7 +1377,7 @@ const ClientReportBody = ({
         <ObjectivesPage scenario={scenario} household={household} {...pageFooter(3 + L)} />
       )}
       <OverviewPage scenario={scenario} withRoth={withRoth} noRoth={noRoth} rows={rows}
-        nwSeries={nwSeries} mcResult={mcResult} {...pageFooter(3 + L + O)} />
+        nwSeries={nwSeries} mcResult={mcResult} pv={pv} deliverYear={heirDeliverYear} {...pageFooter(3 + L + O)} />
       <ConvertSkipPage withRoth={withRoth} noRoth={noRoth} scenario={scenario}
         pvRateOverride={pvRateOverride} {...pageFooter(4 + L + O)} />
       <RothConversionsPage rows={rows} withRoth={withRoth} scenario={scenario} {...pageFooter(5 + L + O)} />

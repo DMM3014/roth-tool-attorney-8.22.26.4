@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only verification of the new present-value (today's $) twins and PV footnotes across the Client Report. Master PIN login OK (login-mode-master + pin-input + pin-unlock-btn). All five surfaces verified on the public preview URL, scoped to client-report-preview-inner. (1) Overview: 'Extra to Heirs' KPI value -$77,868 with sub-label \"in today's $ -$19,991 · after-tax, +10 yr\" (PV magnitude < nominal, correct direction) and cr-overview-pv-footnote present with the exact PV_FOOTNOTE wording. (2) Funding Order (toggle already ON by default): cr-funding-order-table renders indented muted twin rows '— in today's $' directly beneath 'Net worth at second death' ($33,193,392 -> $11,452,797), 'Federal estate tax at 2nd death' ($0 -> $0) and 'After-tax wealth to heirs (end of SECURE-10)' ($65,148,168 -> $16,725,914), plus the \"— Parents' lifetime tax (NPV, today's $)\" row ($4,362,223 nominal -> $3,037,967 NPV) across all 3 funding-order columns; cr-funding-order-pv-footnote present; table scrollWidth == clientWidth (720) so no horizontal clipping. Twin rows are styled 8.5px #8A8A8A vs 9.5px #1A1A1A nominal rows (smaller/muted as specified). (3) Unified Credit: with the default plan (no taxable gifts) the page shows the 'no taxable gifts' message and no twins/footnote render (no crash). Seeded a taxable gift (2030, $5,000,000) on Plan Inputs -> Lifetime Giving Program; the page then rendered cr-unified-credit-pot-today (\"in today's $ $8,048,225\" vs $23,325,997 nominal), cr-unified-credit-appreciation-today ($7,124,763 vs $20,649,545), cr-unified-credit-tax-saved-today ($0 vs $0) and cr-unified-credit-pv-footnote. (4) Mortality Timing (cr-mortality-toggle ON): 5-row table still renders the 'Conversion Δ (nom / today)' column (e.g. base −$77,868 / −$19,991; first-death-earlier +$1,071,777 / +$275,164) and cr-mortality-pv-footnote is present. (5) Regime deterministic section (cr-regime-toggle ON): 6 regime rows with both 'Δ NOMINAL' and \"Δ TODAY'S $\" columns and cr-regime-det-pv-footnote present. Layout: swept all 25 .pdf-page shells in the preview — zero horizontal overflow and zero vertical content overrun past the page box. Zero console errors and zero page errors across every run.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Testability (minor): the Funding Order twin rows have no individual data-testid — only cr-funding-order-table. Consider emitting data-testid={`cr-funding-order-row-${row.key}`} on each <tr> in FundingOrderPage.jsx so PV twins can be asserted directly instead of by parsing row text.",
+    "helpers.jsx Page still uses minHeight 900 while the request describes ~1050px printed pages — no clipping observed today, but the added twin rows/footnotes consume headroom, so confirm the page shell height matches the real PDF target before adding more rows.",
+    "OverviewPage.jsx line 105 computes the today's-$ twin client-side as (delta * pv.at(deliverYear)) while the backend now exposes after_tax_estate_to_heirs_today; duplicate discounting logic in two places risks drift — prefer consuming the backend field."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100%"},
+  "seed_data_creation": "Temporarily added a taxable gift (year 2030, $5,000,000) on Plan Inputs -> Lifetime Giving Program to exercise the Unified Credit twins; verified it did NOT persist across a fresh session (0 taxable-gift rows on reload) so no cleanup was required.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Master PIN from /app/memory/test_credentials.md (worked)",
+  "context_for_next_testing_agent": "ClientReport renders TWO DOM trees (client-report-preview-inner and client-report-print-root) so every cr- testid resolves to 2 nodes — always scope with page.get_by_test_id('client-report-preview-inner'). Toggles cr-unified-credit-toggle / cr-mortality-toggle / cr-regime-toggle default OFF and persist in localStorage; cr-funding-order-toggle defaults ON. The Unified Credit page only shows twins when the plan models taxable gifts (add one via add-taxable-gift / taxable-gift-year-0 / taxable-gift-amount-0 on the Plan Inputs tab). Preview page shells are CSS-scaled, so compare offsetHeight/scrollWidth rather than bounding-rect sizes when checking overflow.",
+  "rca_of_the_issue": "N/A — no defects found; all PV twins and footnotes render as specified with PV magnitudes strictly below their nominal counterparts."
+}

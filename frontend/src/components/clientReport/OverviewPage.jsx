@@ -3,9 +3,9 @@ import {
   PieChart, Pie, Cell,
 } from "recharts";
 import { fmtUSD } from "@/lib/api";
-import { Page, H2, H3, P, Sub, Kpi, StaticLegend, useIsolation } from "./helpers";
+import { Page, H2, H3, P, Sub, Kpi, StaticLegend, useIsolation, PvFootnote } from "./helpers";
 
-export const OverviewPage = ({ withRoth, noRoth, rows, nwSeries, mcResult, ...footProps }) => {
+export const OverviewPage = ({ withRoth, noRoth, rows, nwSeries, mcResult, pv, deliverYear, ...footProps }) => {
   const donutIso = useIsolation();
   const wealthIso = useIsolation();
   const lg = withRoth?.legacy || {};
@@ -102,7 +102,7 @@ export const OverviewPage = ({ withRoth, noRoth, rows, nwSeries, mcResult, ...fo
         <Kpi label="Avg. Tax + Medicare" tone="orange" value={fmtUSD(avgTaxMedicare)} sub="Incl. tax on Roth conversions & IRMAA" />
         <Kpi label="Extra to Heirs" tone="green"
           value={fmtUSD((lg.after_tax_estate_to_heirs || 0) - (lgn.after_tax_estate_to_heirs || 0))}
-          sub="After-tax, +10 yr window" />
+          sub={`in today's $ ${fmtUSD(((lg.after_tax_estate_to_heirs || 0) - (lgn.after_tax_estate_to_heirs || 0)) * (pv ? pv.at(deliverYear) : 1))} · after-tax, +10 yr`} />
       </div>
 
       <H3>Projected household wealth</H3>
@@ -133,6 +133,7 @@ export const OverviewPage = ({ withRoth, noRoth, rows, nwSeries, mcResult, ...fo
         that amount. The green line reflects your active strategy; the amber dashed line shows the same household
         without any Roth conversions.
       </Sub>
+      <PvFootnote testid="cr-overview-pv-footnote" />
     </Page>
   );
 };

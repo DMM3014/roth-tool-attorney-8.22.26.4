@@ -2135,6 +2135,53 @@ def sweep_brackets(cfg: dict) -> dict:
 DEFAULT_HEIR_SENS_RATES = (0.14, 0.26, 0.41)
 
 
+# ---------------------------------------------------------------------------
+# Present-value helpers — the SINGLE shared discount path for every comparison
+# surface. The published methodology commits to reporting today's dollars beside
+# every nominal headline delta; discounting each figure from the year it occurs
+# back to the plan start year at the model's inflation assumption is the
+# apples-to-apples measure across strategies that shift tax into different
+# decades. Every comparison endpoint routes its discounting through these.
+# ---------------------------------------------------------------------------
+def plan_discount_rate(cfg: dict, override=None) -> float:
+    """The discount rate for present-value figures: the plan's own general
+    inflation assumption unless an explicit override is supplied."""
+    if override is not None:
+        try:
+            return float(override)
+        except (TypeError, ValueError):
+            pass
+    return (cfg.get("projection", {}) or {}).get("general_inflation", 0.03) or 0.03
+
+
+def plan_start_year(cfg: dict, rows: list | None = None) -> int:
+    proj = cfg.get("projection", {}) or {}
+    if proj.get("start_year") is not None:
+        return proj["start_year"]
+    return rows[0]["year"] if rows else 0
+
+
+def discount_factor(year, start, rate: float) -> float:
+    """1 / (1+rate)^(year-start); 1.0 when `year` is unknown or precedes start."""
+    if year is None:
+        return 1.0
+    return 1.0 / ((1.0 + rate) ** max(0, (year - start)))
+
+
+def present_value(value, year, start, rate: float) -> float:
+    """Discount `value` occurring in `year` back to `start` at `rate`."""
+    return (value or 0.0) * discount_factor(year, start, rate)
+
+
+def lifetime_tax_present_value(rows: list, start, rate: float) -> float:
+    """NPV of each year's total_tax discounted back to the plan start year."""
+    total = 0.0
+    for row in rows or []:
+        yr = row.get("year", start)
+        total += (row.get("total_tax", 0) or 0) / ((1.0 + rate) ** max(0, (yr - start)))
+    return total
+
+
 def heir_rate_sensitivity(cfg: dict, rates=None) -> dict:
     """After-tax inheritance under alternative beneficiary marginal rates.
 
@@ -2161,7 +2208,15 @@ def heir_rate_sensitivity(cfg: dict, rates=None) -> dict:
         modeled = round(lc.get("heir_ordinary_rate", 0.30), 4)
     all_rates = sorted(set(rate_list + [modeled]))
 
-    out = {"modeled_rate": modeled, "rates": all_rates, "branches": {}, "lifetime_taxes": {}}
+    start = plan_start_year(cfg)
+    disc = plan_discount_rate(cfg)
+    _, second = _fo_death_years(cfg)
+    horizon = int((cfg.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
+    deliver_year = (second + horizon) if second else None
+    f_deliver = discount_factor(deliver_year, start, disc)
+
+    out = {"modeled_rate": modeled, "rates": all_rates, "branches": {}, "lifetime_taxes": {},
+           "start_year": start, "discount_rate": round(disc, 4), "heir_deliver_year": deliver_year}
     for key, roth_on in (("with_conversions", True), ("no_conversions", False)):
         c = apply_market_scenario(copy.deepcopy(cfg))
         if not roth_on:
@@ -2181,6 +2236,7 @@ def heir_rate_sensitivity(cfg: dict, rates=None) -> dict:
                 "rate": r,
                 "is_modeled": abs(r - modeled) < 1e-9,
                 "after_tax_estate_to_heirs": leg["after_tax_estate_to_heirs"],
+                "after_tax_estate_to_heirs_today": round(leg["after_tax_estate_to_heirs"] * f_deliver, 2),
                 "inherited_ira_tax": leg["inherited_ira_tax"],
                 "tax_free_roth_to_heirs": leg["tax_free_roth_to_heirs"],
             })
@@ -2404,12 +2460,9 @@ def _funding_order_metrics(cfg: dict, order: str) -> dict:
     rows = res.get("rows", []) or []
 
     proj = c.get("projection", {}) or {}
-    start = proj.get("start_year", rows[0]["year"] if rows else 0)
-    disc = proj.get("general_inflation", 0.03)
-    npv = 0.0
-    for row in rows:
-        yr = row.get("year", start)
-        npv += (row.get("total_tax", 0) or 0) / ((1 + disc) ** max(0, yr - start))
+    start = plan_start_year(c, rows)
+    disc = plan_discount_rate(c)
+    npv = lifetime_tax_present_value(rows, start, disc)
 
     ending_taxable = summ.get("ending_taxable", 0) or 0
     ending_basis = summ.get("ending_taxable_basis", 0) or 0
@@ -2420,6 +2473,15 @@ def _funding_order_metrics(cfg: dict, order: str) -> dict:
     fet = _fo_fed_estate_tax_no_trust(c, rows)
     break_even = _fo_break_even_rate(c)
 
+    # Delivery years for the today's-dollars twins: estate figures land at the
+    # second death; the after-tax inheritance lands at the SECURE-window end.
+    _, second = _fo_death_years(c)
+    horizon = int((c.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
+    deliver_year = (second + horizon) if second else None
+
+    net_worth = leg.get("gross_estate")
+    heirs = leg.get("after_tax_estate_to_heirs")
+
     return {
         "funding_order": order,
         "total_roth_converted": summ.get("total_roth_converted"),
@@ -2428,14 +2490,21 @@ def _funding_order_metrics(cfg: dict, order: str) -> dict:
         "embedded_unrealized_gain": round(embedded_gain, 2),
         "step_up_value": round(step_up_value, 2),
         "heir_ltcg_rate": round(heir_ltcg, 4),
-        "net_worth_at_second_death": leg.get("gross_estate"),
+        "net_worth_at_second_death": net_worth,
+        "net_worth_at_second_death_today": round(present_value(net_worth, second, start, disc), 2),
         "federal_estate_tax_no_trust": fet["federal_estate_tax"],
+        "federal_estate_tax_no_trust_today": round(present_value(fet["federal_estate_tax"], second, start, disc), 2),
         "state_estate_tax_no_trust": fet["state_estate_tax"],
-        "after_tax_to_heirs_secure10": leg.get("after_tax_estate_to_heirs"),
+        "after_tax_to_heirs_secure10": heirs,
+        "after_tax_to_heirs_secure10_today": round(present_value(heirs, deliver_year, start, disc), 2),
         "lifetime_tax_nominal": summ.get("lifetime_taxes"),
         "lifetime_tax_npv": round(npv, 2),
         "heir_secure10_ira_tax": leg.get("inherited_ira_tax"),
         "beneficiary_break_even_rate": break_even,
+        "start_year": start,
+        "discount_rate": round(disc, 4),
+        "heir_deliver_year": deliver_year,
+        "second_death_year": second,
     }
 
 
@@ -2520,8 +2589,7 @@ def regime_deterministic_compare(cfg: dict) -> dict:
         w = m_with.get("after_tax_to_heirs_secure10") or 0.0
         n = m_no.get("after_tax_to_heirs_secure10") or 0.0
         delta_nom = w - n
-        yrs = max(0, (deliver_year - start)) if (deliver_year and start) else 0
-        delta_today = delta_nom / ((1.0 + disc) ** yrs) if yrs else delta_nom
+        delta_today = present_value(delta_nom, deliver_year, start, disc)
 
         rows.append({
             "preset_id": pid,
@@ -2739,12 +2807,9 @@ def _audit_outcomes(cfg: dict) -> dict:
     leg = res.get("legacy", {}) or {}
     rows = res.get("rows", []) or []
     proj = cfg.get("projection", {}) or {}
-    start = proj.get("start_year", rows[0]["year"] if rows else 0)
-    disc = proj.get("general_inflation", 0.03) or 0.03
-    npv = 0.0
-    for row in rows:
-        yr = row.get("year", start)
-        npv += (row.get("total_tax", 0) or 0) / ((1 + disc) ** max(0, yr - start))
+    start = plan_start_year(cfg, rows)
+    disc = plan_discount_rate(cfg)
+    npv = lifetime_tax_present_value(rows, start, disc)
     fet = _fo_fed_estate_tax_no_trust(cfg, rows)
     return {
         "net_worth_at_second_death": leg.get("gross_estate") or 0.0,
@@ -2782,8 +2847,8 @@ def audit_compare(review_cfg: dict, planner_cfg: dict, max_attribution: int = 12
     _, second = _fo_death_years(review_cfg)
     horizon = int((review_cfg.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
     deliver_year = (second + horizon) if second else None
-    f_second = 1.0 / ((1 + disc) ** max(0, (second - start))) if second else 1.0
-    f_deliver = 1.0 / ((1 + disc) ** max(0, (deliver_year - start))) if deliver_year else 1.0
+    f_second = discount_factor(second, start, disc)
+    f_deliver = discount_factor(deliver_year, start, disc)
     # which discount factor anchors each metric's "today's dollars"
     anchor = {
         "net_worth_at_second_death": f_second,
@@ -2969,7 +3034,7 @@ def mortality_timing_compare(cfg: dict) -> dict:
     for sid, label, which, delta in scen_defs:
         m = base_m if which is None else _mortality_metrics(_mortality_shift_cfg(cfg, which, delta))
         end_yr = m.get("secure_window_end_year")
-        f_deliver = 1.0 / ((1 + infl) ** max(0, ((end_yr or start) - start))) if end_yr else 1.0
+        f_deliver = discount_factor(end_yr, start, infl)
         rows.append({
             "id": sid, "label": label,
             "single_filer_years": m["single_filer_years"],

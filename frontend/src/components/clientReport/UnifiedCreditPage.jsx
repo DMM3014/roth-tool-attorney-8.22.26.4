@@ -13,7 +13,7 @@
  * page needs no extra API call.
  */
 import React from "react";
-import { Page, H2, H3, P, Sub } from "./helpers.jsx";
+import { Page, H2, H3, P, Sub, PvFootnote, PvTwin } from "./helpers.jsx";
 import { fmtUSD, fmtPct } from "@/lib/api";
 
 const FED_BASE = 15_000_000;      // OBBBA base (2026), matches backend law_constants
@@ -29,6 +29,7 @@ export const UnifiedCreditPage = ({ scenario, withRoth, ...footProps }) => {
   const giving = withRoth?.giving || {};
   const tg = giving.taxable_gifts;
   const infl = scenario?.projection?.general_inflation ?? 0.03;
+  const startYr = scenario?.projection?.start_year ?? (withRoth?.rows?.[0]?.year || null);
   const h = scenario?.household || {};
 
   const clientDeath = (h.client_dob_year && h.client_life_expectancy) ? h.client_dob_year + h.client_life_expectancy : null;
@@ -84,6 +85,11 @@ export const UnifiedCreditPage = ({ scenario, withRoth, ...footProps }) => {
   const taxWith = FED_RATE * Math.max(0, estateY2 + principal - shelter);
   const estateTaxSaved = Math.max(0, taxWithout - taxWith);
 
+  // Present-value factor: discount second-death estate figures back to plan start.
+  const f2 = (startYr != null && secondYr != null)
+    ? 1 / Math.pow(1 + infl, Math.max(0, secondYr - startYr)) : 1;
+  const pvUsd = (v) => fmtUSD((v || 0) * f2);
+
   const cell = { padding: 6, fontVariantNumeric: "tabular-nums" };
 
   return (
@@ -110,11 +116,17 @@ export const UnifiedCreditPage = ({ scenario, withRoth, ...footProps }) => {
           </tr>
           <tr style={{ borderBottom: "1px solid #F3F1EC" }}>
             <td style={{ ...cell, textAlign: "left" }}>Family gift pot at second death (Y{secondYr})</td>
-            <td style={{ ...cell, textAlign: "right" }}>{fmtUSD(pot)}</td>
+            <td style={{ ...cell, textAlign: "right" }}>
+              {fmtUSD(pot)}
+              <PvTwin value={pot} fmt={pvUsd} testid="cr-unified-credit-pot-today" />
+            </td>
           </tr>
           <tr style={{ borderTop: "2px solid #4A6741", background: "#F1F5EF" }}>
             <td style={{ ...cell, textAlign: "left", fontWeight: 800, color: "#4A6741" }}>Appreciation that escaped the estate</td>
-            <td style={{ ...cell, textAlign: "right", fontWeight: 800, color: "#4A6741" }}>{fmtUSD(appreciationEscaped)}</td>
+            <td style={{ ...cell, textAlign: "right", fontWeight: 800, color: "#4A6741" }}>
+              {fmtUSD(appreciationEscaped)}
+              <PvTwin value={appreciationEscaped} fmt={pvUsd} testid="cr-unified-credit-appreciation-today" />
+            </td>
           </tr>
         </tbody>
       </table>
@@ -167,7 +179,10 @@ export const UnifiedCreditPage = ({ scenario, withRoth, ...footProps }) => {
             </tr>
             <tr style={{ borderTop: "2px solid #4A6741" }}>
               <td style={{ ...cell, textAlign: "left", fontWeight: 800, color: "#4A6741" }}>Federal estate tax saved by gifting</td>
-              <td style={{ ...cell, textAlign: "right", fontWeight: 800, color: "#4A6741" }} data-testid="cr-unified-credit-tax-saved">{fmtUSD(estateTaxSaved)}</td>
+              <td style={{ ...cell, textAlign: "right", fontWeight: 800, color: "#4A6741" }} data-testid="cr-unified-credit-tax-saved">
+                {fmtUSD(estateTaxSaved)}
+                <PvTwin value={estateTaxSaved} fmt={pvUsd} testid="cr-unified-credit-tax-saved-today" />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -200,6 +215,7 @@ export const UnifiedCreditPage = ({ scenario, withRoth, ...footProps }) => {
         offsets are applied so within-exclusion gifts create no phantom estate tax. Consult a qualified estate-tax
         professional — GST allocation, state gift/estate conformity, and valuation discounts are not modeled here.
       </Sub>
+      <PvFootnote testid="cr-unified-credit-pv-footnote" />
     </Page>
   );
 };

@@ -1,4 +1,4 @@
-import { Page, H2, P, Sub } from "./helpers";
+import { Page, H2, P, Sub, PvFootnote } from "./helpers";
 import {
   FUNDING_ORDER_SHORT, METRIC_ROWS, FUNDING_ORDER_EXPLAINER,
 } from "@/lib/fundingOrderRows";
@@ -78,6 +78,7 @@ export const FundingOrderPage = ({ data, ...footProps }) => {
         baseline at the second death. Break-even is the combined ordinary rate beneficiaries would pay at which
         converting and not converting leave heirs equal after-tax wealth.
       </Sub>
+      <PvFootnote testid="cr-funding-order-pv-footnote" />
     </Page>
   );
 };

@@ -1,6 +1,7 @@
 /** Client Report — Mortality Timing sensitivity (five death-timing scenarios). */
 import React from "react";
 import { Page, H2, P, Sub } from "./helpers.jsx";
+import { PvFootnote } from "./helpers.jsx";
 import { fmtUSD } from "@/lib/api";
 
 export const MortalityTimingPage = ({ mortalityData, ...footProps }) => {
@@ -64,6 +65,7 @@ export const MortalityTimingPage = ({ mortalityData, ...footProps }) => {
         Deterministic single-path runs; first death is clamped so it never postdates the second death and neither predates
         the current year. Compression cost estimates the single-vs-MFJ bracket premium over the widow years.
       </Sub>
+      <PvFootnote testid="cr-mortality-pv-footnote" />
     </Page>
   );
 };

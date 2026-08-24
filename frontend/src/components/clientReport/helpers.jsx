@@ -157,6 +157,29 @@ export const Sub = ({ children }) => (
   <p data-docx="sub" style={{ fontSize: 10, color: "#777", fontStyle: "italic", marginBottom: 8 }}>{children}</p>
 );
 
+// The single, standard present-value footnote. Dropped wherever a discounted
+// ("today's $") figure appears so every surface explains the discounting the
+// same way. The published methodology commits to this exact wording.
+export const PV_FOOTNOTE =
+  "Present value discounts each figure from the year it occurs back to the plan " +
+  "start at the model's inflation assumption — the apples-to-apples measure " +
+  "across strategies that shift tax into different decades.";
+
+export const PvFootnote = ({ testid }) => (
+  <p data-docx="sub" data-testid={testid || "cr-pv-footnote"}
+     style={{ fontSize: 9, color: "#8A8A82", fontStyle: "italic", marginTop: 4, marginBottom: 8, lineHeight: 1.5 }}>
+    {PV_FOOTNOTE}
+  </p>
+);
+
+// Small muted "in today's $" twin rendered directly beneath a nominal figure.
+export const PvTwin = ({ value, fmt, testid, align = "right" }) => (
+  <div data-testid={testid}
+       style={{ fontSize: 9, color: "#8A8A82", fontWeight: 400, marginTop: 1, textAlign: align, whiteSpace: "nowrap" }}>
+    in today&apos;s $ {typeof fmt === "function" ? fmt(value) : value}
+  </div>
+);
+
 export const Page = ({ children, testid, first, pageNo, pageTotal, footer, confidential, logo, lawAsOf }) => (
   <section
     data-testid={testid}
