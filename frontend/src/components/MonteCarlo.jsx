@@ -13,6 +13,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { RegimeComparePanel } from "@/components/RegimeComparePanel";
 import { TwoWaySensitivityPanel } from "@/components/TwoWaySensitivityPanel";
 import { MortalityTimingPanel } from "@/components/MortalityTimingPanel";
+import { CharitableBeneficiaryPanel } from "@/components/CharitableBeneficiaryPanel";
 import AIAnalysisCard from "@/components/AIAnalysisCard";
 import { GuardrailCard, HaltCard, RebalanceCadenceCard } from "@/components/monteCarlo/BehaviorRuleCards";
 import { PairedRothVsNoRothCard } from "@/components/monteCarlo/PairedRothVsNoRothCard";
@@ -675,6 +676,12 @@ export const MonteCarlo = ({ scenario, setScenario, onResult, onRegimeResult, on
           completed MC run to stay consistent with the panels above. */}
       {res && (
         <MortalityTimingPanel scenario={scenario} />
+      )}
+
+      {/* Charitable beneficiary — death-time IRA-to-charity vs conversions.
+          Gated on a completed MC run to match the panels above. */}
+      {res && (
+        <CharitableBeneficiaryPanel scenario={scenario} />
       )}
     </div>
   );

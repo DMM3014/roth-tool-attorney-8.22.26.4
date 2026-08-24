@@ -358,6 +358,21 @@ async def mortality_timing_route(request: Request, req: ProjectionRequest,
         raise HTTPException(status_code=400, detail="Mortality timing comparison could not be processed")
 
 
+@router.post("/charitable-beneficiary")
+@limiter.limit("10/minute")
+async def charitable_beneficiary_route(request: Request, req: ProjectionRequest,
+                                       _gate: None = Depends(require_advisor_or_share)):
+    """Death-time IRA-to-charity designation compared across three cases (no charity;
+    charity + conversions; charity + no conversions) with nominal & today's-dollar deltas."""
+    validate_config(req.config)
+    try:
+        from projection import charitable_beneficiary_compare
+        return await asyncio.to_thread(charitable_beneficiary_compare, req.config)
+    except Exception:
+        logging.exception("charitable beneficiary compare failed")
+        raise HTTPException(status_code=400, detail="Charitable beneficiary comparison could not be processed")
+
+
 class SequenceStressRequest(ProjectionRequest):
     """POST /api/planning/sequence-stress — the same plan under early-bear,
     late-bear and volatile return SEQUENCES instead of one flat rate."""

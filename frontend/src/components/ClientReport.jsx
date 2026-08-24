@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
-  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runRegimeDeterministicCompare, runTwoWaySensitivity, runMortalityTiming, runEpFlowchart, runHeirRateSensitivity,
+  API, authHeaders, runProjection, runMonteCarlo, runRegimeCompare, runRegimeDeterministicCompare, runTwoWaySensitivity, runMortalityTiming, runCharitableBeneficiary, runEpFlowchart, runHeirRateSensitivity,
   runSequenceStress, listScenarios, fmtPct, fmtUSD, allocationToAssets, compareFundingOrders, getLawConstants,
 } from "@/lib/api";
 import { downloadElementAsPdf } from "@/lib/pdf";
@@ -54,6 +54,7 @@ import { LegacyPage } from "./clientReport/LegacyPage";
 import { HeirRateSensitivityPage } from "./clientReport/HeirRateSensitivityPage";
 import { TwoWaySensitivityPage } from "./clientReport/TwoWaySensitivityPage";
 import { MortalityTimingPage } from "./clientReport/MortalityTimingPage";
+import { CharitableBeneficiaryPage } from "./clientReport/CharitableBeneficiaryPage";
 import { AuditMemoPage } from "./clientReport/AuditMemoPage";
 import { BasisStepUpPage } from "./clientReport/BasisStepUpPage";
 import { EpFlowchartPage, EpFlowchartComparePage, EpFlowchartCombinedComparePage } from "./clientReport/EpFlowchartPage";
@@ -250,6 +251,12 @@ export const ClientReport = ({ scenario, setScenario }) => {
           return raw == null ? false : raw === "1"; } catch { return false; }
   });
   useEffect(() => { try { window.localStorage.setItem("client_report_mortality_timing_v1", mortalityOn ? "1" : "0"); } catch {} }, [mortalityOn]);
+  // Charitable Beneficiary page — OFF by default; advisor opts in per report.
+  const [charityOn, setCharityOn] = useState(() => {
+    try { const raw = window.localStorage.getItem("client_report_charity_v1");
+          return raw == null ? false : raw === "1"; } catch { return false; }
+  });
+  useEffect(() => { try { window.localStorage.setItem("client_report_charity_v1", charityOn ? "1" : "0"); } catch {} }, [charityOn]);
   // Two-Way Sensitivity — optional "today's dollars" view of the heir-rate × regime surface.
   const twoWayStoredRef = useRef(null);
   const [twoWayToday, setTwoWayToday] = useState(() => {

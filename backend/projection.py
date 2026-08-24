@@ -561,16 +561,30 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
     end_trad = final.get("traditional", 0)
     end_roth = final.get("roth", 0)
 
+    # Death-time charitable beneficiary designation on the Traditional IRA. The
+    # designated fraction passes to qualified charity free of income tax (charity
+    # pays none) and is excluded from the heirs' SECURE-10 drawdown; the estate
+    # side gets a charitable deduction. frac == 0 is a strict no-op (golden-safe).
+    frac = 0.0
+    try:
+        frac = float((cfg.get("beneficiary") or {}).get("ira_to_charity_fraction", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        frac = 0.0
+    frac = max(0.0, min(1.0, frac))
+    charitable_ira = round(end_trad * frac, 2) if frac > 0 else 0.0
+    heir_trad = end_trad * (1.0 - frac)
+    final_heir = final if frac <= 0 else {**final, "traditional": heir_trad}
+
     gross_estate = max(0.0, end_nw - mortgage)
     estate_settlement = settlement_pct * gross_estate
 
     # immediate (at-death) after-tax value — PV-at-death approximation
-    inherited_ira_tax_at_death = end_trad * heir_ord_rate
-    after_tax_at_death = gross_estate - estate_settlement - inherited_ira_tax_at_death
+    inherited_ira_tax_at_death = heir_trad * heir_ord_rate
+    after_tax_at_death = gross_estate - estate_settlement - inherited_ira_tax_at_death - charitable_ira
 
     # post-death forward value (mirrors the spreadsheet longevity view)
     post_rows, total_10yr, cum_ira_tax = _post_death_horizon(
-        final, accounts, heir_ord_rate, settlement_pct, horizon, heir_return,
+        final_heir, accounts, heir_ord_rate, settlement_pct, horizon, heir_return,
         heir_ltcg_rate, div_yield, gains_realized)
 
     # After-tax attribution: use the FINAL horizon row so the split lines up with total_10yr.
@@ -604,6 +618,8 @@ def _compute_legacy(cfg: dict, final: dict, accounts: list | None = None) -> dic
         "step_up_at_death": step_up,
         "horizon_years": horizon,
         "post_death_rows": post_rows,
+        **({"ira_to_charity_fraction": round(frac, 4),
+            "charitable_ira_amount": charitable_ira} if frac > 0 else {}),
     }
 
 
@@ -3071,3 +3087,90 @@ def mortality_timing_compare(cfg: dict) -> dict:
             "secure_window_end_year": end_yr,
         })
     return {"start_year": start, "discount_rate": round(infl, 4), "rows": rows}
+
+
+# ---------------------------------------------------------------------------
+# Charitable Beneficiary — death-time IRA-to-charity designation vs conversions.
+# Three cases at the user's settings: no charity; IRA fraction to charity WITH
+# the current conversion program; IRA fraction to charity with conversions off.
+# ---------------------------------------------------------------------------
+def charitable_beneficiary_compare(cfg: dict, fraction=None) -> dict:
+    """Compare family after-tax, charity receipt, combined total, and total tax
+    paid by everyone under three cases, with nominal + today's-dollars deltas."""
+    cfg_frac = 0.0
+    try:
+        cfg_frac = float((cfg.get("beneficiary") or {}).get("ira_to_charity_fraction", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        cfg_frac = 0.0
+    frac = fraction if fraction is not None else (cfg_frac if cfg_frac > 0 else 1.0)
+    frac = max(0.0, min(1.0, frac))
+
+    start = plan_start_year(cfg)
+    disc = plan_discount_rate(cfg)
+    _, second = _fo_death_years(cfg)
+    horizon = int((cfg.get("legacy", {}) or {}).get("post_death_years", 10) or 10)
+    deliver_year = (second + horizon) if second else None
+    FED_RATE = 0.40
+
+    def _branch(charity_frac, roth_on):
+        c = copy.deepcopy(cfg)
+        c.setdefault("beneficiary", {})["ira_to_charity_fraction"] = charity_frac
+        if not roth_on:
+            c["roth"] = {**(c.get("roth") or {}), "enabled": False}
+        res = run_projection(c)
+        leg = res.get("legacy", {}) or {}
+        summ = res.get("summary", {}) or {}
+        rows = res.get("rows", []) or []
+        family = leg.get("after_tax_estate_to_heirs") or 0.0
+        charity = leg.get("charitable_ira_amount") or 0.0
+        # A charity is tax-exempt: it invests its receipt over the same SECURE-10
+        # horizon the family's after-tax figure is measured across, tax-free —
+        # exactly parallel to an inherited Roth. Grow it so the combined total is
+        # apples-to-apples in time.
+        tax_free_r = next((a.get("return", 0.07) for a in (c.get("accounts") or [])
+                           if a.get("tax_type") == "Tax-Free"), 0.07) or 0.07
+        charity_endowment = charity * ((1.0 + tax_free_r) ** horizon)
+        lifetime_tax = summ.get("lifetime_taxes") or 0.0
+        heir_ira_tax = leg.get("inherited_ira_tax") or 0.0
+        base_est = (_fo_fed_estate_tax_no_trust(c, rows) or {}).get("federal_estate_tax") or 0.0
+        # Charitable deduction removes the charity IRA from the taxable estate.
+        est_tax = max(0.0, base_est - FED_RATE * charity)
+        return {
+            "family_after_tax": round(family, 2),
+            "charity_receipt": round(charity, 2),
+            "charity_endowment_value": round(charity_endowment, 2),
+            "combined_family_charity": round(family + charity_endowment, 2),
+            "lifetime_tax": round(lifetime_tax, 2),
+            "heir_ira_tax": round(heir_ira_tax, 2),
+            "federal_estate_tax": round(est_tax, 2),
+            "taxable_estate_charitable_deduction": round(charity, 2),
+            "total_tax_everyone": round(lifetime_tax + heir_ira_tax + est_tax, 2),
+            "total_roth_converted": round(summ.get("total_roth_converted") or 0.0, 2),
+        }
+
+    cases = {
+        "no_charity": _branch(0.0, True),
+        "charity_with_conversions": _branch(frac, True),
+        "charity_no_conversions": _branch(frac, False),
+    }
+
+    def _delta(a, b):
+        nom = round(a - b, 2)
+        return {"nominal": nom, "today": round(present_value(nom, deliver_year, start, disc), 2)}
+
+    winner = max(("charity_with_conversions", "charity_no_conversions"),
+                 key=lambda k: cases[k]["combined_family_charity"])
+    return {
+        "fraction": round(frac, 4),
+        "start_year": start,
+        "discount_rate": round(disc, 4),
+        "heir_deliver_year": deliver_year,
+        "cases": cases,
+        "combined_delta_conversions_effect": _delta(
+            cases["charity_with_conversions"]["combined_family_charity"],
+            cases["charity_no_conversions"]["combined_family_charity"]),
+        "winner": winner,
+        "note": ("QCDs give from the pre-tax IRA during life; a death-time charitable "
+                 "beneficiary designation gives from the same pool at death — the two "
+                 "compete for the same dollars."),
+    }
