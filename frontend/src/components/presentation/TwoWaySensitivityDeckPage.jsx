@@ -69,7 +69,7 @@ export const TwoWaySensitivityDeckPage = ({ twoWay, includeNarrative = true, sho
               {d.regimes.map((rg, ci) => {
                 const delta = matrix[ri][ci];
                 return (
-                  <td key={rg.preset_id}
+                  <td key={rg.preset_id} data-testid={`deck-two-way-cell-${ri}-${ci}`}
                     style={{ padding: "4px 3px", fontSize: 8.5, fontWeight: 700, textAlign: "center",
                              fontVariantNumeric: "tabular-nums", color: "#1A1A1A", border: "1px solid #FFFFFF",
                              borderLeft: `3px solid ${railColor(delta)}`, background: cellBg(delta, maxAbs) }}>
