@@ -119,7 +119,8 @@ export const StrategyOptimizer = ({
   // The ref guards against React StrictMode's double-effect invocation.
   const autoRunFired = useRef(false);
   useEffect(() => {
-    if (!autoRunPending || autoRunFired.current || running) return;
+    if (!autoRunPending) { autoRunFired.current = false; return; }
+    if (autoRunFired.current || running) return;
     autoRunFired.current = true;
     if (typeof onAutoRunConsumed === "function") onAutoRunConsumed();
     run();
@@ -511,7 +512,7 @@ export const StrategyOptimizer = ({
           </div>
         </div>
         {err && <p className="mt-3 text-xs text-[#B84A4A]" data-testid="strategy-error">{err}</p>}
-        {sweepStale && (
+        {sweepStale && !configStale && (
           <div className="mt-3 flex items-center gap-3 rounded-md border border-[#C87941] bg-[#C87941]/10 px-3 py-2"
                data-testid="strategy-sweep-stale">
             <AlertTriangle className="h-4 w-4 text-[#C87941] shrink-0" />

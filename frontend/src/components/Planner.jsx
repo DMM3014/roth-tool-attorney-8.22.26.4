@@ -374,7 +374,7 @@ export const Planner = ({ session = {} }) => {
           <TabsContent value="projection">
             <Projection scenario={scenario} setScenario={setScenario} mcResult={mcResult} />
           </TabsContent>
-          <TabsContent value="strategy">
+          <TabsContent value="strategy" forceMount hidden={activeTab !== "strategy"}>
             <StrategyOptimizer scenario={scenario} setScenario={setScenario}
               onStressResult={handleStressResult}
               autoRunPending={autoRunPending} onAutoRunConsumed={handleAutoRunConsumed} />

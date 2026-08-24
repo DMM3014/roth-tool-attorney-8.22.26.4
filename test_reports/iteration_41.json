@@ -1,0 +1,20 @@
+{
+  "summary": "Frontend-only retest (iteration_41) of the Analyzer↔Report consistency guards after the forceMount fix in Planner.jsx. Logged in with Master PIN, ran a full strategy sweep, verified apply-does-not-trip-staleness, verified the PRIMARY Guard 2 flow (sweep → edit acc-bal-0 in Plan Inputs → return to Strategy tab), Guard 1 hash parity (analyzer vs client report cover), and Guard 4 shared labels. ALL checks PASSED. Backend not re-tested per request.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": ["Optional/low: fix the pre-existing React warning '<span> cannot be a child of <option>' originating from StrategyOptimizer.jsx line ~493 (goal <option> renders a dynamic span child)."],
+  "critical_code_review_comments": ["forceMount + hidden on TabsContent value='strategy' keeps StrategyOptimizer mounted permanently; this means its effects (debounced getConfigFingerprint calls) run even while the tab is hidden — acceptable but watch for extra /fingerprint network chatter on every scenario edit.", "StrategyOptimizer.jsx is large (>900 lines); consider extracting the winner card and ranked table into subcomponents."],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested", "frontend": "100% (all 6 targeted checks passed)"},
+  "seed_data_creation": "none (default plan; temporarily set account 0 beginning balance to $777,777 during the staleness test, then re-ran sweep; no persistence action taken)",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified results: (1) Sweep completes in ~20-40s and strategy-winner persists across Strategy→Plan Inputs→Strategy tab round-trip (winner=1, strategy-empty=0) — the iteration_40 unmount defect is FIXED. (2) After editing acc-bal-0 (click first, then fill — inputs are readOnly until focused), the red banner data-testid=strategy-config-stale appears with the exact expected text, amber strategy-sweep-stale count = 0 (correctly suppressed), and both strategy-apply and strategy-apply-row-0 are disabled. Clicking strategy-config-stale-rerun clears the banner and re-enables Apply. (3) Clicking 'Apply leader' while not stale does NOT create a config-stale banner. (4) Guard 1: analyzer strategy-run-on hash #aab79e66459668cd == cr-cover-run-on hash on the Client Report cover. (5) Guard 4: 'After-tax legacy (+10 yrs)', 'Gross estate @ 2nd death', 'After-tax @ 2nd death' all present; old strings 'Legacy @ 2nd death' / 'Value @ 2nd death' absent. Only console error is the known <span>-in-<option> hydration warning.",
+  "test_credentials": "Master PIN i4m07MnVDhpTYkc1giC6wWDv (from /app/memory/test_credentials.md) — worked.",
+  "rca_of_the_issue": "Previous failure was caused by Radix TabsContent unmounting StrategyOptimizer on tab switch, discarding sweepFp/currentFp/result state. forceMount + hidden preserves component state, making the staleness guard reachable via the intended user flow. Confirmed fixed."
+}
