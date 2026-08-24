@@ -441,6 +441,23 @@ export const ClientReport = ({ scenario, setScenario }) => {
     return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, mortalityOn]);
+  // Charitable beneficiary comparison — only fetched when the advisor toggles it on.
+  const [charityData, setCharityData] = useState(null);
+  const [charityRunning, setCharityRunning] = useState(false);
+  useEffect(() => {
+    if (!charityOn) { setCharityData(null); setCharityRunning(false); return; }
+    let alive = true;
+    setCharityRunning(true);
+    setCharityData(null);
+    const t = setTimeout(() => {
+      runCharitableBeneficiary(scenario)
+        .then((r) => { if (alive) setCharityData(r); })
+        .catch(() => { if (alive) setCharityData(null); })
+        .finally(() => { if (alive) setCharityRunning(false); });
+    }, 900);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, charityOn]);
   // plan / behavioral rules change. Pairs with/without behavior when either the halt
   // or guardrail is active so clients see the "behavior lift" per regime.
   useEffect(() => {
@@ -1114,6 +1131,24 @@ export const ClientReport = ({ scenario, setScenario }) => {
 
           <div className="mt-3 rounded-md border border-[#EBE8E0] bg-[#FAFAF8] px-3 py-2">
             <label className="flex items-start gap-2 cursor-pointer max-w-[720px]">
+              <Switch checked={charityOn} onCheckedChange={(v) => setCharityOn(!!v)}
+                data-testid="cr-charity-toggle" className="mt-0.5" />
+              <div className="flex-1">
+                <p className="text-[12px] font-semibold text-[#1A1A1A]">
+                  Add the &ldquo;Charitable Beneficiary&rdquo; page
+                  {charityRunning && <span className="ml-2 text-[10.5px] font-normal text-muted-foreground">(computing…)</span>}
+                </p>
+                <p className="text-[10.5px] text-muted-foreground leading-snug mt-1">
+                  Off by default. Compares naming a charity as the IRA&rsquo;s death-time beneficiary against the current
+                  conversion program and against conversions off — family after-tax, charity receipt, combined total, and
+                  total tax paid by everyone, with each delta in nominal and today&rsquo;s dollars.
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <div className="mt-3 rounded-md border border-[#EBE8E0] bg-[#FAFAF8] px-3 py-2">
+            <label className="flex items-start gap-2 cursor-pointer max-w-[720px]">
               <Switch checked={twoWayToday} onCheckedChange={(v) => setTwoWayToday(!!v)}
                 data-testid="cr-two-way-today-toggle" className="mt-0.5" />
               <div className="flex-1">
@@ -1265,6 +1300,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   twoWayData={twoWayData}
                   twoWayToday={twoWayToday}
                   mortalityOn={mortalityOn} mortalityData={mortalityData}
+                  charityOn={charityOn} charityData={charityData}
                   auditResult={auditResult}
                   advisorInfo={advisorInfo}
                   flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
@@ -1303,6 +1339,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
           twoWayData={twoWayData}
           twoWayToday={twoWayToday}
           mortalityOn={mortalityOn} mortalityData={mortalityData}
+          charityOn={charityOn} charityData={charityData}
           auditResult={auditResult}
           advisorInfo={advisorInfo}
           flowOn={flowOn} flowPlans={flowPlans} flowCompareOn={flowCompareOn} flowResult={flowResult}
@@ -1326,7 +1363,7 @@ export const ClientReport = ({ scenario, setScenario }) => {
 const ClientReportBody = ({
   branding, household, clientName, spouseName, prettyDate, scenario, withRoth, noRoth,
   incomeData, composeData, taxCompData, nwSeries, mcResult, marketPreset, heirRate, aiText, logo,
-  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData, twoWayToday, mortalityOn, mortalityData, auditResult, advisorInfo,
+  regimeOn, regimeData, regimeDetData, seqOn, seqData, basisOn, pairedOn, inputsOn, bracketOn, heirSens, twoWayData, twoWayToday, mortalityOn, mortalityData, charityOn, charityData, auditResult, advisorInfo,
   flowOn, flowPlans, flowCompareOn, flowResult,
   flowCompareResult, flowCompareLabel, sensitivity,
   customMilestones, stateExclusions, pvRateOverride, objectivesOn, fundingOrderData, statutoryOn, unifiedCreditOn, lawData,
@@ -1384,6 +1421,7 @@ const ClientReportBody = ({
     + (heirSens ? 1 : 0)
     + (twoWayData ? 1 : 0)
     + (mortalityOn && mortalityData ? 1 : 0)
+    + (charityOn && charityData ? 1 : 0)
     + (auditResult ? 1 : 0)
     + (dividerOn ? 1 : 0)
     + (basisOn ? 1 : 0)
@@ -1405,6 +1443,7 @@ const ClientReportBody = ({
   const heirSensPage = heirSens ? ++cursor : null;    // beneficiary rate band
   const twoWayPage = twoWayData ? ++cursor : null;    // heir rate × regime surface
   const mortalityPage = (mortalityOn && mortalityData) ? ++cursor : null; // death-timing sensitivity
+  const charityPage = (charityOn && charityData) ? ++cursor : null; // charitable beneficiary
   const auditMemoPage = auditResult ? ++cursor : null; // assumption review memorandum
   const dividerPage = dividerOn ? ++cursor : null;
   const basisPage = basisOn ? ++cursor : null;
@@ -1472,6 +1511,9 @@ const ClientReportBody = ({
       )}
       {mortalityOn && mortalityData && (
         <MortalityTimingPage mortalityData={mortalityData} pv={pv} {...pageFooter(mortalityPage)} />
+      )}
+      {charityOn && charityData && (
+        <CharitableBeneficiaryPage charityData={charityData} {...pageFooter(charityPage)} />
       )}
       {auditResult && (
         <AuditMemoPage audit={auditResult} advisor={advisorInfo} {...pageFooter(auditMemoPage)} />

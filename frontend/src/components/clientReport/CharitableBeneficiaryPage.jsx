@@ -34,7 +34,8 @@ export const CharitableBeneficiaryPage = ({ charityData, ...footProps }) => {
         Naming a qualified charity as the death-time beneficiary of the Traditional IRA passes that fraction free of
         income tax (the charity pays none) <em>and</em> free of estate tax (a charitable deduction on the estate side),
         and removes it from the heirs&apos; SECURE-10 drawdown. Here {fmtPct(d.fraction)} of the IRA is designated to
-        charity, compared with the current conversion program and with conversions off.
+        charity{d.fraction_is_illustrative ? " (illustrative — no designation is set in the plan inputs)" : ""}, compared
+        with the current conversion program and with conversions off.
       </P>
 
       <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 8 }} data-testid="cr-charity-table">

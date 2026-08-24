@@ -52,7 +52,8 @@ export const CharitableBeneficiaryPanel = ({ scenario }) => {
       {data && (
         <div className="mt-5 overflow-x-auto">
           <p className="text-[11px] text-muted-foreground mb-2">
-            IRA fraction designated to charity: <strong>{fmtPct(data.fraction)}</strong>. Charity is tax-exempt, so its
+            IRA fraction designated to charity: <strong>{fmtPct(data.fraction)}</strong>
+            {data.fraction_is_illustrative && <span className="text-[#B8863A]"> (illustrative — no designation set in Plan Inputs)</span>}. Charity is tax-exempt, so its
             receipt is grown over the SECURE-10 horizon (parallel to an inherited Roth) for an apples-to-apples combined total.
           </p>
           <table className="w-full text-sm" data-testid="charity-table">

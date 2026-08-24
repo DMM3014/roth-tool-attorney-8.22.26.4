@@ -3158,10 +3158,10 @@ def charitable_beneficiary_compare(cfg: dict, fraction=None) -> dict:
         nom = round(a - b, 2)
         return {"nominal": nom, "today": round(present_value(nom, deliver_year, start, disc), 2)}
 
-    winner = max(("charity_with_conversions", "charity_no_conversions"),
-                 key=lambda k: cases[k]["combined_family_charity"])
+    winner = max(cases.keys(), key=lambda k: cases[k]["combined_family_charity"])
     return {
         "fraction": round(frac, 4),
+        "fraction_is_illustrative": cfg_frac <= 0,
         "start_year": start,
         "discount_rate": round(disc, 4),
         "heir_deliver_year": deliver_year,

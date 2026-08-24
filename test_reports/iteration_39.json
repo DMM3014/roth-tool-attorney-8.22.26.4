@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 39 — focused testing of the new Charitable Beneficiary feature. Backend: ran existing unit suite (tests/test_charitable_beneficiary.py 4/4) plus a new HTTP suite (tests/test_iter39_charity_http.py 5/5) against the public preview URL covering POST /api/charitable-beneficiary happy path, config-driven fraction (0.5 -> receipt ~= half of 1.0), projection still valid with a non-zero fraction, out-of-range/garbage fraction handling, and auth gating (403 without bearer). Frontend (real UI via public URL, master PIN login): verified the ira-to-charity-fraction input (default 0, accepts 50, persists across tab switches), the Monte Carlo Charitable Beneficiary panel (hidden pre-run, rendered BELOW Mortality Timing, Run comparison -> 3-row table, single '▸ best' flag on charity_no_conversions, delta line with nominal/today's $, QCD cross-reference note), and the printed report page (cr-charity-toggle default OFF + localStorage client_report_charity_v1=0, ON -> cr-page-charity inserted immediately after cr-page-mortality at index 21/25 with footer 'Page 22 of 25' and last page 'Page 25 of 25', table+delta+PV footnote render with no X/Y overflow, page present in both DOM trees, OFF removes it and resets localStorage to 0). Zero console errors in both runs. |today's-$ delta| ($1,673,803) < |nominal| ($6,519,536).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Monte Carlo → Charitable Beneficiary panel / printed charity page", "issues": ["Panel/report state 'IRA fraction designated to charity: 100.0%' while the Plan Inputs field (ira-to-charity-fraction) reads 0 — the engine substitutes frac=1.0 when cfg frac==0. Correct by design but potentially confusing to an advisor reading both screens; consider labelling it 'illustrated at 100% (no designation set)'.", "Printed charity page content occupies only the top ~25% of the min-height-900 page, leaving a large blank block before the footer (consistent with other pages, cosmetic only)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter39_charity_http.py",
+    "/app/backend/tests/test_charitable_beneficiary.py",
+    "/app/test_reports/pytest/iter39_charity.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "projection.charitable_beneficiary_compare: `winner` is chosen with max() over only ('charity_with_conversions','charity_no_conversions'), so if the no_charity case ever had the highest combined_family_charity it could never be flagged — either document that the winner is scoped to the charity cases or include no_charity in the comparison.",
+    "Same function: fraction fallback `cfg_frac if cfg_frac > 0 else 1.0` silently illustrates 100% when the configured fraction is 0; the UI displays that substituted fraction with no indication it is a fallback."
+  ],
+  "updated_files": ["/app/backend/tests/test_iter39_charity_http.py", "/app/test_reports/iteration_39.json"],
+  "success_rate": {"backend": "100% (9/9 tests)", "frontend": "100% of charity flows verified"},
+  "seed_data_creation": "None — used GET /api/defaults household config; Plan Inputs fraction was reset to 0 after the persistence check.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Master PIN i4m07MnVDhpTYkc1giC6wWDv (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Charitable Beneficiary (config input, MC panel, printed report page + toggle) fully verified in iteration 39 — no defects. Endpoint path is /api/charitable-beneficiary (planning router has prefix '/api' only, NOT '/api/planning'). The tests/conftest.py hook auto-injects a master bearer, so bare requests to gated endpoints work in pytest; use header X-Test-No-Auth to assert the 403 gate. MC run at 200 trials takes ~40-60s; the charity panel only renders after a completed MC run.",
+  "rca_of_the_issue": "N/A — no failures reproduced."
+}

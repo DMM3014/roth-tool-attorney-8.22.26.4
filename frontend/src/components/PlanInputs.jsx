@@ -1040,6 +1040,18 @@ export const PlanInputs = ({ scenario, setScenario, onRequestRunSweep = null }) 
             <p className="text-[10px] text-muted-foreground mt-1">SECURE drawdown window (default 10).</p>
           </div>
           <div>
+            <Label className="text-xs text-muted-foreground">IRA to Charity at Death (%)</Label>
+            <Input type="number" step={1} min={0} max={100}
+              value={Math.round((scenario.beneficiary?.ira_to_charity_fraction ?? 0) * 100)}
+              data-testid="ira-to-charity-fraction"
+              onChange={(e) => {
+                const pct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
+                setScenario((p) => ({ ...p, beneficiary: { ...(p.beneficiary || {}), ira_to_charity_fraction: pct / 100 } }));
+              }}
+              className="mt-1 bg-[#F9F8F6]" />
+            <p className="text-[10px] text-muted-foreground mt-1">Fraction of the Traditional IRA named to charity at the 2nd death — passes free of income &amp; estate tax (default 0).</p>
+          </div>
+          <div>
             <Label className="text-xs text-muted-foreground">Heirs' Reinvestment Return</Label>
             <Input type="number" step={0.005} value={scenario.legacy.heir_reinvest_return ?? ""} placeholder="auto (account return)" data-testid="heir-reinvest-return"
               onChange={(e) => setScenario((p) => ({ ...p, legacy: { ...p.legacy, heir_reinvest_return: e.target.value === "" ? null : parseFloat(e.target.value) } }))}
