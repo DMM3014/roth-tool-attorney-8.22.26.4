@@ -219,6 +219,7 @@ export const Kpi = ({ label, value, sub, tone = "green" }) => {
   const color = tone === "green" ? "#4A6741" : tone === "orange" ? "#C87941" : "#5A5A5A";
   return (
     <div data-docx="kpi" data-docx-kpi-label={label} data-docx-kpi-value={typeof value === "string" ? value : ""} data-docx-kpi-sub={sub || ""}
+         data-testid={label ? `cr-kpi-${String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}` : undefined}
          style={{ padding: "10px 12px", border: "1px solid #EBE8E0", borderRadius: 8, background: "#F9F8F6" }}>
       <div style={{ fontSize: 8.5, letterSpacing: 0.5, textTransform: "uppercase", color, fontWeight: 700 }}>{label}</div>
       <div style={{ fontFamily: "Outfit, sans-serif", fontSize: 18, fontWeight: 700, color: "#1A1A1A", marginTop: 3 }}>{value}</div>

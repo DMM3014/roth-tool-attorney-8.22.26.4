@@ -14,6 +14,7 @@
  */
 import React from "react";
 import { Page, H2, H3, P, Sub, PvFootnote, PvTwin } from "./helpers.jsx";
+import { pvRateFor } from "@/lib/pv";
 import { fmtUSD, fmtPct } from "@/lib/api";
 
 const FED_BASE = 15_000_000;      // OBBBA base (2026), matches backend law_constants
@@ -25,7 +26,7 @@ const fedExclusion = (year, infl) => {
   return FED_BASE * Math.pow(1 + (infl || 0.03), yrs);
 };
 
-export const UnifiedCreditPage = ({ scenario, withRoth, ...footProps }) => {
+export const UnifiedCreditPage = ({ scenario, withRoth, pvRateOverride, ...footProps }) => {
   const giving = withRoth?.giving || {};
   const tg = giving.taxable_gifts;
   const infl = scenario?.projection?.general_inflation ?? 0.03;
@@ -86,8 +87,10 @@ export const UnifiedCreditPage = ({ scenario, withRoth, ...footProps }) => {
   const estateTaxSaved = Math.max(0, taxWithout - taxWith);
 
   // Present-value factor: discount second-death estate figures back to plan start.
+  // Uses the advisor's on-page PV rate override when set, else the plan's CPI.
+  const pvRate = pvRateFor(scenario, pvRateOverride);
   const f2 = (startYr != null && secondYr != null)
-    ? 1 / Math.pow(1 + infl, Math.max(0, secondYr - startYr)) : 1;
+    ? 1 / Math.pow(1 + pvRate, Math.max(0, secondYr - startYr)) : 1;
   const pvUsd = (v) => fmtUSD((v || 0) * f2);
 
   const cell = { padding: 6, fontVariantNumeric: "tabular-nums" };

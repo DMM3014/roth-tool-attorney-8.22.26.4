@@ -64,6 +64,7 @@ import { useSeqParams } from "@/hooks/useSeqParams";
 import { ReportCustomizationCard } from "./clientReport/ReportCustomizationCard";
 import { useSharedGuardrail } from "@/hooks/useSharedGuardrail";
 import { useSharedHalt } from "@/hooks/useSharedHalt";
+import { useTwoWayPref } from "@/hooks/useTwoWayPref";
 
 // ============================================================================
 // Retirement & Wealth-Transfer Illustration — Attorney Edition — top-level orchestrator
@@ -250,11 +251,22 @@ export const ClientReport = ({ scenario, setScenario }) => {
   });
   useEffect(() => { try { window.localStorage.setItem("client_report_mortality_timing_v1", mortalityOn ? "1" : "0"); } catch {} }, [mortalityOn]);
   // Two-Way Sensitivity — optional "today's dollars" view of the heir-rate × regime surface.
+  const twoWayStoredRef = useRef(null);
   const [twoWayToday, setTwoWayToday] = useState(() => {
     try { const raw = window.localStorage.getItem("client_report_two_way_today_v1");
+          twoWayStoredRef.current = raw;
           return raw == null ? false : raw === "1"; } catch { return false; }
   });
   useEffect(() => { try { window.localStorage.setItem("client_report_two_way_today_v1", twoWayToday ? "1" : "0"); } catch {} }, [twoWayToday]);
+  // Per-license default: when this browser has no saved override yet, open in the
+  // advisor's saved framing. "Save as my default" persists the current framing.
+  const twoWayPref = useTwoWayPref();
+  useEffect(() => {
+    if (twoWayPref.loaded && twoWayStoredRef.current == null && typeof twoWayPref.defaultToday === "boolean") {
+      setTwoWayToday(twoWayPref.defaultToday);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [twoWayPref.loaded, twoWayPref.defaultToday]);
 
   const [lawData, setLawData] = useState(null);
   useEffect(() => {
@@ -1105,6 +1117,18 @@ export const ClientReport = ({ scenario, setScenario }) => {
                   Off by default (nominal). When on, every cell of the Heir Rate × Market Regime grid is discounted to
                   plan-start dollars — each regime by its own assumed CPI — so the surface reads in today&rsquo;s money.
                 </p>
+                <button type="button"
+                  onClick={() => twoWayPref.save(twoWayToday).then(() => toast.success("Saved as your license default")).catch(() => toast.error("Could not save default"))}
+                  disabled={twoWayPref.saving}
+                  data-testid="cr-two-way-save-default"
+                  className="mt-2 text-[10.5px] font-semibold text-[#4A6741] underline underline-offset-2 disabled:opacity-50">
+                  {twoWayPref.saving ? "Saving…" : "Save this framing as my default"}
+                  {typeof twoWayPref.defaultToday === "boolean" && (
+                    <span className="ml-1 font-normal text-muted-foreground">
+                      (current default: {twoWayPref.defaultToday ? "today\u2019s $" : "nominal"})
+                    </span>
+                  )}
+                </button>
               </div>
             </label>
           </div>
@@ -1406,7 +1430,7 @@ const ClientReportBody = ({
         pvRateOverride={pvRateOverride} {...pageFooter(4 + L + O)} />
       <RothConversionsPage rows={rows} withRoth={withRoth} scenario={scenario} {...pageFooter(5 + L + O)} />
       {fundingOrderActive && (
-        <FundingOrderPage data={fundingOrderData} {...pageFooter(6 + L + O)} />
+        <FundingOrderPage data={fundingOrderData} scenario={scenario} pvRateOverride={pvRateOverride} {...pageFooter(6 + L + O)} />
       )}
       <SavingsPage rows={rows} composeData={composeData} withRoth={withRoth} {...pageFooter(6 + L + O + F)} />
       <IncomeExpensesPage incomeData={incomeData} rows={rows}
@@ -1440,7 +1464,7 @@ const ClientReportBody = ({
         <TwoWaySensitivityPage twoWayData={twoWayData} showToday={twoWayToday} {...pageFooter(twoWayPage)} />
       )}
       {mortalityOn && mortalityData && (
-        <MortalityTimingPage mortalityData={mortalityData} {...pageFooter(mortalityPage)} />
+        <MortalityTimingPage mortalityData={mortalityData} pv={pv} {...pageFooter(mortalityPage)} />
       )}
       {auditResult && (
         <AuditMemoPage audit={auditResult} advisor={advisorInfo} {...pageFooter(auditMemoPage)} />
@@ -1481,7 +1505,7 @@ const ClientReportBody = ({
         <InputsAppendixPage scenario={scenario} {...pageFooter(inputsPage)} />
       )}
       {unifiedCreditOn && (
-        <UnifiedCreditPage scenario={scenario} withRoth={withRoth}
+        <UnifiedCreditPage scenario={scenario} withRoth={withRoth} pvRateOverride={pvRateOverride}
           {...pageFooter(totalPages - (statutoryOn ? 1 : 0))} />
       )}
       {statutoryOn && (

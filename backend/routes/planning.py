@@ -185,6 +185,49 @@ async def clear_my_defaults(request: Request, _owner: str = Depends(require_sess
     return {"reverted": True, "advisor_id": advisor_id}
 
 
+# Per-advisor lightweight UI preferences (distinct from the scenario config in
+# advisor_defaults). Small, mergeable key/value blob — e.g. the Two-Way
+# nominal-vs-today's framing default — scoped to the license / master seat.
+ADVISOR_PREFS_COLLECTION = "advisor_prefs"
+
+
+class UiPrefsRequest(BaseModel):
+    prefs: Dict[str, Any] = Field(default_factory=dict)
+
+
+@router.get("/prefs/mine")
+async def get_my_prefs(request: Request, _owner: str = Depends(require_session),
+                       _adv: None = Depends(require_advisor)):
+    advisor_id = await _advisor_id_from_auth(request.headers.get("authorization"))
+    if not advisor_id:
+        raise HTTPException(status_code=401, detail="Advisor identity required")
+    doc = await db[ADVISOR_PREFS_COLLECTION].find_one({"_id": advisor_id})
+    return {"prefs": (doc or {}).get("prefs", {}), "advisor_id": advisor_id}
+
+
+@router.put("/prefs/mine")
+@limiter.limit("20/minute")
+async def save_my_prefs(request: Request, req: UiPrefsRequest,
+                        _owner: str = Depends(require_session),
+                        _adv: None = Depends(require_advisor)):
+    advisor_id = await _advisor_id_from_auth(request.headers.get("authorization"))
+    if not advisor_id:
+        raise HTTPException(status_code=401, detail="Advisor identity required")
+    # Merge so a partial update never wipes other stored prefs.
+    existing = await db[ADVISOR_PREFS_COLLECTION].find_one({"_id": advisor_id})
+    merged = {**((existing or {}).get("prefs") or {}), **(req.prefs or {})}
+    try:
+        await db[ADVISOR_PREFS_COLLECTION].update_one(
+            {"_id": advisor_id},
+            {"$set": {"prefs": merged, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+    except Exception:
+        logging.exception("failed persisting advisor_prefs for %s", advisor_id)
+        raise HTTPException(status_code=500, detail="Could not save your preferences")
+    return {"saved": True, "prefs": merged, "advisor_id": advisor_id}
+
+
 @router.get("/states")
 async def get_states(_gate: None = Depends(require_advisor_or_share)):
     # Enrich each state row with the richer state-tax metadata (progressive vs flat,

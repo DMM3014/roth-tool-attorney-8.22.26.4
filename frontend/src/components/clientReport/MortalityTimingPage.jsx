@@ -4,7 +4,7 @@ import { Page, H2, P, Sub } from "./helpers.jsx";
 import { PvFootnote } from "./helpers.jsx";
 import { fmtUSD } from "@/lib/api";
 
-export const MortalityTimingPage = ({ mortalityData, ...footProps }) => {
+export const MortalityTimingPage = ({ mortalityData, pv, ...footProps }) => {
   if (!mortalityData || !mortalityData.rows) {
     return (
       <Page testid="cr-page-mortality" {...footProps}>
@@ -37,7 +37,11 @@ export const MortalityTimingPage = ({ mortalityData, ...footProps }) => {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {rows.map((r) => {
+            const todayVal = (pv && r.secure_window_end_year != null)
+              ? r.conversion_delta_nominal * pv.at(r.secure_window_end_year)
+              : r.conversion_delta_today;
+            return (
             <tr key={r.id} data-testid={`cr-mortality-row-${r.id}`} style={{ background: r.id === "base" ? "#4A67410D" : "#fff" }}>
               <td style={{ ...td, textAlign: "left", fontWeight: 600 }}>{r.label}</td>
               <td style={td}>{r.single_filer_years}</td>
@@ -47,10 +51,11 @@ export const MortalityTimingPage = ({ mortalityData, ...footProps }) => {
               <td style={{ ...td, fontWeight: 700 }}>{fmtUSD(r.after_tax_to_heirs_secure10)}</td>
               <td style={{ ...td, color: r.conversion_delta_nominal >= 0 ? "#4A6741" : "#B84A4A" }}>
                 {r.conversion_delta_nominal >= 0 ? "+" : "−"}{fmtUSD(Math.abs(r.conversion_delta_nominal))}
-                {" / "}{r.conversion_delta_today >= 0 ? "+" : "−"}{fmtUSD(Math.abs(r.conversion_delta_today))}
+                {" / "}{todayVal >= 0 ? "+" : "−"}{fmtUSD(Math.abs(todayVal))}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
       <div style={{ marginTop: 10, borderLeft: "3px solid #4A6741", paddingLeft: 10 }}>

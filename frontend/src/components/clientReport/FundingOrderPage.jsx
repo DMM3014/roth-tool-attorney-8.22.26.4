@@ -1,4 +1,5 @@
 import { Page, H2, P, Sub, PvFootnote } from "./helpers";
+import { makePv } from "@/lib/pv";
 import {
   FUNDING_ORDER_SHORT, METRIC_ROWS, FUNDING_ORDER_EXPLAINER,
 } from "@/lib/fundingOrderRows";
@@ -6,8 +7,19 @@ import {
 // "Funding Order — The Hidden Lever" — printed comparison of the SAME plan
 // (conversions unchanged) under each withdrawal funding order. Placed between
 // the Roth Conversions page and the Savings page.
-export const FundingOrderPage = ({ data, ...footProps }) => {
+export const FundingOrderPage = ({ data, scenario, pvRateOverride, ...footProps }) => {
   const results = data?.results || [];
+  const pv = makePv(scenario, pvRateOverride, null);
+  // Point-in-time PV twins honor the on-page discount-rate control: recompute
+  // from the nominal figure and its delivery year rather than the server field.
+  const cellValue = (row, r) => {
+    if (row.pvOf && scenario) {
+      const nominal = r[row.pvOf.nominalKey];
+      const yr = r[row.pvOf.yearKey];
+      if (nominal != null && yr != null) return row.fmt(nominal * pv.at(yr));
+    }
+    return row.fmt(r[row.key]);
+  };
   if (!results.length) {
     return (
       <Page testid="cr-page-funding-order" {...footProps}>
@@ -57,7 +69,7 @@ export const FundingOrderPage = ({ data, ...footProps }) => {
                   fontSize: row.indent ? 8.5 : 9.5,
                   fontWeight: row.strong ? 700 : 400,
                 }}>
-                  {row.fmt(r[row.key])}
+                  {cellValue(row, r)}
                 </td>
               ))}
             </tr>

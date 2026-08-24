@@ -176,8 +176,9 @@ export const ReportCustomizationCard = ({
         </div>
         <p className="text-[10.5px] text-muted-foreground mb-2 leading-relaxed">
           Discount rate behind every &ldquo;in today&apos;s dollars&rdquo; figure in the report — the
-          convert-or-skip milestones, the year-by-year drivers, the beneficiary-rate band and the Legacy page&apos;s
-          Present Value chart. Higher rates shrink future dollars more aggressively. Defaults to the
+          convert-or-skip milestones, the year-by-year drivers, the beneficiary-rate band, the Legacy page&apos;s
+          Present Value chart, and the funding-order, mortality-timing and lifetime-giving twins. Higher rates
+          shrink future dollars more aggressively. Defaults to the
           scenario&apos;s general inflation ({fmtPct(scenario?.projection?.general_inflation ?? 0.03)}) so the
           PV figures never contradict the rest of the model.
         </p>

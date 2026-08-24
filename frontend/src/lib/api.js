@@ -119,6 +119,9 @@ export const revertDefaults = () => http.delete(`/defaults/save`).then((r) => r.
 // shared user_defaults.json → hard-coded DEFAULT_SCENARIO.
 export const saveMyDefaults = (config) => http.post(`/defaults/mine`, { config }).then((r) => r.data);
 export const revertMyDefaults = () => http.delete(`/defaults/mine`).then((r) => r.data);
+// Per-advisor lightweight UI preferences (e.g. two-way nominal-vs-today framing).
+export const getMyPrefs = () => http.get(`/prefs/mine`).then((r) => r.data);
+export const saveMyPrefs = (prefs) => http.put(`/prefs/mine`, { prefs }).then((r) => r.data);
 export const fetchStates = () => http.get(`/states`).then((r) => r.data);
 export const fetchMarketScenarios = () => http.get(`/market-scenarios`).then((r) => r.data);
 

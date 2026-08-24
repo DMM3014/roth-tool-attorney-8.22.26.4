@@ -4,13 +4,14 @@
 // One click shows the advisor that the case for conversion lives on a whole surface,
 // not at a single assumed cell.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Grid3x3, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { runTwoWaySensitivity, fmtUSD, fmtPct } from "@/lib/api";
+import { useTwoWayPref } from "@/hooks/useTwoWayPref";
 
 const GREEN = "74, 103, 65";   // converting wins
 const AMBER = "184, 122, 60";  // not converting wins
@@ -39,6 +40,13 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [showToday, setShowToday] = useState(false);
+  const twoWayPref = useTwoWayPref();
+  useEffect(() => {
+    if (twoWayPref.loaded && typeof twoWayPref.defaultToday === "boolean") {
+      setShowToday(twoWayPref.defaultToday);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [twoWayPref.loaded, twoWayPref.defaultToday]);
 
   const run = async () => {
     setLoading(true);
@@ -92,6 +100,13 @@ export const TwoWaySensitivityPanel = ({ scenario, onResult }) => {
               <span className="text-[11px] text-muted-foreground">
                 Show in <strong>today&apos;s dollars</strong> (discount each regime by its own CPI back to {data.start_year || "plan start"})
               </span>
+              <button type="button"
+                onClick={() => twoWayPref.save(showToday).then(() => toast.success("Saved as your license default")).catch(() => toast.error("Could not save default"))}
+                disabled={twoWayPref.saving}
+                data-testid="two-way-save-default"
+                className="ml-2 text-[11px] font-semibold text-[#4A6741] underline underline-offset-2 disabled:opacity-50">
+                {twoWayPref.saving ? "Saving…" : "Save as default"}
+              </button>
             </div>
           )}
           <div className="rounded-lg border border-[#4A6741]/30 bg-[#4A6741]/5 px-4 py-2.5 mb-4" data-testid="two-way-headline">

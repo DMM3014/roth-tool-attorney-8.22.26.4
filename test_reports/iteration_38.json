@@ -1,0 +1,26 @@
+{
+  "summary": "Iteration 38 — verified (A) PV Rate Control governing every today's-dollars figure in the Client Report and (B) per-license Save Two-Way Default. Backend: 40 tests run (prefs HTTP, pv twins, golden snapshot, two-way, mortality, giving) — all pass; GET/PUT /api/prefs/mine round-trip + auth gate verified over the public URL. Frontend (Playwright, master PIN login): moving cr-pv-rate-slider from 3.0% to 8.0% shrank ALL today's-$ figures live — funding-order twins (net_worth_at_second_death_today $11.45M→$2.08M, after_tax_to_heirs_secure10_today $16.73M→$1.89M), Overview 'Extra to Heirs' KPI sub-twin (-$19,991→-$2,259), Mortality-Timing conversion-Δ today (-$19,991→-$2,259) and the Lifetime-Giving twins (pot $6,014,102→$1,091,580; appreciation $5,324,037→$966,331) — while every nominal figure stayed byte-identical; 'Reset to plan' restored all values exactly. The 'Parents lifetime tax (NPV)' row correctly did NOT move (expected). Part B: two-way-save-default in the MC panel and cr-two-way-save-default in the Client Report both toast 'Saved as your license default'; backend GET /api/prefs/mine confirmed two_way_today=true; after clearing localStorage client_report_two_way_today_v1 and reloading, cr-two-way-today-toggle opened CHECKED and the button label read '(current default: today\u2019s $)'; saving nominal flipped the label to '(current default: nominal)'. Zero console errors across all runs.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_advisor_prefs_http.py", "/app/backend/tests/test_pv_twins.py", "/app/test_reports/pytest/iter38_results.xml"],
+  "action_items": [
+    "Optional (minor): ClientReport writes client_report_two_way_today_v1 on mount (before useTwoWayPref resolves), so a browser that has visited the report once always has a local override and will never pick up a LATER change to the license default. Consider only persisting the key on an explicit user toggle.",
+    "Optional (minor): TwoWaySensitivityPanel adopts the license default whenever the pref resolves, with no local-override guard — a user toggle made before the fetch resolves would be overwritten. Not reproducible in practice because the panel only appears after a ~40s MC run."
+  ],
+  "critical_code_review_comments": [
+    "UnifiedCreditPage only renders its PV twins when the plan actually models taxable gifts; verification required temporarily adding a $2,000,000 / 2030 taxable gift (removed afterwards). Worth noting for future regression runs.",
+    "clientReport/helpers.jsx Kpi had no data-testid — added a derived data-testid (cr-kpi-<slugified-label>) so the Overview KPI twins are assertable."
+  ],
+  "updated_files": ["/app/frontend/src/components/clientReport/helpers.jsx", "/app/test_reports/iteration_38.json"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary taxable gift (2030 / $2,000,000) added on Plan Inputs to render the Lifetime-Giving page, then removed. Master license pref two_way_today ends at false (nominal) after the final save test.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Master PIN i4m07MnVDhpTYkc1giC6wWDv (login-mode-master \u2192 pin-input \u2192 pin-unlock-btn)",
+  "context_for_next_testing_agent": "PV slider flow: login \u2192 tab-client-report \u2192 cr-pv-rate-slider (input range, use fill('8')) \u2192 read rows inside [data-testid=client-report-preview-inner] only (print root duplicates testids). Unified-credit page needs a taxable gift on Plan Inputs (add-taxable-gift / taxable-gift-year-0 / taxable-gift-amount-0) or it renders a 'no taxable gifts modeled' placeholder. Mortality page recompute ~10-20s after cr-mortality-toggle. Two-way panel requires an MC run (mc-trials=200, mc-run, ~40s). Overview KPIs now expose cr-kpi-<slug> testids (e.g. cr-kpi-extra-to-heirs).",
+  "rca_of_the_issue": "No defects found in the two features under review."
+}
